@@ -53,10 +53,10 @@ class Muon(torch.optim.Optimizer):
     """
     Muon - MomentUm Orthogonalized by Newton-schulz
 
-    Muon internally runs standard SGD-momentum, and then performs an orthogonalization post-
-    processing step, in which each 2D parameter's update is replaced with the nearest orthogonal
-    matrix. To efficiently orthogonalize each update, we use a Newton-Schulz iteration, which has
-    the advantage that it can be stably run in bfloat16 on the GPU.
+    Muon internally runs fast/slow SGD-style momentum, and then performs an orthogonalization
+    post-processing step, in which each 2D parameter's update is replaced with the nearest
+    orthogonal matrix. To efficiently orthogonalize each update, we use a Newton-Schulz iteration,
+    which has the advantage that it can be stably run in bfloat16 on the GPU.
 
     Some warnings:
     - This optimizer assumes that all parameters passed in are 2D.
@@ -81,6 +81,8 @@ class Muon(torch.optim.Optimizer):
         super().__init__(params, defaults)
         self.rank = rank
         self.world_size = world_size
+        self.slow_momentum = 0.9999
+        self.slow_alpha = 1.6
 
     def step(self):
 
@@ -101,12 +103,19 @@ class Muon(torch.optim.Optimizer):
                     if g is None:
                         continue
                     state = self.state[p]
-                    if 'momentum_buffer' not in state:
-                        state['momentum_buffer'] = torch.zeros_like(g)
-                    buf = state['momentum_buffer']
-                    buf.mul_(momentum).add_(g)
+                    if 'fast_momentum_buffer' not in state:
+                        state['fast_momentum_buffer'] = torch.zeros_like(g)
+                    if 'slow_momentum_buffer' not in state:
+                        state['slow_momentum_buffer'] = torch.zeros_like(g)
+                    fast_buf = state['fast_momentum_buffer']
+                    slow_buf = state['slow_momentum_buffer']
+                    fast_buf.mul_(momentum).add_(g)
+                    slow_buf.mul_(self.slow_momentum).add_(g)
+                    buf = fast_buf.add(slow_buf, alpha=self.slow_alpha)
                     if group['nesterov']:
                         g = g.add(buf, alpha=momentum)
+                    else:
+                        g = buf
                     g = zeropower_backend(g, steps=group['backend_steps'])
                     g *= max(g.size(0), g.size(1))**0.5 # scale to have update.square().mean() == 1
                     updates_flat[curr_idx:curr_idx+p.numel()] = g.flatten()
