@@ -50,43 +50,11 @@ def zeropower_via_newtonschulz5(G, steps=10, eps=1e-7):
 
 zeropower_backends = dict(svd=zeropower_via_svd, newtonschulz5=zeropower_via_newtonschulz5)
 
-def check_momentum_beta(name, beta):
-    if not 0.0 < beta < 1.0:
-        raise ValueError(f"{name} must be in (0, 1), got {beta}")
-
-def linear_warmup(final_value, step, warmup_steps):
-    if warmup_steps <= 0:
-        return final_value
-    return final_value * min(step / warmup_steps, 1.0)
-
-def momentum_half_life(beta):
-    check_momentum_beta("momentum beta", beta)
-    return math.log(0.5) / math.log(beta) - 1
-
-def beta_from_momentum_half_life(half_life):
-    return 0.5 ** (1 / (half_life + 1))
-
-def scheduled_slow_momentum(start_beta, end_beta, step, warmup_steps):
-    check_momentum_beta("start_beta", start_beta)
-    check_momentum_beta("end_beta", end_beta)
-    if warmup_steps <= 0:
-        return end_beta
-    progress = min(step / warmup_steps, 1.0)
-    start_half_life = momentum_half_life(start_beta)
-    end_half_life = momentum_half_life(end_beta)
-    half_life = (1 - progress) * start_half_life + progress * end_half_life
-    return beta_from_momentum_half_life(half_life)
-
-def require_global_num_iterations():
-    if 'args' not in globals() or not hasattr(globals()['args'], 'num_iterations'):
-        raise RuntimeError("Muon requires global args.num_iterations for slow momentum warmups")
-    return globals()['args'].num_iterations
-
-class Muon(torch.optim.Optimizer):
+class MultiMuon(torch.optim.Optimizer):
     """
-    Muon - MomentUm Orthogonalized by Newton-schulz
+    MultiMuon - Multi-Momentum Orthogonalized by Newton-schulz
 
-    Muon internally runs fast/slow SGD-style momentum, and then performs an orthogonalization
+    MultiMuon internally runs fast/slow SGD-style momentum, and then performs an orthogonalization
     post-processing step, in which each 2D parameter's update is replaced with the nearest
     orthogonal matrix. To efficiently orthogonalize each update, we use a Newton-Schulz iteration,
     which has the advantage that it can be stably run in bfloat16 on the GPU.
@@ -103,23 +71,29 @@ class Muon(torch.optim.Optimizer):
     Arguments:
         lr: The learning rate used by the internal SGD.
         momentum: The momentum used by the internal SGD.
+        slow_momentum: The final slow momentum beta.
+        slow_alpha: The final raw mixing weight for slow momentum.
+        slow_alpha_warmup_steps: The linear warmup length for slow_alpha.
+        slow_momentum_warmup_steps: The half-life warmup length for slow_momentum.
         nesterov: Whether to use Nesterov-style momentum in the internal SGD. (recommended)
         backend: The chosen backend for the orthogonalization step. (recommended: 'newtonschulz5')
         backend_steps: The number of iteration steps to use in the backend, if it is iterative.
     """
-    def __init__(self, params, lr=3e-4, momentum=0.95, nesterov=True,
-                 backend='newtonschulz5', backend_steps=5,
+    def __init__(self, params, lr, momentum, slow_momentum, slow_alpha,
+                 slow_alpha_warmup_steps, slow_momentum_warmup_steps,
+                 nesterov=True, backend='newtonschulz5', backend_steps=5,
                  rank=0, world_size=1):
-        defaults = dict(lr=lr, momentum=momentum, nesterov=nesterov, backend=backend, backend_steps=backend_steps)
+        defaults = dict(lr=lr, momentum=momentum, slow_momentum=slow_momentum, slow_alpha=slow_alpha,
+                        slow_alpha_warmup_steps=slow_alpha_warmup_steps,
+                        slow_momentum_warmup_steps=slow_momentum_warmup_steps,
+                        nesterov=nesterov, backend=backend, backend_steps=backend_steps)
         super().__init__(params, defaults)
         self.rank = rank
         self.world_size = world_size
-        check_momentum_beta("momentum", momentum)
-        self.slow_momentum = 0.9999
-        self.slow_alpha = 1.6
-        self.slow_alpha_warmup_steps = require_global_num_iterations()
-        self.slow_momentum_warmup_steps = require_global_num_iterations()
-        check_momentum_beta("slow_momentum", self.slow_momentum)
+        assert 0 < momentum < 1
+        assert 0 < slow_momentum < 1
+        assert slow_alpha_warmup_steps > 0
+        assert slow_momentum_warmup_steps > 0
 
     def step(self):
 
@@ -129,10 +103,15 @@ class Muon(torch.optim.Optimizer):
             step = group['step']
             lr = group['lr']
             momentum = group['momentum']
-            alpha_t = linear_warmup(self.slow_alpha, step, self.slow_alpha_warmup_steps)
-            slow_momentum_t = scheduled_slow_momentum(
-                momentum, self.slow_momentum, step, self.slow_momentum_warmup_steps
-            )
+            slow_momentum = group['slow_momentum']
+            slow_alpha = group['slow_alpha']
+            slow_alpha_warmup_steps = group['slow_alpha_warmup_steps']
+            slow_momentum_warmup_steps = group['slow_momentum_warmup_steps']
+            alpha_t = slow_alpha * min(step / slow_alpha_warmup_steps, 1.0)
+            beta3_warmup = min(step / slow_momentum_warmup_steps, 1.0)
+            h1 = math.log(0.5) / math.log(momentum) - 1
+            h3 = math.log(0.5) / math.log(slow_momentum) - 1
+            slow_momentum_t = 0.5 ** (1 / ((1 - beta3_warmup) * h1 + beta3_warmup * h3 + 1))
             zeropower_backend = zeropower_backends[group['backend']]
 
             # generate weight updates in distributed fashion
@@ -400,6 +379,9 @@ class Hyperparameters:
     warmup_iters : int = 0
     warmdown_iters : int = 1450 # number of iterations of linear warmup/warmdown for triangular or trapezoidal schedule
     weight_decay : float = 0
+    muon_momentum : float = 0.95
+    muon_slow_momentum : float = 0.9999
+    muon_slow_alpha : float = 1.6
     # evaluation and logging hyperparams
     val_loss_every : int = 125 # every how many steps to evaluate val loss? 0 for only at the end
     val_tokens : int = 10485760 # how many tokens of validation data? it's important to keep this fixed for consistent comparisons
@@ -450,8 +432,11 @@ ctx = torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16)
 # init the optimizer(s)
 optimizer1 = torch.optim.AdamW(raw_model.lm_head.parameters(), lr=args.learning_rate, betas=(0.9, 0.95),
                                weight_decay=args.weight_decay, fused=True)
-optimizer2 = Muon(raw_model.transformer.h.parameters(), lr=0.1*args.learning_rate, momentum=0.95,
-                  rank=ddp_rank, world_size=ddp_world_size)
+optimizer2 = MultiMuon(raw_model.transformer.h.parameters(), lr=0.1*args.learning_rate, momentum=args.muon_momentum,
+                       rank=ddp_rank, world_size=ddp_world_size,
+                       slow_momentum=args.muon_slow_momentum, slow_alpha=args.muon_slow_alpha,
+                       slow_alpha_warmup_steps=args.num_iterations,
+                       slow_momentum_warmup_steps=args.num_iterations)
 optimizers = [optimizer1, optimizer2]
 # learning rate decay scheduler (linear warmup and warmdown)
 def get_lr(it):
