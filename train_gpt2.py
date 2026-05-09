@@ -5,6 +5,7 @@ with open(sys.argv[0]) as f:
 import uuid
 import glob
 import time
+import math
 from dataclasses import dataclass
 
 import numpy as np
@@ -49,6 +50,38 @@ def zeropower_via_newtonschulz5(G, steps=10, eps=1e-7):
 
 zeropower_backends = dict(svd=zeropower_via_svd, newtonschulz5=zeropower_via_newtonschulz5)
 
+def check_momentum_beta(name, beta):
+    if not 0.0 < beta < 1.0:
+        raise ValueError(f"{name} must be in (0, 1), got {beta}")
+
+def linear_warmup(final_value, step, warmup_steps):
+    if warmup_steps <= 0:
+        return final_value
+    return final_value * min(step / warmup_steps, 1.0)
+
+def momentum_half_life(beta):
+    check_momentum_beta("momentum beta", beta)
+    return math.log(0.5) / math.log(beta) - 1
+
+def beta_from_momentum_half_life(half_life):
+    return 0.5 ** (1 / (half_life + 1))
+
+def scheduled_slow_momentum(start_beta, end_beta, step, warmup_steps):
+    check_momentum_beta("start_beta", start_beta)
+    check_momentum_beta("end_beta", end_beta)
+    if warmup_steps <= 0:
+        return end_beta
+    progress = min(step / warmup_steps, 1.0)
+    start_half_life = momentum_half_life(start_beta)
+    end_half_life = momentum_half_life(end_beta)
+    half_life = (1 - progress) * start_half_life + progress * end_half_life
+    return beta_from_momentum_half_life(half_life)
+
+def require_global_num_iterations():
+    if 'args' not in globals() or not hasattr(globals()['args'], 'num_iterations'):
+        raise RuntimeError("Muon requires global args.num_iterations for slow momentum warmups")
+    return globals()['args'].num_iterations
+
 class Muon(torch.optim.Optimizer):
     """
     Muon - MomentUm Orthogonalized by Newton-schulz
@@ -81,15 +114,25 @@ class Muon(torch.optim.Optimizer):
         super().__init__(params, defaults)
         self.rank = rank
         self.world_size = world_size
+        check_momentum_beta("momentum", momentum)
         self.slow_momentum = 0.9999
         self.slow_alpha = 1.6
+        self.slow_alpha_warmup_steps = require_global_num_iterations()
+        self.slow_momentum_warmup_steps = require_global_num_iterations()
+        check_momentum_beta("slow_momentum", self.slow_momentum)
 
     def step(self):
 
         for group in self.param_groups:
 
+            group['step'] = group.get('step', 0) + 1
+            step = group['step']
             lr = group['lr']
             momentum = group['momentum']
+            alpha_t = linear_warmup(self.slow_alpha, step, self.slow_alpha_warmup_steps)
+            slow_momentum_t = scheduled_slow_momentum(
+                momentum, self.slow_momentum, step, self.slow_momentum_warmup_steps
+            )
             zeropower_backend = zeropower_backends[group['backend']]
 
             # generate weight updates in distributed fashion
@@ -110,8 +153,8 @@ class Muon(torch.optim.Optimizer):
                     fast_buf = state['fast_momentum_buffer']
                     slow_buf = state['slow_momentum_buffer']
                     fast_buf.mul_(momentum).add_(g)
-                    slow_buf.mul_(self.slow_momentum).add_(g)
-                    buf = fast_buf.add(slow_buf, alpha=self.slow_alpha)
+                    slow_buf.mul_(slow_momentum_t).add_(g)
+                    buf = fast_buf.add(slow_buf, alpha=alpha_t)
                     if group['nesterov']:
                         g = g.add(buf, alpha=momentum)
                     else:
