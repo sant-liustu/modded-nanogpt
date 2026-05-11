@@ -484,6 +484,7 @@ class Hyperparameters:
     # evaluation and logging hyperparams
     val_loss_every : int = 125 # every how many steps to evaluate val loss? 0 for only at the end
     val_tokens : int = 10485760 # how many tokens of validation data? it's important to keep this fixed for consistent comparisons
+    ema_halflife_steps : str = '32,128' # comma-separated EMA half-lives, in optimizer steps
     save_every : int = 0 # every how many steps to save the checkpoint? 0 for only at the end
 args = Hyperparameters()
 
@@ -527,6 +528,8 @@ model = torch.compile(model)
 model = DDP(model, device_ids=[ddp_local_rank])
 raw_model = model.module # always contains the "raw" unwrapped model
 ctx = torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16)
+ema_half_lives = [float(x) for x in args.ema_halflife_steps.split(',') if x.strip()]
+ema_set = EMASet(raw_model, ema_half_lives)
 
 # init the optimizer(s)
 optimizer1 = torch.optim.AdamW(raw_model.lm_head.parameters(), lr=args.learning_rate, betas=(0.9, 0.95),
@@ -552,6 +555,19 @@ def get_lr(it):
         return decay_ratio
 schedulers = [torch.optim.lr_scheduler.LambdaLR(opt, get_lr) for opt in optimizers]
 
+def evaluate_val_loss():
+    model.eval()
+    val_loader.reset()
+    val_loss = torch.zeros((), device=device)
+    for _ in range(val_steps):
+        x_val, y_val = val_loader.next_batch()
+        with ctx: # of course, we'd like to use no_grad() here too, but that creates a torch.compile error for some reason
+            _, loss = model(x_val, y_val, return_logits=False)
+            val_loss += loss.detach()
+            del loss
+    dist.all_reduce(val_loss, op=dist.ReduceOp.AVG)
+    return val_loss / val_steps
+
 # begin logging
 if master_process:
     run_id = str(uuid.uuid4())
@@ -571,6 +587,8 @@ if master_process:
         result = subprocess.run(['nvidia-smi'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         f.write(f'{result.stdout}\n')
         f.write('='*100 + '\n')
+        f.write(f'EMA: {ema_set.description()}\n')
+    print(f"EMA tracking: {ema_set.description()}")
 
 training_time_ms = 0
 # start the clock
@@ -593,23 +611,18 @@ for step in range(args.num_iterations + 1):
         # stop the clock
         torch.cuda.synchronize()
         training_time_ms += 1000 * (time.time() - t0)
-        # run validation batches
-        model.eval()
-        val_loader.reset()
-        val_loss = 0.0
-        for _ in range(val_steps):
-            x_val, y_val = val_loader.next_batch()
-            with ctx: # of course, we'd like to use no_grad() here too, but that creates a torch.compile error for some reason
-                _, loss = model(x_val, y_val, return_logits=False)
-                val_loss += loss.detach()
-                del loss
-        dist.all_reduce(val_loss, op=dist.ReduceOp.AVG)
-        val_loss /= val_steps
+        # run validation batches on raw weights and each EMA weight set
+        val_losses = {"raw": evaluate_val_loss()}
+        for ema_name in ema_set.names:
+            ema_set.apply_to(raw_model, ema_name)
+            val_losses[ema_name] = evaluate_val_loss()
+            ema_set.restore(raw_model)
         # log val loss to console and to logfile
         if master_process:
-            print(f'step:{step}/{args.num_iterations} val_loss:{val_loss:.4f} train_time:{training_time_ms:.0f}ms step_avg:{training_time_ms/(timed_steps-1):.2f}ms')
+            val_loss_text = ' '.join(f'val_loss/{name}:{loss:.4f}' for name, loss in val_losses.items())
+            print(f'step:{step}/{args.num_iterations} {val_loss_text} train_time:{training_time_ms:.0f}ms step_avg:{training_time_ms/(timed_steps-1):.2f}ms')
             with open(logfile, "a") as f:
-                f.write(f'step:{step}/{args.num_iterations} val_loss:{val_loss:.4f} train_time:{training_time_ms:.0f}ms step_avg:{training_time_ms/(timed_steps-1):.2f}ms\n')
+                f.write(f'step:{step}/{args.num_iterations} {val_loss_text} train_time:{training_time_ms:.0f}ms step_avg:{training_time_ms/(timed_steps-1):.2f}ms\n')
         # start the clock again
         torch.cuda.synchronize()
         t0 = time.time()
@@ -653,6 +666,7 @@ for step in range(args.num_iterations + 1):
     for opt, sched in zip(optimizers, schedulers):
         opt.step()
         sched.step()
+    ema_set.update(raw_model)
     # null the gradients
     model.zero_grad(set_to_none=True)
     # --------------- TRAINING SECTION END -------------------
