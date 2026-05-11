@@ -363,6 +363,105 @@ class DistributedDataLoader:
         return x.cuda(), y.cuda()
 
 # -----------------------------------------------------------------------------
+# EMA weights for eval-time model swapping
+
+class EMASet:
+    """
+    Track multiple exponential moving averages of trainable model parameters.
+
+    This class is intentionally separate from the optimizer: call update() after a
+    full optimizer step, then use apply_to()/restore() to temporarily evaluate an
+    EMA weight set without changing the raw training trajectory.
+    """
+
+    def __init__(self, model, half_lives, device=None):
+        self.params = self._trainable_params(model)
+        if not self.params:
+            raise ValueError("EMASet requires at least one trainable parameter")
+
+        self.device = device
+        self.half_lives = [float(h) for h in half_lives]
+        if any(h <= 0 for h in self.half_lives):
+            raise ValueError("EMA half-lives must be positive")
+
+        self.names = [self._name_for_half_life(h) for h in self.half_lives]
+        if len(set(self.names)) != len(self.names):
+            raise ValueError("EMA half-lives must produce unique names")
+
+        self.decays = {
+            name: 0.5 ** (1.0 / half_life)
+            for name, half_life in zip(self.names, self.half_lives)
+        }
+        self.shadows = {
+            name: [p.detach().clone().to(device=device) for p in self.params]
+            for name in self.names
+        }
+        self._backup = None
+
+    @staticmethod
+    def _trainable_params(model):
+        return [p for p in model.parameters() if p.requires_grad]
+
+    @staticmethod
+    def _name_for_half_life(half_life):
+        if float(half_life).is_integer():
+            return f"ema_h{int(half_life)}"
+        return f"ema_h{half_life:g}"
+
+    @torch.no_grad()
+    def update(self, model=None):
+        if self._backup is not None:
+            raise RuntimeError("Cannot update EMA while EMA weights are applied")
+        params = self.params if model is None else self._trainable_params(model)
+        if len(params) != len(self.params):
+            raise ValueError("Model parameter count changed since EMASet initialization")
+
+        for name in self.names:
+            decay = self.decays[name]
+            for shadow, param in zip(self.shadows[name], params):
+                value = param.detach()
+                if value.device != shadow.device or value.dtype != shadow.dtype:
+                    value = value.to(device=shadow.device, dtype=shadow.dtype)
+                shadow.lerp_(value, 1.0 - decay)
+
+    @torch.no_grad()
+    def apply_to(self, model, name):
+        if self._backup is not None:
+            raise RuntimeError("EMA weights are already applied; call restore() first")
+        if name not in self.shadows:
+            raise KeyError(f"Unknown EMA name: {name}")
+
+        params = self._trainable_params(model)
+        if len(params) != len(self.params):
+            raise ValueError("Model parameter count changed since EMASet initialization")
+
+        self._backup = [p.detach().clone() for p in params]
+        for param, shadow in zip(params, self.shadows[name]):
+            value = shadow
+            if value.device != param.device or value.dtype != param.dtype:
+                value = value.to(device=param.device, dtype=param.dtype)
+            param.copy_(value)
+
+    @torch.no_grad()
+    def restore(self, model):
+        if self._backup is None:
+            raise RuntimeError("No EMA weights are currently applied")
+
+        params = self._trainable_params(model)
+        if len(params) != len(self._backup):
+            raise ValueError("Model parameter count changed since apply_to()")
+
+        for param, backup in zip(params, self._backup):
+            param.copy_(backup)
+        self._backup = None
+
+    def description(self):
+        return {
+            name: dict(half_life=half_life, decay=self.decays[name])
+            for name, half_life in zip(self.names, self.half_lives)
+        }
+
+# -----------------------------------------------------------------------------
 # int main
 
 @dataclass
