@@ -75,18 +75,19 @@ class MultiMuon(torch.optim.Optimizer):
         slow_alpha: The final raw mixing weight for slow momentum.
         slow_alpha_warmup_steps: The linear warmup length for slow_alpha.
         slow_momentum_warmup_steps: The half-life warmup length for slow_momentum.
+        weight_decay: Decoupled weight decay applied directly to the weights.
         nesterov: Whether to use Nesterov-style momentum in the internal SGD. (recommended)
         backend: The chosen backend for the orthogonalization step. (recommended: 'newtonschulz5')
         backend_steps: The number of iteration steps to use in the backend, if it is iterative.
     """
     def __init__(self, params, lr, momentum, slow_momentum, slow_alpha,
-                 slow_alpha_warmup_steps, slow_momentum_warmup_steps,
-                 nesterov=True, backend='newtonschulz5', backend_steps=5,
-                 rank=0, world_size=1):
+                  slow_alpha_warmup_steps, slow_momentum_warmup_steps,
+                  weight_decay=0.0, nesterov=True, backend='newtonschulz5', backend_steps=5,
+                  rank=0, world_size=1):
         defaults = dict(lr=lr, momentum=momentum, slow_momentum=slow_momentum, slow_alpha=slow_alpha,
                         slow_alpha_warmup_steps=slow_alpha_warmup_steps,
                         slow_momentum_warmup_steps=slow_momentum_warmup_steps,
-                        nesterov=nesterov, backend=backend, backend_steps=backend_steps)
+                        weight_decay=weight_decay, nesterov=nesterov, backend=backend, backend_steps=backend_steps)
         super().__init__(params, defaults)
         self.rank = rank
         self.world_size = world_size
@@ -94,6 +95,7 @@ class MultiMuon(torch.optim.Optimizer):
         assert 0 < slow_momentum < 1
         assert slow_alpha_warmup_steps > 0
         assert slow_momentum_warmup_steps > 0
+        assert weight_decay >= 0
 
     def step(self):
 
@@ -102,6 +104,7 @@ class MultiMuon(torch.optim.Optimizer):
             group['step'] = group.get('step', 0) + 1
             step = group['step']
             lr = group['lr']
+            weight_decay = group['weight_decay']
             momentum = group['momentum']
             slow_momentum = group['slow_momentum']
             slow_alpha = group['slow_alpha']
@@ -150,6 +153,8 @@ class MultiMuon(torch.optim.Optimizer):
             curr_idx = 0
             for p in group['params']:
                 g = updates_flat[curr_idx:curr_idx+p.numel()].view_as(p.data).type_as(p.data)
+                if weight_decay != 0 and p.grad is not None:
+                    p.data.mul_(1 - lr * weight_decay)
                 p.data.add_(g, alpha=-lr)
                 curr_idx += p.numel()
 
@@ -477,7 +482,8 @@ class Hyperparameters:
     learning_rate : float = 0.0036
     warmup_iters : int = 0
     warmdown_iters : int = 1450 # number of iterations of linear warmup/warmdown for triangular or trapezoidal schedule
-    weight_decay : float = 0
+    adamw_weight_decay : float = 0
+    muon_weight_decay : float = 0
     muon_momentum : float = 0.95
     muon_slow_momentum : float = 0.9999
     muon_slow_alpha : float = 1.6
@@ -533,12 +539,13 @@ ema_set = EMASet(raw_model, ema_half_lives)
 
 # init the optimizer(s)
 optimizer1 = torch.optim.AdamW(raw_model.lm_head.parameters(), lr=args.learning_rate, betas=(0.9, 0.95),
-                               weight_decay=args.weight_decay, fused=True)
+                               weight_decay=args.adamw_weight_decay, fused=True)
 optimizer2 = MultiMuon(raw_model.transformer.h.parameters(), lr=0.1*args.learning_rate, momentum=args.muon_momentum,
                        rank=ddp_rank, world_size=ddp_world_size,
                        slow_momentum=args.muon_slow_momentum, slow_alpha=args.muon_slow_alpha,
                        slow_alpha_warmup_steps=args.num_iterations,
-                       slow_momentum_warmup_steps=args.num_iterations)
+                       slow_momentum_warmup_steps=args.num_iterations,
+                       weight_decay=args.muon_weight_decay)
 optimizers = [optimizer1, optimizer2]
 # learning rate decay scheduler (linear warmup and warmdown)
 def get_lr(it):
