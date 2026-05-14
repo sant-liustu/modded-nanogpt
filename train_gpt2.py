@@ -547,19 +547,22 @@ optimizer2 = MultiMuon(raw_model.transformer.h.parameters(), lr=0.1*args.learnin
                        slow_momentum_warmup_steps=args.num_iterations,
                        weight_decay=args.muon_weight_decay)
 optimizers = [optimizer1, optimizer2]
-# learning rate decay scheduler (linear warmup and warmdown)
+# # learning rate decay scheduler (linear warmup and warmdown)
+# def get_lr(it):
+#     assert it <= args.num_iterations
+#     # 1) linear warmup for warmup_iters steps
+#     if it < args.warmup_iters:
+#         return (it+1) / args.warmup_iters
+#     # 2) constant lr for a while
+#     elif it < args.num_iterations - args.warmdown_iters:
+#         return 1.0
+#     # 3) linear warmdown
+#     else:
+#         decay_ratio = (args.num_iterations - it) / args.warmdown_iters
+#         return decay_ratio
+# constant learning rate scheduler
 def get_lr(it):
-    assert it <= args.num_iterations
-    # 1) linear warmup for warmup_iters steps
-    if it < args.warmup_iters:
-        return (it+1) / args.warmup_iters
-    # 2) constant lr for a while
-    elif it < args.num_iterations - args.warmdown_iters:
-        return 1.0
-    # 3) linear warmdown
-    else:
-        decay_ratio = (args.num_iterations - it) / args.warmdown_iters
-        return decay_ratio
+    return 1.0
 schedulers = [torch.optim.lr_scheduler.LambdaLR(opt, get_lr) for opt in optimizers]
 
 def evaluate_val_loss():
