@@ -376,6 +376,9 @@ class Hyperparameters:
     val_loss_every : int = 125 # every how many steps to evaluate val loss? 0 for only at the end
     val_tokens : int = 10485760 # how many tokens of validation data? it's important to keep this fixed for consistent comparisons
     save_every : int = 0 # every how many steps to save the checkpoint? 0 for only at the end
+    diagnostic_every : int = 20 # every how many continuation steps to log per-layer weight/angle diagnostics? 0 to disable
+    logit_diagnostic_batches : int = 1 # how many validation batches to use for logit rms/entropy diagnostics? 0 to disable
+    logit_diagnostic_tokens : int = 512 # maximum tokens per rank used for each logit diagnostic batch
     # run/checkpoint hyperparams
     run_name : str = ''
     out_dir : str = 'logs'
@@ -438,6 +441,7 @@ def ddp_broadcast_object(obj):
 
 def init_run(args, checkpoint, master_process):
     parent_metadata = checkpoint.get("run_metadata", {}) if checkpoint is not None else {}
+    checkpoint_step = int(checkpoint.get("global_step", checkpoint.get("step", 0))) if checkpoint is not None else 0
     parent_run_id = args.parent_run_id
     if not parent_run_id and args.resume_mode == "fork":
         parent_run_id = parent_metadata.get("run_id", "")
@@ -446,6 +450,7 @@ def init_run(args, checkpoint, master_process):
         run_id = parent_metadata.get("run_id") or args.run_name or os.path.basename(os.path.dirname(args.resume_from))
         logdir = parent_metadata.get("logdir") or os.path.dirname(os.path.abspath(args.resume_from))
         logfile = parent_metadata.get("logfile") or os.path.join(logdir, "train.log")
+        start_step = int(parent_metadata.get("start_step", 0))
         os.makedirs(logdir, exist_ok=True)
         log_mode = "a"
     else:
@@ -455,6 +460,7 @@ def init_run(args, checkpoint, master_process):
             raise FileExistsError(f"run directory already exists: {logdir}")
         os.makedirs(logdir, exist_ok=False)
         logfile = os.path.join(logdir, "train.log")
+        start_step = checkpoint_step if args.resume_mode == "fork" else 0
         log_mode = "w"
 
     run_metadata = dict(
@@ -463,8 +469,11 @@ def init_run(args, checkpoint, master_process):
         parent_run_id=parent_run_id,
         resume_mode=args.resume_mode,
         resume_from=os.path.abspath(args.resume_from) if args.resume_from else "",
+        start_step=start_step,
         logdir=os.path.abspath(logdir),
         logfile=os.path.abspath(logfile),
+        metrics_file=os.path.abspath(os.path.join(logdir, "metrics.jsonl")),
+        diagnostics_file=os.path.abspath(os.path.join(logdir, "diagnostics.jsonl")),
         created_at=time.strftime("%Y-%m-%d %H:%M:%S"),
         hostname=socket.gethostname(),
     )
@@ -513,6 +522,9 @@ run_metadata = ddp_broadcast_object(run_metadata)
 run_id = run_metadata["run_id"]
 logdir = run_metadata["logdir"]
 logfile = run_metadata["logfile"]
+metrics_file = os.path.join(logdir, "metrics.jsonl")
+diagnostics_file = os.path.join(logdir, "diagnostics.jsonl")
+run_start_step = int(run_metadata.get("start_step", 0))
 
 # convenience variables
 B, T = args.device_batch_size, args.sequence_length
@@ -542,6 +554,123 @@ model = torch.compile(model)
 model = DDP(model, device_ids=[ddp_local_rank])
 raw_model = model.module # always contains the "raw" unwrapped model
 ctx = torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16)
+
+def jsonl_write(path, records):
+    if not master_process:
+        return
+    if isinstance(records, dict):
+        records = [records]
+    with open(path, "a") as f:
+        for record in records:
+            f.write(json.dumps(record, sort_keys=True) + "\n")
+
+
+def continuation_step(global_step):
+    return global_step - run_start_step
+
+
+def optimizer_lrs():
+    return dict(
+        lr_embed=optimizers[0].param_groups[0]["lr"],
+        lr_hidden=optimizers[1].param_groups[0]["lr"],
+    )
+
+
+def clean_parameter_name(name):
+    while name.startswith("_orig_mod."):
+        name = name[len("_orig_mod."):]
+    return name
+
+
+diagnostic_target_components = {
+    "attn.c_q",
+    "attn.c_k",
+    "attn.c_v",
+    "attn.c_proj",
+    "mlp.c_fc",
+    "mlp.c_proj",
+}
+
+
+def get_diagnostic_parameter_info(name, parameter):
+    name = clean_parameter_name(name)
+    parts = name.split(".")
+    if len(parts) != 6:
+        return None
+    if parts[0] != "transformer" or parts[1] != "h" or parts[-1] != "weight":
+        return None
+    if parameter.ndim != 2:
+        return None
+    component = f"{parts[3]}.{parts[4]}"
+    if component not in diagnostic_target_components:
+        return None
+    return dict(name=name, layer=int(parts[2]), component=component)
+
+
+def iter_diagnostic_parameters():
+    for name, parameter in raw_model.named_parameters():
+        info = get_diagnostic_parameter_info(name, parameter)
+        if info is not None:
+            yield info, parameter
+
+
+previous_diagnostic_parameters = {}
+
+
+@torch.no_grad()
+def maybe_log_diagnostics(global_step, force=False):
+    if args.diagnostic_every <= 0:
+        return
+    cstep = continuation_step(global_step)
+    if not force and cstep % args.diagnostic_every != 0 and global_step != args.num_iterations:
+        return
+    if not master_process:
+        return
+
+    records = []
+    for info, parameter in iter_diagnostic_parameters():
+        current = parameter.detach().float()
+        weight_norm = current.norm()
+        previous = previous_diagnostic_parameters.get(info["name"])
+        cosine_to_previous = None
+        one_minus_cosine = None
+        angular_step = None
+        directional_chord = None
+        relative_weight_delta = None
+        weight_norm_ratio_to_previous = None
+        if previous is not None:
+            previous = previous.to(current.device, non_blocking=True).float()
+            previous_norm = previous.norm()
+            if previous_norm.item() > 0:
+                weight_norm_ratio_to_previous = float((weight_norm / previous_norm).item())
+                relative_weight_delta = float(((current - previous).norm() / previous_norm).item())
+            denominator = weight_norm * previous_norm
+            if denominator.item() > 0:
+                cosine = torch.dot(current.flatten(), previous.flatten()) / denominator
+                cosine = cosine.clamp(-1.0, 1.0)
+                cosine_to_previous = float(cosine.item())
+                one_minus_cosine = max(0.0, 1.0 - cosine_to_previous)
+                angular_step = float(torch.acos(cosine).item())
+                directional_chord = (2.0 * one_minus_cosine) ** 0.5
+
+        previous_diagnostic_parameters[info["name"]] = parameter.detach().cpu().clone()
+        records.append(dict(
+            type="diagnostic",
+            step=global_step,
+            continuation_step=cstep,
+            parameter=info["name"],
+            layer=info["layer"],
+            component=info["component"],
+            weight_norm=float(weight_norm.item()),
+            weight_norm_ratio_to_previous=weight_norm_ratio_to_previous,
+            relative_weight_delta=relative_weight_delta,
+            cosine_to_previous=cosine_to_previous,
+            one_minus_cosine=one_minus_cosine,
+            angular_step=angular_step,
+            directional_chord=directional_chord,
+        ))
+
+    jsonl_write(diagnostics_file, records)
 
 # init the optimizer(s)
 optimizer1 = torch.optim.AdamW(raw_model.lm_head.parameters(), lr=args.embed_learning_rate, betas=(0.9, 0.95),
@@ -630,14 +759,42 @@ def maybe_eval_and_checkpoint(global_step, training_time_ms, t0):
         model.eval()
         val_loader.reset()
         val_loss = torch.zeros((), device=device)
-        for _ in range(val_steps):
+        logit_stats = torch.zeros(4, device=device)
+        for val_step in range(val_steps):
             x_val, y_val = val_loader.next_batch()
+            collect_logit_stats = (
+                args.logit_diagnostic_batches > 0
+                and args.logit_diagnostic_tokens > 0
+                and val_step < args.logit_diagnostic_batches
+            )
             with ctx:
                 _, loss = model(x_val, y_val, return_logits=False)
                 val_loss += loss.detach()
                 del loss
+            if collect_logit_stats:
+                probe_T = min(x_val.size(1), args.logit_diagnostic_tokens)
+                probe_B = min(x_val.size(0), max(1, args.logit_diagnostic_tokens // probe_T))
+                x_probe = x_val[:probe_B, :probe_T]
+                y_probe = y_val[:probe_B, :probe_T]
+                with ctx:
+                    logits, probe_loss = model(x_probe, y_probe, return_logits=True)
+                    del probe_loss
+                logits = logits.detach().float()
+                logit_stats[0] += logits.square().sum()
+                logit_stats[1] += logits.numel()
+                probs = F.softmax(logits, dim=-1)
+                entropy = torch.logsumexp(logits, dim=-1) - (probs * logits).sum(dim=-1)
+                logit_stats[2] += entropy.sum()
+                logit_stats[3] += entropy.numel()
+                del logits, probs, entropy, x_probe, y_probe
         dist.all_reduce(val_loss, op=dist.ReduceOp.AVG)
+        dist.all_reduce(logit_stats, op=dist.ReduceOp.SUM)
         val_loss /= val_steps
+        logit_rms = None
+        logit_entropy = None
+        if logit_stats[1].item() > 0:
+            logit_rms = float((logit_stats[0] / logit_stats[1]).sqrt().item())
+            logit_entropy = float((logit_stats[2] / logit_stats[3]).item())
         if master_process:
             denom = timed_steps - 1
             step_avg = training_time_ms / denom if denom > 0 else float("nan")
@@ -645,6 +802,18 @@ def maybe_eval_and_checkpoint(global_step, training_time_ms, t0):
             print(line)
             with open(logfile, "a") as f:
                 f.write(line + "\n")
+            record = dict(
+                type="val",
+                step=global_step,
+                continuation_step=continuation_step(global_step),
+                val_loss=float(val_loss.item()),
+                logit_rms=logit_rms,
+                logit_entropy=logit_entropy,
+                logit_diagnostic_batches=args.logit_diagnostic_batches,
+                logit_diagnostic_tokens=args.logit_diagnostic_tokens,
+            )
+            record.update(optimizer_lrs())
+            jsonl_write(metrics_file, record)
         torch.cuda.synchronize()
         t0 = time.time()
 
@@ -662,8 +831,9 @@ training_time_ms = 0
 torch.cuda.synchronize()
 t0 = time.time()
 
-if checkpoint is None:
+if checkpoint is None or args.resume_mode == "fork":
     training_time_ms, t0 = maybe_eval_and_checkpoint(global_step, training_time_ms, t0)
+    maybe_log_diagnostics(global_step, force=True)
 
 while global_step < args.num_iterations:
     if global_step == 10:
@@ -698,8 +868,17 @@ while global_step < args.num_iterations:
         print(line)
         with open(logfile, "a") as f:
             f.write(line + "\n")
+        record = dict(
+            type="train",
+            step=global_step,
+            continuation_step=continuation_step(global_step),
+            train_loss=float(train_loss.item()),
+        )
+        record.update(optimizer_lrs())
+        jsonl_write(metrics_file, record)
 
     training_time_ms, t0 = maybe_eval_and_checkpoint(global_step, training_time_ms, t0)
+    maybe_log_diagnostics(global_step)
 
 if master_process:
     print(f"peak memory consumption: {torch.cuda.max_memory_allocated() // 1024 // 1024} MiB")
