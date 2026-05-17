@@ -5,7 +5,6 @@ with open(sys.argv[0]) as f:
 import uuid
 import glob
 import time
-import math
 from dataclasses import dataclass
 
 import numpy as np
@@ -31,7 +30,7 @@ def zeropower_via_newtonschulz5(G, steps=10, eps=1e-7):
     of minimizing steps, it turns out to be empirically effective to keep increasing the slope at
     zero even beyond the point where the iteration no longer converges all the way to one everywhere
     on the interval. This iteration therefore does not produce UV^T but rather something like US'V^T
-    where S' is diagonal with S_{ii}' \sim Uniform(0.5, 1.5), which turns out not to hurt model
+    where S' is diagonal with S_{ii}' ~ Uniform(0.5, 1.5), which turns out not to hurt model
     performance at all relative to UV^T, where USV^T = G is the SVD.
     """
     assert len(G.shape) == 2
@@ -50,14 +49,14 @@ def zeropower_via_newtonschulz5(G, steps=10, eps=1e-7):
 
 zeropower_backends = dict(svd=zeropower_via_svd, newtonschulz5=zeropower_via_newtonschulz5)
 
-class MultiMuon(torch.optim.Optimizer):
+class Muon(torch.optim.Optimizer):
     """
-    MultiMuon - Multi-Momentum Orthogonalized by Newton-schulz
+    Muon - MomentUm Orthogonalized by Newton-schulz
 
-    MultiMuon internally runs fast/slow SGD-style momentum, and then performs an orthogonalization
-    post-processing step, in which each 2D parameter's update is replaced with the nearest
-    orthogonal matrix. To efficiently orthogonalize each update, we use a Newton-Schulz iteration,
-    which has the advantage that it can be stably run in bfloat16 on the GPU.
+    Muon internally runs standard SGD-momentum, and then performs an orthogonalization post-
+    processing step, in which each 2D parameter's update is replaced with the nearest orthogonal
+    matrix. To efficiently orthogonalize each update, we use a Newton-Schulz iteration, which has
+    the advantage that it can be stably run in bfloat16 on the GPU.
 
     Some warnings:
     - This optimizer assumes that all parameters passed in are 2D.
@@ -71,50 +70,24 @@ class MultiMuon(torch.optim.Optimizer):
     Arguments:
         lr: The learning rate used by the internal SGD.
         momentum: The momentum used by the internal SGD.
-        slow_momentum: The final slow momentum beta.
-        slow_alpha: The final raw mixing weight for slow momentum.
-        slow_alpha_warmup_steps: The linear warmup length for slow_alpha.
-        slow_momentum_warmup_steps: The half-life warmup length for slow_momentum.
-        weight_decay: Decoupled weight decay applied directly to the weights.
         nesterov: Whether to use Nesterov-style momentum in the internal SGD. (recommended)
         backend: The chosen backend for the orthogonalization step. (recommended: 'newtonschulz5')
         backend_steps: The number of iteration steps to use in the backend, if it is iterative.
     """
-    def __init__(self, params, lr, momentum, slow_momentum, slow_alpha,
-                  slow_alpha_warmup_steps, slow_momentum_warmup_steps,
-                  weight_decay=0.0, nesterov=True, backend='newtonschulz5', backend_steps=5,
-                  rank=0, world_size=1):
-        defaults = dict(lr=lr, momentum=momentum, slow_momentum=slow_momentum, slow_alpha=slow_alpha,
-                        slow_alpha_warmup_steps=slow_alpha_warmup_steps,
-                        slow_momentum_warmup_steps=slow_momentum_warmup_steps,
-                        weight_decay=weight_decay, nesterov=nesterov, backend=backend, backend_steps=backend_steps)
+    def __init__(self, params, lr=3e-4, momentum=0.95, nesterov=True,
+                 backend='newtonschulz5', backend_steps=5,
+                 rank=0, world_size=1):
+        defaults = dict(lr=lr, momentum=momentum, nesterov=nesterov, backend=backend, backend_steps=backend_steps)
         super().__init__(params, defaults)
         self.rank = rank
         self.world_size = world_size
-        assert 0 < momentum < 1
-        assert 0 < slow_momentum < 1
-        assert slow_alpha_warmup_steps > 0
-        assert slow_momentum_warmup_steps > 0
-        assert weight_decay >= 0
 
     def step(self):
 
         for group in self.param_groups:
 
-            group['step'] = group.get('step', 0) + 1
-            step = group['step']
             lr = group['lr']
-            weight_decay = group['weight_decay']
             momentum = group['momentum']
-            slow_momentum = group['slow_momentum']
-            slow_alpha = group['slow_alpha']
-            slow_alpha_warmup_steps = group['slow_alpha_warmup_steps']
-            slow_momentum_warmup_steps = group['slow_momentum_warmup_steps']
-            alpha_t = slow_alpha * min(step / slow_alpha_warmup_steps, 1.0)
-            beta3_warmup = min(step / slow_momentum_warmup_steps, 1.0)
-            h1 = math.log(0.5) / math.log(momentum) - 1
-            h3 = math.log(0.5) / math.log(slow_momentum) - 1
-            slow_momentum_t = 0.5 ** (1 / ((1 - beta3_warmup) * h1 + beta3_warmup * h3 + 1))
             zeropower_backend = zeropower_backends[group['backend']]
 
             # generate weight updates in distributed fashion
@@ -128,21 +101,14 @@ class MultiMuon(torch.optim.Optimizer):
                     if g is None:
                         continue
                     state = self.state[p]
-                    if 'fast_momentum_buffer' not in state:
-                        state['fast_momentum_buffer'] = torch.zeros_like(g)
-                    if 'slow_momentum_buffer' not in state:
-                        state['slow_momentum_buffer'] = torch.zeros_like(g)
-                    fast_buf = state['fast_momentum_buffer']
-                    slow_buf = state['slow_momentum_buffer']
-                    fast_buf.mul_(momentum).add_(g)
-                    slow_buf.mul_(slow_momentum_t).add_(g)
-                    buf = fast_buf.add(slow_buf, alpha=alpha_t)
+                    if 'momentum_buffer' not in state:
+                        state['momentum_buffer'] = torch.zeros_like(g)
+                    buf = state['momentum_buffer']
+                    buf.mul_(momentum).add_(g)
                     if group['nesterov']:
                         g = g.add(buf, alpha=momentum)
-                    else:
-                        g = buf
                     g = zeropower_backend(g, steps=group['backend_steps'])
-                    g *= max(g.size(0), g.size(1))**0.5 # scale to have update.square().mean() == 1
+                    g *= max(1, g.size(0)/g.size(1))**0.5
                     updates_flat[curr_idx:curr_idx+p.numel()] = g.flatten()
                 curr_idx += p.numel()
 
@@ -153,8 +119,6 @@ class MultiMuon(torch.optim.Optimizer):
             curr_idx = 0
             for p in group['params']:
                 g = updates_flat[curr_idx:curr_idx+p.numel()].view_as(p.data).type_as(p.data)
-                if weight_decay != 0 and p.grad is not None:
-                    p.data.mul_(1 - lr * weight_decay)
                 p.data.add_(g, alpha=-lr)
                 curr_idx += p.numel()
 
@@ -368,105 +332,6 @@ class DistributedDataLoader:
         return x.cuda(), y.cuda()
 
 # -----------------------------------------------------------------------------
-# EMA weights for eval-time model swapping
-
-class EMASet:
-    """
-    Track multiple exponential moving averages of trainable model parameters.
-
-    This class is intentionally separate from the optimizer: call update() after a
-    full optimizer step, then use apply_to()/restore() to temporarily evaluate an
-    EMA weight set without changing the raw training trajectory.
-    """
-
-    def __init__(self, model, half_lives, device=None):
-        self.params = self._trainable_params(model)
-        if not self.params:
-            raise ValueError("EMASet requires at least one trainable parameter")
-
-        self.device = device
-        self.half_lives = [float(h) for h in half_lives]
-        if any(h <= 0 for h in self.half_lives):
-            raise ValueError("EMA half-lives must be positive")
-
-        self.names = [self._name_for_half_life(h) for h in self.half_lives]
-        if len(set(self.names)) != len(self.names):
-            raise ValueError("EMA half-lives must produce unique names")
-
-        self.decays = {
-            name: 0.5 ** (1.0 / half_life)
-            for name, half_life in zip(self.names, self.half_lives)
-        }
-        self.shadows = {
-            name: [p.detach().clone().to(device=device) for p in self.params]
-            for name in self.names
-        }
-        self._backup = None
-
-    @staticmethod
-    def _trainable_params(model):
-        return [p for p in model.parameters() if p.requires_grad]
-
-    @staticmethod
-    def _name_for_half_life(half_life):
-        if float(half_life).is_integer():
-            return f"ema_h{int(half_life)}"
-        return f"ema_h{half_life:g}"
-
-    @torch.no_grad()
-    def update(self, model=None):
-        if self._backup is not None:
-            raise RuntimeError("Cannot update EMA while EMA weights are applied")
-        params = self.params if model is None else self._trainable_params(model)
-        if len(params) != len(self.params):
-            raise ValueError("Model parameter count changed since EMASet initialization")
-
-        for name in self.names:
-            decay = self.decays[name]
-            for shadow, param in zip(self.shadows[name], params):
-                value = param.detach()
-                if value.device != shadow.device or value.dtype != shadow.dtype:
-                    value = value.to(device=shadow.device, dtype=shadow.dtype)
-                shadow.lerp_(value, 1.0 - decay)
-
-    @torch.no_grad()
-    def apply_to(self, model, name):
-        if self._backup is not None:
-            raise RuntimeError("EMA weights are already applied; call restore() first")
-        if name not in self.shadows:
-            raise KeyError(f"Unknown EMA name: {name}")
-
-        params = self._trainable_params(model)
-        if len(params) != len(self.params):
-            raise ValueError("Model parameter count changed since EMASet initialization")
-
-        self._backup = [p.detach().clone() for p in params]
-        for param, shadow in zip(params, self.shadows[name]):
-            value = shadow
-            if value.device != param.device or value.dtype != param.dtype:
-                value = value.to(device=param.device, dtype=param.dtype)
-            param.copy_(value)
-
-    @torch.no_grad()
-    def restore(self, model):
-        if self._backup is None:
-            raise RuntimeError("No EMA weights are currently applied")
-
-        params = self._trainable_params(model)
-        if len(params) != len(self._backup):
-            raise ValueError("Model parameter count changed since apply_to()")
-
-        for param, backup in zip(params, self._backup):
-            param.copy_(backup)
-        self._backup = None
-
-    def description(self):
-        return {
-            name: dict(half_life=half_life, decay=self.decays[name])
-            for name, half_life in zip(self.names, self.half_lives)
-        }
-
-# -----------------------------------------------------------------------------
 # int main
 
 @dataclass
@@ -479,18 +344,14 @@ class Hyperparameters:
     device_batch_size : int = 64 # batch size, in sequences, per device
     sequence_length : int = 1024 # sequence length, in tokens
     num_iterations : int = 5100 # number of iterations to run
-    learning_rate : float = 0.0036
-    warmup_iters : int = 0
+    embed_learning_rate : float = 0.0036
+    muon_learning_rate : float = 0.02
+    warmup_iters : int = 250
     warmdown_iters : int = 1450 # number of iterations of linear warmup/warmdown for triangular or trapezoidal schedule
-    adamw_weight_decay : float = 0
-    muon_weight_decay : float = 0
-    muon_momentum : float = 0.95
-    muon_slow_momentum : float = 0.9999
-    muon_slow_alpha : float = 1.6
+    weight_decay : float = 0
     # evaluation and logging hyperparams
     val_loss_every : int = 125 # every how many steps to evaluate val loss? 0 for only at the end
     val_tokens : int = 10485760 # how many tokens of validation data? it's important to keep this fixed for consistent comparisons
-    ema_halflife_steps : str = '32,128' # comma-separated EMA half-lives, in optimizer steps
     save_every : int = 0 # every how many steps to save the checkpoint? 0 for only at the end
 args = Hyperparameters()
 
@@ -534,49 +395,27 @@ model = torch.compile(model)
 model = DDP(model, device_ids=[ddp_local_rank])
 raw_model = model.module # always contains the "raw" unwrapped model
 ctx = torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16)
-ema_half_lives = [float(x) for x in args.ema_halflife_steps.split(',') if x.strip()]
-ema_set = EMASet(raw_model, ema_half_lives)
 
 # init the optimizer(s)
-optimizer1 = torch.optim.AdamW(raw_model.lm_head.parameters(), lr=args.learning_rate, betas=(0.9, 0.95),
-                               weight_decay=args.adamw_weight_decay, fused=True)
-optimizer2 = MultiMuon(raw_model.transformer.h.parameters(), lr=0.1*args.learning_rate, momentum=args.muon_momentum,
-                       rank=ddp_rank, world_size=ddp_world_size,
-                       slow_momentum=args.muon_slow_momentum, slow_alpha=args.muon_slow_alpha,
-                       slow_alpha_warmup_steps=args.num_iterations,
-                       slow_momentum_warmup_steps=args.num_iterations,
-                       weight_decay=args.muon_weight_decay)
+optimizer1 = torch.optim.AdamW(raw_model.lm_head.parameters(), lr=args.embed_learning_rate, betas=(0.9, 0.95),
+                               weight_decay=args.weight_decay, fused=True)
+optimizer2 = torch.optim.AdamW(raw_model.transformer.h.parameters(), lr=0.5*args.embed_learning_rate, betas=(0.9, 0.95),
+                               weight_decay=args.weight_decay, fused=True)
 optimizers = [optimizer1, optimizer2]
-# # learning rate decay scheduler (linear warmup and warmdown)
-# def get_lr(it):
-#     assert it <= args.num_iterations
-#     # 1) linear warmup for warmup_iters steps
-#     if it < args.warmup_iters:
-#         return (it+1) / args.warmup_iters
-#     # 2) constant lr for a while
-#     elif it < args.num_iterations - args.warmdown_iters:
-#         return 1.0
-#     # 3) linear warmdown
-#     else:
-#         decay_ratio = (args.num_iterations - it) / args.warmdown_iters
-#         return decay_ratio
-# constant learning rate scheduler
+# learning rate decay scheduler (linear warmup and warmdown)
 def get_lr(it):
-    return 1.0
+    assert it <= args.num_iterations
+    # 1) linear warmup for warmup_iters steps
+    if it < args.warmup_iters:
+        return (it+1) / args.warmup_iters
+    # 2) constant lr for a while
+    elif it < args.num_iterations - args.warmdown_iters:
+        return 1.0
+    # 3) linear warmdown
+    else:
+        decay_ratio = (args.num_iterations - it) / args.warmdown_iters
+        return decay_ratio
 schedulers = [torch.optim.lr_scheduler.LambdaLR(opt, get_lr) for opt in optimizers]
-
-def evaluate_val_loss():
-    model.eval()
-    val_loader.reset()
-    val_loss = torch.zeros((), device=device)
-    for _ in range(val_steps):
-        x_val, y_val = val_loader.next_batch()
-        with ctx: # of course, we'd like to use no_grad() here too, but that creates a torch.compile error for some reason
-            _, loss = model(x_val, y_val, return_logits=False)
-            val_loss += loss.detach()
-            del loss
-    dist.all_reduce(val_loss, op=dist.ReduceOp.AVG)
-    return val_loss / val_steps
 
 # begin logging
 if master_process:
@@ -597,8 +436,6 @@ if master_process:
         result = subprocess.run(['nvidia-smi'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         f.write(f'{result.stdout}\n')
         f.write('='*100 + '\n')
-        f.write(f'EMA: {ema_set.description()}\n')
-    print(f"EMA tracking: {ema_set.description()}")
 
 training_time_ms = 0
 # start the clock
@@ -621,19 +458,23 @@ for step in range(args.num_iterations + 1):
         # stop the clock
         torch.cuda.synchronize()
         training_time_ms += 1000 * (time.time() - t0)
-        # run validation batches on raw weights and each EMA weight set
-        val_losses = {"raw": evaluate_val_loss()}
-        for ema_name in ema_set.names:
-            ema_set.apply_to(raw_model, ema_name)
-            val_losses[ema_name] = evaluate_val_loss()
-            ema_set.restore(raw_model)
+        # run validation batches
+        model.eval()
+        val_loader.reset()
+        val_loss = 0.0
+        for _ in range(val_steps):
+            x_val, y_val = val_loader.next_batch()
+            with ctx: # of course, we'd like to use no_grad() here too, but that creates a torch.compile error for some reason
+                _, loss = model(x_val, y_val, return_logits=False)
+                val_loss += loss.detach()
+                del loss
+        dist.all_reduce(val_loss, op=dist.ReduceOp.AVG)
+        val_loss /= val_steps
         # log val loss to console and to logfile
         if master_process:
-            raw_val_loss = val_losses["raw"]
-            val_loss_text = ' '.join(f'val_loss/{name}:{loss:.4f}' for name, loss in val_losses.items())
-            print(f'step:{step}/{args.num_iterations} val_loss:{raw_val_loss:.4f} {val_loss_text} train_time:{training_time_ms:.0f}ms step_avg:{training_time_ms/(timed_steps-1):.2f}ms')
+            print(f'step:{step}/{args.num_iterations} val_loss:{val_loss:.4f} train_time:{training_time_ms:.0f}ms step_avg:{training_time_ms/(timed_steps-1):.2f}ms')
             with open(logfile, "a") as f:
-                f.write(f'step:{step}/{args.num_iterations} val_loss:{raw_val_loss:.4f} {val_loss_text} train_time:{training_time_ms:.0f}ms step_avg:{training_time_ms/(timed_steps-1):.2f}ms\n')
+                f.write(f'step:{step}/{args.num_iterations} val_loss:{val_loss:.4f} train_time:{training_time_ms:.0f}ms step_avg:{training_time_ms/(timed_steps-1):.2f}ms\n')
         # start the clock again
         torch.cuda.synchronize()
         t0 = time.time()
@@ -677,7 +518,6 @@ for step in range(args.num_iterations + 1):
     for opt, sched in zip(optimizers, schedulers):
         opt.step()
         sched.step()
-    ema_set.update(raw_model)
     # null the gradients
     model.zero_grad(set_to_none=True)
     # --------------- TRAINING SECTION END -------------------
