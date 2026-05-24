@@ -3,6 +3,7 @@ import sys
 with open(sys.argv[0]) as f:
     code = f.read() # read the code of this file ASAP, for logging
 import contextlib
+import hashlib
 import json
 import uuid
 import glob
@@ -359,6 +360,8 @@ class Hyperparameters:
     compile_model : int = 0 # compile the model with torch.compile
     tensor_norm_every : int = 1 # every how many steps to log tensor norm history? 0 disables
     adamw_update_norm_every : int = 1 # every how many optimizer steps to log AdamW effective update norms? 0 disables
+    activation_probe_every : int = 10 # every how many steps to log fixed-probe activation RMS ratios? 0 disables
+    activation_probe_eps : float = 1e-12 # denominator epsilon for activation RMS ratios
 args = Hyperparameters()
 
 # set up DDP (distributed data parallel). torchrun sets this env variable
@@ -472,6 +475,169 @@ def write_tensor_metadata():
     metadata_path = os.path.join(logdir, 'tensor_metadata.json')
     with open(metadata_path, 'w') as f:
         json.dump(tensor_metadata_records(raw_model), f, indent=2)
+
+ACTIVATION_PROBE_FIELDS = (
+    'rms_h_pre',
+    'attn_residual_ratio',
+    'attn_branch_ratio',
+    'mlp_residual_ratio',
+    'mlp_branch_ratio',
+)
+
+def token_rms(x):
+    return torch.sqrt(x.detach().float().square().mean(dim=-1))
+
+def summarize_activation_values(step, layer, field, values):
+    x = values.detach().float()
+    flat = x.reshape(-1)
+    finite = torch.isfinite(flat)
+    finite_values = flat[finite]
+    if finite_values.numel() == 0:
+        stats = dict(mean=float('nan'), std=float('nan'), p05=float('nan'), p50=float('nan'), p95=float('nan'), min=float('nan'), max=float('nan'))
+    else:
+        quantiles = torch.quantile(finite_values, torch.tensor([0.05, 0.5, 0.95], device=finite_values.device))
+        stats = dict(
+            mean=finite_values.mean().item(),
+            std=finite_values.std(unbiased=False).item(),
+            p05=quantiles[0].item(),
+            p50=quantiles[1].item(),
+            p95=quantiles[2].item(),
+            min=finite_values.min().item(),
+            max=finite_values.max().item(),
+        )
+    return dict(
+        step=step,
+        layer=layer,
+        field=field,
+        shape=list(values.shape),
+        nan_count=torch.isnan(flat).sum().item(),
+        inf_count=torch.isinf(flat).sum().item(),
+        **stats,
+    )
+
+class ActivationProbeCapture:
+    def __init__(self, model, eps):
+        self.blocks = list(model.transformer.h)
+        self.eps = eps
+        self.handles = []
+        self.h_pre = [None] * len(self.blocks)
+        self.h_mid = [None] * len(self.blocks)
+        self.records = {field: [None] * len(self.blocks) for field in ACTIVATION_PROBE_FIELDS}
+
+    def __enter__(self):
+        for layer, block in enumerate(self.blocks):
+            self.handles.append(block.register_forward_pre_hook(self._block_pre_hook(layer)))
+            self.handles.append(block.attn.register_forward_hook(self._attn_hook(layer)))
+            self.handles.append(block.mlp.register_forward_hook(self._mlp_hook(layer)))
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        for handle in self.handles:
+            handle.remove()
+        self.handles.clear()
+
+    def _block_pre_hook(self, layer):
+        def hook(module, inputs):
+            h_pre = inputs[0].detach()
+            self.h_pre[layer] = h_pre
+            self.records['rms_h_pre'][layer] = token_rms(h_pre)
+        return hook
+
+    def _attn_hook(self, layer):
+        def hook(module, inputs, output):
+            h_pre = self.h_pre[layer]
+            if h_pre is None:
+                raise RuntimeError(f"missing h_l for activation probe layer {layer}")
+            attn_out = output.detach()
+            h_mid = h_pre + attn_out
+            rms_h_pre = self.records['rms_h_pre'][layer]
+            rms_h_mid = token_rms(h_mid)
+            self.h_mid[layer] = h_mid
+            self.records['attn_residual_ratio'][layer] = rms_h_mid / (rms_h_pre + self.eps)
+            self.records['attn_branch_ratio'][layer] = token_rms(attn_out) / (rms_h_pre + self.eps)
+        return hook
+
+    def _mlp_hook(self, layer):
+        def hook(module, inputs, output):
+            h_mid = self.h_mid[layer]
+            if h_mid is None:
+                raise RuntimeError(f"missing h_l+0.5 for activation probe layer {layer}")
+            mlp_out = output.detach()
+            rms_h_mid = token_rms(h_mid)
+            rms_h_post = token_rms(h_mid + mlp_out)
+            self.records['mlp_residual_ratio'][layer] = rms_h_post / (rms_h_mid + self.eps)
+            self.records['mlp_branch_ratio'][layer] = token_rms(mlp_out) / (rms_h_mid + self.eps)
+        return hook
+
+    def stacked_records(self):
+        stacked = {}
+        for field, values_by_layer in self.records.items():
+            missing = [layer for layer, value in enumerate(values_by_layer) if value is None]
+            if missing:
+                raise RuntimeError(f"missing activation probe field {field} for layers {missing}")
+            stacked[field] = torch.stack(values_by_layer, dim=0).detach().cpu()
+        return stacked
+
+def should_log_activation_probe(step):
+    if not master_process or args.activation_probe_every <= 0:
+        return False
+    return step % args.activation_probe_every == 0 or step == args.num_iterations
+
+def build_activation_probe_batch():
+    if not master_process or args.activation_probe_every <= 0:
+        return None
+    val_loader.reset()
+    x_probe, _ = val_loader.next_batch()
+    val_loader.reset()
+    return x_probe.detach().clone()
+
+def activation_probe_token_hash(x_probe):
+    token_bytes = x_probe.detach().cpu().numpy().astype(np.int64).tobytes()
+    return hashlib.sha256(token_bytes).hexdigest()
+
+def write_activation_probe_metadata(x_probe):
+    if x_probe is None:
+        return
+    metadata = dict(
+        probe_source='first validation batch after val_loader.reset()',
+        probe_input_val_bin=args.input_val_bin,
+        probe_batch_shape=list(x_probe.shape),
+        probe_token_sha256=activation_probe_token_hash(x_probe),
+        eps=args.activation_probe_eps,
+        layer_count=len(raw_model.transformer.h),
+        recorded_fields=list(ACTIVATION_PROBE_FIELDS),
+        array_layout='[layer, batch, seq]',
+        logging_cadence=args.activation_probe_every,
+        model_config=dict(
+            n_layer=raw_model.config.n_layer,
+            n_head=raw_model.config.n_head,
+            n_embd=raw_model.config.n_embd,
+            vocab_size=raw_model.config.vocab_size,
+        ),
+    )
+    metadata_path = os.path.join(logdir, 'activation_probe_metadata.json')
+    with open(metadata_path, 'w') as f:
+        json.dump(metadata, f, indent=2)
+
+def maybe_log_activation_probe(step, x_probe):
+    if x_probe is None or not should_log_activation_probe(step):
+        return
+    was_training = raw_model.training
+    raw_model.eval()
+    with torch.no_grad(), ctx, ActivationProbeCapture(raw_model, args.activation_probe_eps) as capture:
+        raw_model(x_probe, targets=None, return_logits=False)
+        arrays = capture.stacked_records()
+    if was_training:
+        raw_model.train()
+    arrays_dir = os.path.join(logdir, 'activation_probe_arrays')
+    os.makedirs(arrays_dir, exist_ok=True)
+    array_path = os.path.join(arrays_dir, f'step_{step:06d}.pt')
+    torch.save(dict(step=step, **arrays), array_path)
+    summary_path = os.path.join(logdir, 'activation_probe_summary.jsonl')
+    with open(summary_path, 'a') as f:
+        for field, values in arrays.items():
+            for layer in range(values.shape[0]):
+                f.write(json.dumps(summarize_activation_values(step, layer, field, values[layer])) + '\n')
 
 SPECTRAL_NORM_ESTIMATE_BLOCK_SIZE = 48
 SPECTRAL_NORM_ESTIMATE_ITERS = 10
@@ -655,7 +821,9 @@ def maybe_log_tensor_norms(step):
                 spectral_norm_estimate=spectral_estimates.get(name),
             )) + '\n')
 
+activation_probe_x = build_activation_probe_batch()
 write_tensor_metadata()
+write_activation_probe_metadata(activation_probe_x)
 
 training_time_ms = 0
 # start the clock
@@ -712,6 +880,7 @@ for step in range(args.num_iterations + 1):
         t0 = time.time()
 
     maybe_log_tensor_norms(step)
+    maybe_log_activation_probe(step, activation_probe_x)
 
     # bit confusing: we want to make sure to eval on 0th iteration
     # but also after the very last iteration. so we loop for step <= num_iterations
