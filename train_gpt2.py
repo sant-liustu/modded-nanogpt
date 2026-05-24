@@ -357,6 +357,7 @@ class Hyperparameters:
     save_every : int = 0 # every how many steps to save the checkpoint? 0 for only at the end
     compile_model : int = 0 # compile the model with torch.compile
     tensor_norm_every : int = 1 # every how many steps to log tensor norm history? 0 disables
+    adamw_update_norm_every : int = 1 # every how many optimizer steps to log AdamW effective update norms? 0 disables
 args = Hyperparameters()
 
 # set up DDP (distributed data parallel). torchrun sets this env variable
@@ -471,19 +472,99 @@ def write_tensor_metadata():
     with open(metadata_path, 'w') as f:
         json.dump(tensor_metadata_records(raw_model), f, indent=2)
 
-def tensor_norm_record(step, name, tensor):
+def tensor_norm_fields(tensor, prefix=''):
     x = tensor.detach().float()
-    record = dict(step=step, name=name, shape=list(tensor.shape), ndim=tensor.ndim)
     if x.ndim == 0:
-        record['abs_value'] = x.abs().item()
-        record['rms_norm'] = x.abs().item()
-        return record
+        return {
+            f'{prefix}abs_value': x.abs().item(),
+            f'{prefix}rms_norm': x.abs().item(),
+        }
     sq = x.square()
-    record['fro_norm'] = torch.sqrt(sq.sum()).item()
-    record['rms_norm'] = torch.sqrt(sq.mean()).item()
+    fields = {
+        f'{prefix}fro_norm': torch.sqrt(sq.sum()).item(),
+        f'{prefix}rms_norm': torch.sqrt(sq.mean()).item(),
+    }
     if x.ndim == 2:
-        record['spectral_norm'] = torch.linalg.matrix_norm(x, ord=2).item()
+        fields[f'{prefix}spectral_norm'] = torch.linalg.matrix_norm(x, ord=2).item()
+    return fields
+
+def tensor_norm_record(step, name, tensor):
+    record = dict(step=step, name=name, shape=list(tensor.shape), ndim=tensor.ndim)
+    record.update(tensor_norm_fields(tensor))
     return record
+
+def optimizer_parameter_hparams():
+    hparams = {}
+    for optimizer_index, opt in enumerate(optimizers):
+        for param_group_index, group in enumerate(opt.param_groups):
+            for p in group['params']:
+                hparams[id(p)] = dict(
+                    optimizer_index=optimizer_index,
+                    param_group_index=param_group_index,
+                    lr=float(group['lr']),
+                    weight_decay=float(group.get('weight_decay', 0.0)),
+                )
+    return hparams
+
+def should_log_adamw_update_norms(update_step):
+    if not master_process or args.adamw_update_norm_every <= 0:
+        return False
+    return update_step % args.adamw_update_norm_every == 0 or update_step == args.num_iterations
+
+def maybe_capture_adamw_update_state(update_step):
+    if not should_log_adamw_update_norms(update_step):
+        return None
+    hparams = optimizer_parameter_hparams()
+    snapshots = {}
+    with torch.no_grad():
+        for _, p in raw_model.named_parameters():
+            if p.requires_grad:
+                snapshots[id(p)] = p.detach().clone()
+    return dict(hparams=hparams, snapshots=snapshots)
+
+def adamw_update_norm_record(step, name, tensor, tensor_before, param_hparams):
+    lr = param_hparams['lr']
+    if lr == 0:
+        raise RuntimeError(f"cannot infer AdamW update for {name} at step {step}: lr is 0")
+    weight_decay = param_hparams['weight_decay']
+    before = tensor_before.float()
+    after = tensor.detach().float()
+    delta = after - before
+    adamw_update = -(delta + lr * weight_decay * before) / lr
+    record = dict(
+        step=step,
+        name=name,
+        shape=list(tensor.shape),
+        ndim=tensor.ndim,
+        lr=lr,
+        weight_decay=weight_decay,
+        optimizer_index=param_hparams['optimizer_index'],
+        param_group_index=param_hparams['param_group_index'],
+    )
+    record.update(tensor_norm_fields(adamw_update, prefix='adamw_update_'))
+    return record
+
+def maybe_log_adamw_update_norms(update_step, update_state):
+    if update_state is None:
+        return
+    history_path = os.path.join(logdir, 'adamw_update_norm_history.jsonl')
+    hparams = update_state['hparams']
+    snapshots = update_state['snapshots']
+    with torch.no_grad(), open(history_path, 'a') as f:
+        for name, tensor in raw_model.named_parameters():
+            if not tensor.requires_grad:
+                continue
+            param_id = id(tensor)
+            if param_id not in hparams:
+                raise RuntimeError(f"missing optimizer param group mapping for {name}")
+            if param_id not in snapshots:
+                raise RuntimeError(f"missing parameter snapshot for {name}")
+            tensor_before = snapshots.pop(param_id)
+            record = adamw_update_norm_record(update_step, name, tensor, tensor_before, hparams[param_id])
+            f.write(json.dumps(record) + '\n')
+            del tensor_before, record
+    if snapshots:
+        raise RuntimeError(f"unused AdamW update snapshots: {len(snapshots)}")
 
 def maybe_log_tensor_norms(step):
     if not master_process or args.tensor_norm_every <= 0:
@@ -579,9 +660,12 @@ for step in range(args.num_iterations + 1):
     for p in model.parameters():
         p.grad /= train_accumulation_steps
     # step the optimizers and schedulers
+    update_step = step + 1
+    adamw_update_state = maybe_capture_adamw_update_state(update_step)
     for opt, sched in zip(optimizers, schedulers):
         opt.step()
         sched.step()
+    maybe_log_adamw_update_norms(update_step, adamw_update_state)
     # null the gradients
     model.zero_grad(set_to_none=True)
     # --------------- TRAINING SECTION END -------------------
