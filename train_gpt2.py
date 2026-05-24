@@ -2,6 +2,7 @@ import os
 import sys
 with open(sys.argv[0]) as f:
     code = f.read() # read the code of this file ASAP, for logging
+import contextlib
 import uuid
 import glob
 import time
@@ -353,14 +354,21 @@ class Hyperparameters:
     val_loss_every : int = 10 # every how many steps to evaluate val loss? 0 for only at the end
     val_tokens : int = 512 # how many tokens of validation data? it's important to keep this fixed for consistent comparisons
     save_every : int = 0 # every how many steps to save the checkpoint? 0 for only at the end
+    compile_model : int = 0 # compile the model with torch.compile
 args = Hyperparameters()
 
 # set up DDP (distributed data parallel). torchrun sets this env variable
 assert torch.cuda.is_available()
-dist.init_process_group(backend='nccl')
-ddp_rank = int(os.environ['RANK'])
-ddp_local_rank = int(os.environ['LOCAL_RANK'])
-ddp_world_size = int(os.environ['WORLD_SIZE'])
+use_ddp = 'RANK' in os.environ and 'WORLD_SIZE' in os.environ
+if use_ddp:
+    dist.init_process_group(backend='nccl')
+    ddp_rank = int(os.environ['RANK'])
+    ddp_local_rank = int(os.environ['LOCAL_RANK'])
+    ddp_world_size = int(os.environ['WORLD_SIZE'])
+else:
+    ddp_rank = 0
+    ddp_local_rank = 0
+    ddp_world_size = 1
 device = f'cuda:{ddp_local_rank}'
 torch.cuda.set_device(device)
 print(f"using device: {device}")
@@ -390,10 +398,14 @@ model = GPT(GPTConfig(vocab_size=num_vocab, n_layer=2, n_head=2, n_embd=128))
 model = model.cuda()
 if hasattr(config, "coordinate_descent_tuning"):
     config.coordinate_descent_tuning = True # suggested by @Chillee
-model = torch.compile(model)
+if args.compile_model:
+    model = torch.compile(model)
 # here we wrap model into DDP container
-model = DDP(model, device_ids=[ddp_local_rank])
-raw_model = model.module # always contains the "raw" unwrapped model
+if use_ddp:
+    model = DDP(model, device_ids=[ddp_local_rank])
+    raw_model = model.module # always contains the "raw" unwrapped model
+else:
+    raw_model = model
 ctx = torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16)
 
 # init the optimizer(s)
@@ -468,7 +480,8 @@ for step in range(args.num_iterations + 1):
                 _, loss = model(x_val, y_val, return_logits=False)
                 val_loss += loss.detach()
                 del loss
-        dist.all_reduce(val_loss, op=dist.ReduceOp.AVG)
+        if use_ddp:
+            dist.all_reduce(val_loss, op=dist.ReduceOp.AVG)
         val_loss /= val_steps
         # log val loss to console and to logfile
         if master_process:
@@ -508,7 +521,8 @@ for step in range(args.num_iterations + 1):
         x, y = train_loader.next_batch()
         # backward pass
         if i < train_accumulation_steps:
-            with model.no_sync(): # there's no need to sync gradients every accumulation step
+            no_sync = model.no_sync() if use_ddp else contextlib.nullcontext()
+            with no_sync: # there's no need to sync gradients every accumulation step
                 loss.backward()
         else:
             loss.backward() # just sync on the last step
@@ -535,4 +549,5 @@ if master_process:
 
 # -------------------------------------------------------------------------
 # clean up nice
-dist.destroy_process_group()
+if use_ddp:
+    dist.destroy_process_group()
