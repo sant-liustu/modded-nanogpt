@@ -472,6 +472,13 @@ def write_tensor_metadata():
     with open(metadata_path, 'w') as f:
         json.dump(tensor_metadata_records(raw_model), f, indent=2)
 
+def matrix_spectral_norm_via_gram(x):
+    if x.shape[0] >= x.shape[1]:
+        gram = x.T @ x
+    else:
+        gram = x @ x.T
+    return torch.sqrt(torch.linalg.eigvalsh(gram)[-1].clamp_min(0)).item()
+
 def tensor_norm_fields(tensor, prefix=''):
     x = tensor.detach().float()
     if x.ndim == 0:
@@ -485,7 +492,7 @@ def tensor_norm_fields(tensor, prefix=''):
         f'{prefix}rms_norm': torch.sqrt(sq.mean()).item(),
     }
     if x.ndim == 2:
-        fields[f'{prefix}spectral_norm'] = torch.linalg.matrix_norm(x, ord=2).item()
+        fields[f'{prefix}spectral_norm'] = matrix_spectral_norm_via_gram(x)
     return fields
 
 def tensor_norm_record(step, name, tensor):
