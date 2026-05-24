@@ -7,6 +7,7 @@ import json
 import uuid
 import glob
 import time
+from collections import defaultdict
 from dataclasses import dataclass
 
 import numpy as np
@@ -472,14 +473,45 @@ def write_tensor_metadata():
     with open(metadata_path, 'w') as f:
         json.dump(tensor_metadata_records(raw_model), f, indent=2)
 
-def matrix_spectral_norm_via_gram(x):
-    if x.shape[0] >= x.shape[1]:
-        gram = x.T @ x
-    else:
-        gram = x @ x.T
-    return torch.sqrt(torch.linalg.eigvalsh(gram)[-1].clamp_min(0)).item()
+SPECTRAL_NORM_ESTIMATE_BLOCK_SIZE = 48
+SPECTRAL_NORM_ESTIMATE_ITERS = 10
+SPECTRAL_NORM_ESTIMATE_METHOD = "batched_power_q48_i10"
+spectral_norm_generator = torch.Generator(device=device)
+spectral_norm_generator.manual_seed(20260525)
 
-def tensor_norm_fields(tensor, prefix=''):
+def batched_spectral_norm_estimate(matrices):
+    batch, _, cols = matrices.shape
+    vectors = torch.randn(
+        (batch, cols, SPECTRAL_NORM_ESTIMATE_BLOCK_SIZE),
+        device=matrices.device,
+        dtype=matrices.dtype,
+        generator=spectral_norm_generator,
+    )
+    vectors = vectors / torch.linalg.vector_norm(vectors, dim=1, keepdim=True).clamp_min(1e-12)
+    for _ in range(SPECTRAL_NORM_ESTIMATE_ITERS):
+        left_vectors = torch.bmm(matrices, vectors)
+        left_vectors = left_vectors / torch.linalg.vector_norm(left_vectors, dim=1, keepdim=True).clamp_min(1e-12)
+        vectors = torch.bmm(matrices.transpose(1, 2), left_vectors)
+        vectors = vectors / torch.linalg.vector_norm(vectors, dim=1, keepdim=True).clamp_min(1e-12)
+    projections = torch.bmm(matrices, vectors)
+    return torch.linalg.vector_norm(projections, dim=1).max(dim=1).values
+
+def spectral_norm_estimates_by_name(named_tensors):
+    grouped = defaultdict(list)
+    for name, tensor in named_tensors:
+        x = tensor.detach().float()
+        if x.ndim == 2:
+            grouped[tuple(x.shape)].append((name, x))
+    estimates = {}
+    for items in grouped.values():
+        names = [name for name, _ in items]
+        matrices = torch.stack([x for _, x in items], dim=0).contiguous()
+        values = batched_spectral_norm_estimate(matrices)
+        for name, value in zip(names, values):
+            estimates[name] = value.item()
+    return estimates
+
+def tensor_norm_fields(tensor, prefix='', spectral_norm_estimate=None):
     x = tensor.detach().float()
     if x.ndim == 0:
         return {
@@ -492,12 +524,17 @@ def tensor_norm_fields(tensor, prefix=''):
         f'{prefix}rms_norm': torch.sqrt(sq.mean()).item(),
     }
     if x.ndim == 2:
-        fields[f'{prefix}spectral_norm'] = matrix_spectral_norm_via_gram(x)
+        if spectral_norm_estimate is None:
+            spectral_norm_estimate = batched_spectral_norm_estimate(x.unsqueeze(0).contiguous())[0].item()
+        fields[f'{prefix}spectral_norm_estimate'] = spectral_norm_estimate
+        fields[f'{prefix}spectral_norm_estimate_method'] = SPECTRAL_NORM_ESTIMATE_METHOD
+        fields[f'{prefix}spectral_norm_estimate_block_size'] = SPECTRAL_NORM_ESTIMATE_BLOCK_SIZE
+        fields[f'{prefix}spectral_norm_estimate_iters'] = SPECTRAL_NORM_ESTIMATE_ITERS
     return fields
 
-def tensor_norm_record(step, name, tensor):
+def tensor_norm_record(step, name, tensor, spectral_norm_estimate=None):
     record = dict(step=step, name=name, shape=list(tensor.shape), ndim=tensor.ndim)
-    record.update(tensor_norm_fields(tensor))
+    record.update(tensor_norm_fields(tensor, spectral_norm_estimate=spectral_norm_estimate))
     return record
 
 def optimizer_parameter_hparams():
@@ -529,7 +566,7 @@ def maybe_capture_adamw_update_state(update_step):
                 snapshots[id(p)] = p.detach().clone()
     return dict(hparams=hparams, snapshots=snapshots)
 
-def adamw_update_norm_record(step, name, tensor, tensor_before, param_hparams):
+def adamw_update_tensor(tensor, tensor_before, param_hparams, step, name):
     lr = param_hparams['lr']
     if lr == 0:
         raise RuntimeError(f"cannot infer AdamW update for {name} at step {step}: lr is 0")
@@ -537,7 +574,11 @@ def adamw_update_norm_record(step, name, tensor, tensor_before, param_hparams):
     before = tensor_before.float()
     after = tensor.detach().float()
     delta = after - before
-    adamw_update = -(delta + lr * weight_decay * before) / lr
+    return -(delta + lr * weight_decay * before) / lr
+
+def adamw_update_norm_record(step, name, tensor, adamw_update, param_hparams, spectral_norm_estimate=None):
+    lr = param_hparams['lr']
+    weight_decay = param_hparams['weight_decay']
     record = dict(
         step=step,
         name=name,
@@ -548,7 +589,11 @@ def adamw_update_norm_record(step, name, tensor, tensor_before, param_hparams):
         optimizer_index=param_hparams['optimizer_index'],
         param_group_index=param_hparams['param_group_index'],
     )
-    record.update(tensor_norm_fields(adamw_update, prefix='adamw_update_'))
+    record.update(tensor_norm_fields(
+        adamw_update,
+        prefix='adamw_update_',
+        spectral_norm_estimate=spectral_norm_estimate,
+    ))
     return record
 
 def maybe_log_adamw_update_norms(update_step, update_state):
@@ -557,6 +602,8 @@ def maybe_log_adamw_update_norms(update_step, update_state):
     history_path = os.path.join(logdir, 'adamw_update_norm_history.jsonl')
     hparams = update_state['hparams']
     snapshots = update_state['snapshots']
+    pending_records = []
+    pending_2d_updates = []
     with torch.no_grad(), open(history_path, 'a') as f:
         for name, tensor in raw_model.named_parameters():
             if not tensor.requires_grad:
@@ -567,9 +614,27 @@ def maybe_log_adamw_update_norms(update_step, update_state):
             if param_id not in snapshots:
                 raise RuntimeError(f"missing parameter snapshot for {name}")
             tensor_before = snapshots.pop(param_id)
-            record = adamw_update_norm_record(update_step, name, tensor, tensor_before, hparams[param_id])
+            adamw_update = adamw_update_tensor(tensor, tensor_before, hparams[param_id], update_step, name)
+            if adamw_update.ndim == 2:
+                pending_2d_updates.append((name, adamw_update))
+                pending_records.append((name, tensor, adamw_update, hparams[param_id]))
+            else:
+                record = adamw_update_norm_record(update_step, name, tensor, adamw_update, hparams[param_id])
+                f.write(json.dumps(record) + '\n')
+                del record
+            del tensor_before
+        spectral_estimates = spectral_norm_estimates_by_name(pending_2d_updates)
+        for name, tensor, adamw_update, param_hparams in pending_records:
+            record = adamw_update_norm_record(
+                update_step,
+                name,
+                tensor,
+                adamw_update,
+                param_hparams,
+                spectral_norm_estimate=spectral_estimates[name],
+            )
             f.write(json.dumps(record) + '\n')
-            del tensor_before, record
+            del record
     if snapshots:
         raise RuntimeError(f"unused AdamW update snapshots: {len(snapshots)}")
 
@@ -579,9 +644,16 @@ def maybe_log_tensor_norms(step):
     if step % args.tensor_norm_every != 0 and step != args.num_iterations:
         return
     history_path = os.path.join(logdir, 'tensor_norm_history.jsonl')
+    named_parameters = list(raw_model.named_parameters())
+    spectral_estimates = spectral_norm_estimates_by_name(named_parameters)
     with torch.no_grad(), open(history_path, 'a') as f:
-        for name, tensor in raw_model.named_parameters():
-            f.write(json.dumps(tensor_norm_record(step, name, tensor)) + '\n')
+        for name, tensor in named_parameters:
+            f.write(json.dumps(tensor_norm_record(
+                step,
+                name,
+                tensor,
+                spectral_norm_estimate=spectral_estimates.get(name),
+            )) + '\n')
 
 write_tensor_metadata()
 

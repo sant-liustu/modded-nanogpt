@@ -18,7 +18,14 @@ def is_finite_number(value):
 
 def required_norm_fields(ndim, prefix=""):
     if ndim == 2:
-        return {f"{prefix}fro_norm", f"{prefix}rms_norm", f"{prefix}spectral_norm"}
+        return {
+            f"{prefix}fro_norm",
+            f"{prefix}rms_norm",
+            f"{prefix}spectral_norm_estimate",
+            f"{prefix}spectral_norm_estimate_method",
+            f"{prefix}spectral_norm_estimate_block_size",
+            f"{prefix}spectral_norm_estimate_iters",
+        }
     if ndim == 1:
         return {f"{prefix}fro_norm", f"{prefix}rms_norm"}
     if ndim == 0:
@@ -41,13 +48,28 @@ def validate_history_file(path, trainable, errors, prefix="", require_optimizer_
         if record.get("shape") != trainable[name]["shape"]:
             errors.append(f"{path.name} line {line_number}: shape mismatch for {name}")
         for key, value in record.items():
-            is_norm_field = key.endswith("_norm") or key.endswith("_abs_value") or key == "abs_value"
+            is_norm_field = (
+                key.endswith("_norm")
+                or key.endswith("_norm_estimate")
+                or key.endswith("_abs_value")
+                or key == "abs_value"
+            )
             if is_norm_field:
                 if not is_finite_number(value):
                     errors.append(f"{path.name} line {line_number}: non-finite or non-numeric {key} for {name}")
         missing = sorted(required_norm_fields(ndim, prefix) - set(record))
         if missing:
             errors.append(f"{path.name} line {line_number}: missing {missing} for {name}")
+        if ndim == 2:
+            method_key = f"{prefix}spectral_norm_estimate_method"
+            block_size_key = f"{prefix}spectral_norm_estimate_block_size"
+            iters_key = f"{prefix}spectral_norm_estimate_iters"
+            if not isinstance(record.get(method_key), str) or not record.get(method_key):
+                errors.append(f"{path.name} line {line_number}: missing or invalid {method_key} for {name}")
+            if not isinstance(record.get(block_size_key), int) or record.get(block_size_key) <= 0:
+                errors.append(f"{path.name} line {line_number}: missing or invalid {block_size_key} for {name}")
+            if not isinstance(record.get(iters_key), int) or record.get(iters_key) <= 0:
+                errors.append(f"{path.name} line {line_number}: missing or invalid {iters_key} for {name}")
         if require_optimizer_fields:
             for key in ("lr", "weight_decay"):
                 if not is_finite_number(record.get(key)):
