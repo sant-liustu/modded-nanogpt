@@ -29,14 +29,7 @@ def is_finite_number(value):
 
 def required_norm_fields(ndim, prefix=""):
     if ndim == 2:
-        return {
-            f"{prefix}fro_norm",
-            f"{prefix}rms_norm",
-            f"{prefix}spectral_norm_estimate",
-            f"{prefix}spectral_norm_estimate_method",
-            f"{prefix}spectral_norm_estimate_block_size",
-            f"{prefix}spectral_norm_estimate_iters",
-        }
+        return {f"{prefix}fro_norm", f"{prefix}rms_norm"}
     if ndim == 1:
         return {f"{prefix}fro_norm", f"{prefix}rms_norm"}
     if ndim == 0:
@@ -68,10 +61,20 @@ def validate_history_file(path, trainable, errors, prefix="", require_optimizer_
             if is_norm_field:
                 if not is_finite_number(value):
                     errors.append(f"{path.name} line {line_number}: non-finite or non-numeric {key} for {name}")
-        missing = sorted(required_norm_fields(ndim, prefix) - set(record))
+        spectral_keys = {
+            f"{prefix}spectral_norm_estimate",
+            f"{prefix}spectral_norm_estimate_method",
+            f"{prefix}spectral_norm_estimate_block_size",
+            f"{prefix}spectral_norm_estimate_iters",
+        }
+        present_spectral_keys = spectral_keys & set(record)
+        required_fields = required_norm_fields(ndim, prefix)
+        if present_spectral_keys:
+            required_fields |= spectral_keys
+        missing = sorted(required_fields - set(record))
         if missing:
             errors.append(f"{path.name} line {line_number}: missing {missing} for {name}")
-        if ndim == 2:
+        if ndim == 2 and present_spectral_keys:
             method_key = f"{prefix}spectral_norm_estimate_method"
             block_size_key = f"{prefix}spectral_norm_estimate_block_size"
             iters_key = f"{prefix}spectral_norm_estimate_iters"
@@ -111,7 +114,8 @@ def validate_activation_probe(run_dir, errors):
     arrays_dir = run_dir / "activation_probe_arrays"
 
     if not metadata_path.exists():
-        errors.append(f"missing activation probe metadata file: {metadata_path}")
+        if summary_path.exists() or arrays_dir.exists():
+            errors.append(f"missing activation probe metadata file: {metadata_path}")
         return {"activation_probe_steps": [], "activation_probe_summary_rows": 0, "activation_probe_array_files": 0}
     if not summary_path.exists():
         errors.append(f"missing activation probe summary file: {summary_path}")

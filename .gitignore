@@ -3,3 +3,4 @@ pylog124M/
 __pycache__/
 logs/
 data/local_debug/
+experiments/batch_size_norm_dynamics/generated_train_scripts/*.py
