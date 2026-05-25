@@ -13,6 +13,17 @@ OUTPUT_DIR = EXPERIMENT_DIR / "generated_train_scripts"
 BATCH_SIZES = (4, 8, 16, 32)
 BLOCK_WEIGHT_DECAYS = (0.0, 0.01, 0.1)
 SEEDS = (0,)
+DEVICE_BATCH_SIZE = 4
+SEQUENCE_LENGTH = 128
+MAX_BATCH_NUM_ITERATIONS = 20
+TARGET_TRAIN_TOKENS = max(BATCH_SIZES) * SEQUENCE_LENGTH * MAX_BATCH_NUM_ITERATIONS
+
+
+def num_iterations_for(batch_size: int) -> int:
+    tokens_per_step = batch_size * SEQUENCE_LENGTH
+    if TARGET_TRAIN_TOKENS % tokens_per_step != 0:
+        raise ValueError(f"target tokens {TARGET_TRAIN_TOKENS} not divisible by {tokens_per_step}")
+    return TARGET_TRAIN_TOKENS // tokens_per_step
 
 
 @dataclass(frozen=True)
@@ -20,11 +31,8 @@ class TrainConfig:
     batch_size: int
     weight_decay: float
     seed: int = 0
-    device_batch_size: int = 4
-    sequence_length: int = 128
-    num_iterations: int = 20
-    warmup_iters: int = 2
-    warmdown_iters: int = 5
+    device_batch_size: int = DEVICE_BATCH_SIZE
+    sequence_length: int = SEQUENCE_LENGTH
     val_loss_every: int = 10
     val_tokens: int = 512
     save_every: int = 0
@@ -41,6 +49,22 @@ class TrainConfig:
             f"blockwd{format_tag(self.weight_decay)}_"
             f"seed{self.seed:02d}.py"
         )
+
+    @property
+    def num_iterations(self) -> int:
+        return num_iterations_for(self.batch_size)
+
+    @property
+    def warmup_iters(self) -> int:
+        return max(2, self.num_iterations // 10)
+
+    @property
+    def warmdown_iters(self) -> int:
+        return max(5, self.num_iterations // 4)
+
+    @property
+    def train_tokens(self) -> int:
+        return self.batch_size * self.sequence_length * self.num_iterations
 
 
 CONFIGS = [
@@ -157,7 +181,9 @@ def render_script(template: str, config: TrainConfig) -> str:
         "# Do not hand edit; regenerate this file from the template training script.\n",
         f"# Config: batch_size={config.batch_size}, block_weight_decay={config.weight_decay}, "
         f"lm_head_weight_decay=0.0, seed={config.seed}, "
-        f"device_batch_size={config.device_batch_size}, num_iterations={config.num_iterations}\n",
+        f"device_batch_size={config.device_batch_size}, num_iterations={config.num_iterations}, "
+        f"train_tokens={config.train_tokens}, target_train_tokens={TARGET_TRAIN_TOKENS}, "
+        f"warmup_iters={config.warmup_iters}, warmdown_iters={config.warmdown_iters}\n",
         "\n",
     ]
     return "".join(header + lines)
