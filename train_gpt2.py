@@ -341,23 +341,23 @@ class DistributedDataLoader:
 @dataclass
 class Hyperparameters:
     # data hyperparams
-    input_bin : str = 'data/local_debug/fineweb_train_*.bin' # input .bin to train on
-    input_val_bin : str = 'data/local_debug/fineweb_val_*.bin' # input .bin to eval validation loss on
+    input_bin : str = 'data/fineweb10B/fineweb_train_*.bin' # input .bin to train on
+    input_val_bin : str = 'data/fineweb10B/fineweb_val_*.bin' # input .bin to eval validation loss on
     # optimization hyperparams
-    batch_size : int = 4 # batch size, in sequences, across all devices
-    device_batch_size : int = 4 # batch size, in sequences, per device
-    sequence_length : int = 128 # sequence length, in tokens
-    num_iterations : int = 20 # number of iterations to run
+    batch_size : int = 8*64 # batch size, in sequences, across all devices
+    device_batch_size : int = 64 # batch size, in sequences, per device
+    sequence_length : int = 1024 # sequence length, in tokens
+    num_iterations : int = 5100 # number of iterations to run
     embed_learning_rate : float = 0.0036
     muon_learning_rate : float = 0.02
-    warmup_iters : int = 2
-    warmdown_iters : int = 5 # number of iterations of linear warmup/warmdown for triangular or trapezoidal schedule
+    warmup_iters : int = 250
+    warmdown_iters : int = 1450 # number of iterations of linear warmup/warmdown for triangular or trapezoidal schedule
     weight_decay : float = 0 # transformer block weight decay; tied wte/lm_head is always excluded
     # evaluation and logging hyperparams
-    val_loss_every : int = 10 # every how many steps to evaluate val loss? 0 for only at the end
-    val_tokens : int = 512 # how many tokens of validation data? it's important to keep this fixed for consistent comparisons
+    val_loss_every : int = 125 # every how many steps to evaluate val loss? 0 for only at the end
+    val_tokens : int = 10485760 # how many tokens of validation data? it's important to keep this fixed for consistent comparisons
     save_every : int = 0 # every how many steps to save the checkpoint? 0 for only at the end
-    compile_model : int = 0 # compile the model with torch.compile
+    compile_model : int = 1 # compile the model with torch.compile
     tensor_norm_every : int = 1 # every how many steps to log tensor norm history? 0 disables
     adamw_update_norm_every : int = 1 # every how many optimizer steps to log AdamW effective update norms? 0 disables
     activation_probe_every : int = 10 # every how many steps to log fixed-probe activation RMS ratios? 0 disables
@@ -402,7 +402,7 @@ x, y = train_loader.next_batch()
 # there are only 50257 unique GPT-2 tokens; we extend to nearest multiple of 128 for efficiency. suggested to me by @Grad62304977.
 # this originates from Karpathy's experiments.
 num_vocab = 50304
-model = GPT(GPTConfig(vocab_size=num_vocab, n_layer=2, n_head=2, n_embd=128))
+model = GPT(GPTConfig(vocab_size=num_vocab, n_layer=12, n_head=6, n_embd=768))
 model = model.cuda()
 if hasattr(config, "coordinate_descent_tuning"):
     config.coordinate_descent_tuning = True # suggested by @Chillee

@@ -10,8 +10,8 @@ REPO_DIR = EXPERIMENT_DIR.parents[1]
 TEMPLATE = REPO_DIR / "train_gpt2.py"
 OUTPUT_DIR = EXPERIMENT_DIR / "generated_train_scripts"
 
-BATCH_SIZES = (4, 8, 16, 32)
-BLOCK_WEIGHT_DECAYS = (0.0, 0.01, 0.1)
+BATCH_SIZES = (8 * 64, 16 * 64, 32 * 64, 64 * 64)
+BLOCK_WEIGHT_DECAYS = (0.0, 0.1, 0.2)
 SEEDS = (0,)
 
 
@@ -20,15 +20,15 @@ class TrainConfig:
     batch_size: int
     weight_decay: float
     seed: int = 0
-    device_batch_size: int = 4
-    sequence_length: int = 128
-    num_iterations: int = 20
-    warmup_iters: int = 2
-    warmdown_iters: int = 5
-    val_loss_every: int = 10
-    val_tokens: int = 512
+    device_batch_size: int = 64
+    sequence_length: int = 1024
+    num_iterations: int = 5100
+    warmup_iters: int = 250
+    warmdown_iters: int = 1450
+    val_loss_every: int = 125
+    val_tokens: int = 10485760
     save_every: int = 0
-    compile_model: int = 0
+    compile_model: int = 1
     tensor_norm_every: int = 1
     adamw_update_norm_every: int = 1
     activation_probe_every: int = 0
