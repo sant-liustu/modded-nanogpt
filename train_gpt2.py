@@ -361,6 +361,7 @@ class Hyperparameters:
     tensor_norm_every : int = 1 # every how many steps to log tensor norm history? 0 disables
     adamw_update_norm_every : int = 1 # every how many optimizer steps to log AdamW effective update norms? 0 disables
     activation_probe_every : int = 10 # every how many steps to log fixed-probe activation RMS ratios? 0 disables
+    spectral_norm_estimate_enabled : int = 1 # whether to estimate 2D spectral norms in tensor/update norm histories
     activation_probe_eps : float = 1e-12 # denominator epsilon for activation RMS ratios
 args = Hyperparameters()
 
@@ -689,7 +690,7 @@ def tensor_norm_fields(tensor, prefix='', spectral_norm_estimate=None):
         f'{prefix}fro_norm': torch.sqrt(sq.sum()).item(),
         f'{prefix}rms_norm': torch.sqrt(sq.mean()).item(),
     }
-    if x.ndim == 2:
+    if x.ndim == 2 and args.spectral_norm_estimate_enabled > 0:
         if spectral_norm_estimate is None:
             spectral_norm_estimate = batched_spectral_norm_estimate(x.unsqueeze(0).contiguous())[0].item()
         fields[f'{prefix}spectral_norm_estimate'] = spectral_norm_estimate
@@ -781,7 +782,7 @@ def maybe_log_adamw_update_norms(update_step, update_state):
                 raise RuntimeError(f"missing parameter snapshot for {name}")
             tensor_before = snapshots.pop(param_id)
             adamw_update = adamw_update_tensor(tensor, tensor_before, hparams[param_id], update_step, name)
-            if adamw_update.ndim == 2:
+            if args.spectral_norm_estimate_enabled > 0 and adamw_update.ndim == 2:
                 pending_2d_updates.append((name, adamw_update))
                 pending_records.append((name, tensor, adamw_update, hparams[param_id]))
             else:
@@ -811,7 +812,11 @@ def maybe_log_tensor_norms(step):
         return
     history_path = os.path.join(logdir, 'tensor_norm_history.jsonl')
     named_parameters = list(raw_model.named_parameters())
-    spectral_estimates = spectral_norm_estimates_by_name(named_parameters)
+    spectral_estimates = (
+        spectral_norm_estimates_by_name(named_parameters)
+        if args.spectral_norm_estimate_enabled > 0
+        else {}
+    )
     with torch.no_grad(), open(history_path, 'a') as f:
         for name, tensor in named_parameters:
             f.write(json.dumps(tensor_norm_record(
