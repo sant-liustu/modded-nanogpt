@@ -5,6 +5,7 @@ with open(sys.argv[0]) as f:
 import uuid
 import glob
 import time
+from contextlib import nullcontext
 from dataclasses import dataclass
 
 import numpy as np
@@ -113,7 +114,8 @@ class Muon(torch.optim.Optimizer):
                 curr_idx += p.numel()
 
             # sync updates across devices. we are not memory-constrained so can do this simple deserialization
-            dist.all_reduce(updates_flat, op=dist.ReduceOp.SUM)
+            if self.world_size > 1:
+                dist.all_reduce(updates_flat, op=dist.ReduceOp.SUM)
 
             # deserialize and apply updates
             curr_idx = 0
@@ -337,29 +339,36 @@ class DistributedDataLoader:
 @dataclass
 class Hyperparameters:
     # data hyperparams
-    input_bin : str = 'data/fineweb10B/fineweb_train_*.bin' # input .bin to train on
-    input_val_bin : str = 'data/fineweb10B/fineweb_val_*.bin' # input .bin to eval validation loss on
+    input_bin : str = 'data/local_debug/fineweb_train_*.bin' # input .bin to train on
+    input_val_bin : str = 'data/local_debug/fineweb_val_*.bin' # input .bin to eval validation loss on
     # optimization hyperparams
-    batch_size : int = 8*64 # batch size, in sequences, across all devices
-    device_batch_size : int = 64 # batch size, in sequences, per device
-    sequence_length : int = 1024 # sequence length, in tokens
-    num_iterations : int = 5100 # number of iterations to run
+    batch_size : int = 4 # batch size, in sequences, across all devices
+    device_batch_size : int = 4 # batch size, in sequences, per device
+    sequence_length : int = 128 # sequence length, in tokens
+    num_iterations : int = 20 # number of iterations to run
     learning_rate : float = 0.0036
-    warmup_iters : int = 0
-    warmdown_iters : int = 1450 # number of iterations of linear warmup/warmdown for triangular or trapezoidal schedule
+    warmup_iters : int = 2
+    warmdown_iters : int = 5 # number of iterations of linear warmup/warmdown for triangular or trapezoidal schedule
     weight_decay : float = 0
     # evaluation and logging hyperparams
-    val_loss_every : int = 125 # every how many steps to evaluate val loss? 0 for only at the end
-    val_tokens : int = 10485760 # how many tokens of validation data? it's important to keep this fixed for consistent comparisons
+    val_loss_every : int = 10 # every how many steps to evaluate val loss? 0 for only at the end
+    val_tokens : int = 512 # how many tokens of validation data? it's important to keep this fixed for consistent comparisons
     save_every : int = 0 # every how many steps to save the checkpoint? 0 for only at the end
+    compile_model : int = 0 # compile the model with torch.compile
 args = Hyperparameters()
 
 # set up DDP (distributed data parallel). torchrun sets this env variable
 assert torch.cuda.is_available()
-dist.init_process_group(backend='nccl')
-ddp_rank = int(os.environ['RANK'])
-ddp_local_rank = int(os.environ['LOCAL_RANK'])
-ddp_world_size = int(os.environ['WORLD_SIZE'])
+use_ddp = 'RANK' in os.environ and 'WORLD_SIZE' in os.environ
+if use_ddp:
+    dist.init_process_group(backend='nccl')
+    ddp_rank = int(os.environ['RANK'])
+    ddp_local_rank = int(os.environ['LOCAL_RANK'])
+    ddp_world_size = int(os.environ['WORLD_SIZE'])
+else:
+    ddp_rank = 0
+    ddp_local_rank = 0
+    ddp_world_size = 1
 device = f'cuda:{ddp_local_rank}'
 torch.cuda.set_device(device)
 print(f"using device: {device}")
@@ -385,14 +394,18 @@ x, y = train_loader.next_batch()
 # there are only 50257 unique GPT-2 tokens; we extend to nearest multiple of 128 for efficiency. suggested to me by @Grad62304977.
 # this originates from Karpathy's experiments.
 num_vocab = 50304
-model = GPT(GPTConfig(vocab_size=num_vocab, n_layer=12, n_head=6, n_embd=768))
+model = GPT(GPTConfig(vocab_size=num_vocab, n_layer=2, n_head=2, n_embd=128))
 model = model.cuda()
 if hasattr(config, "coordinate_descent_tuning"):
     config.coordinate_descent_tuning = True # suggested by @Chillee
-model = torch.compile(model)
+if args.compile_model:
+    model = torch.compile(model)
 # here we wrap model into DDP container
-model = DDP(model, device_ids=[ddp_local_rank])
-raw_model = model.module # always contains the "raw" unwrapped model
+if use_ddp:
+    model = DDP(model, device_ids=[ddp_local_rank])
+    raw_model = model.module # always contains the "raw" unwrapped model
+else:
+    raw_model = model
 ctx = torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16)
 
 # init the optimizer(s)
@@ -467,7 +480,8 @@ for step in range(args.num_iterations + 1):
                 _, loss = model(x_val, y_val, return_logits=False)
                 val_loss += loss.detach()
                 del loss
-        dist.all_reduce(val_loss, op=dist.ReduceOp.AVG)
+        if use_ddp:
+            dist.all_reduce(val_loss, op=dist.ReduceOp.AVG)
         val_loss /= val_steps
         # log val loss to console and to logfile
         if master_process:
@@ -507,7 +521,7 @@ for step in range(args.num_iterations + 1):
         x, y = train_loader.next_batch()
         # backward pass
         if i < train_accumulation_steps:
-            with model.no_sync(): # there's no need to sync gradients every accumulation step
+            with model.no_sync() if use_ddp else nullcontext(): # there's no need to sync gradients every accumulation step
                 loss.backward()
         else:
             loss.backward() # just sync on the last step
@@ -534,4 +548,5 @@ if master_process:
 
 # -------------------------------------------------------------------------
 # clean up nice
-dist.destroy_process_group()
+if use_ddp:
+    dist.destroy_process_group()
