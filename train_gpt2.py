@@ -459,6 +459,7 @@ class Hyperparameters:
     compile_model : int = 0 # compile the model with torch.compile
     tensor_norm_every : int = 1 # every how many steps to log tensor norm history? 0 disables
     optimizer_update_norm_every : int = 1 # every how many optimizer steps to log applied update norms? 0 disables
+    muon_momentum_buffer_norm_every : int = 1 # every how many optimizer steps to log owner-rank Muon momentum buffer norms? 0 disables
 args = Hyperparameters()
 
 # set up DDP (distributed data parallel). torchrun sets this env variable
@@ -539,9 +540,16 @@ schedulers = [torch.optim.lr_scheduler.LambdaLR(opt, get_lr) for opt in optimize
 # begin logging
 if master_process:
     run_id = str(uuid.uuid4())
-    logdir = 'logs/%s/' % run_id
-    os.makedirs(logdir, exist_ok=True)
-    logfile = 'logs/%s.txt' % run_id
+else:
+    run_id = None
+if use_ddp:
+    run_id_container = [run_id]
+    dist.broadcast_object_list(run_id_container, src=0)
+    run_id = run_id_container[0]
+logdir = 'logs/%s/' % run_id
+os.makedirs(logdir, exist_ok=True)
+logfile = 'logs/%s.txt' % run_id
+if master_process:
     # create the log file
     with open(logfile, "w") as f:
         # begin the log by printing this file (the Python code)
@@ -630,6 +638,10 @@ def optimizer_parameter_hparams():
                     param_group_index=param_group_index,
                     lr=float(group['lr']),
                     weight_decay=float(group.get('weight_decay', 0.0)),
+                    momentum=float(group['momentum']) if 'momentum' in group else None,
+                    nesterov=bool(group['nesterov']) if 'nesterov' in group else None,
+                    backend=group.get('backend'),
+                    backend_steps=group.get('backend_steps'),
                 )
     return hparams
 
@@ -698,6 +710,69 @@ def maybe_log_optimizer_update_norms(update_step, update_state):
             del tensor_before
     if snapshots:
         raise RuntimeError(f"unused optimizer update snapshots: {len(snapshots)}")
+
+def should_log_muon_momentum_buffer_norms(update_step):
+    if args.muon_momentum_buffer_norm_every <= 0:
+        return False
+    return update_step % args.muon_momentum_buffer_norm_every == 0 or update_step == args.num_iterations
+
+def muon_momentum_buffer_norm_record(step, name, tensor, momentum_buffer, param_hparams, param_index):
+    record = dict(
+        step=step,
+        name=name,
+        shape=list(tensor.shape),
+        ndim=tensor.ndim,
+        rank=ddp_rank,
+        owner_rank=ddp_rank,
+        world_size=ddp_world_size,
+        param_index=param_index,
+        optimizer_index=param_hparams['optimizer_index'],
+        optimizer_type=param_hparams['optimizer_type'],
+        param_group_index=param_hparams['param_group_index'],
+        momentum=param_hparams['momentum'],
+        nesterov=param_hparams['nesterov'],
+        backend=param_hparams['backend'],
+        backend_steps=param_hparams['backend_steps'],
+    )
+    record.update(tensor_norm_fields(momentum_buffer, prefix='momentum_buffer_'))
+    return record
+
+def muon_momentum_buffer_history_path():
+    if ddp_world_size == 1:
+        return os.path.join(logdir, 'muon_momentum_buffer_norm_history.jsonl')
+    return os.path.join(logdir, f'muon_momentum_buffer_norm_history_rank{ddp_rank:02d}.jsonl')
+
+def maybe_log_muon_momentum_buffer_norms(update_step):
+    if not should_log_muon_momentum_buffer_norms(update_step):
+        return
+    hparams = optimizer_parameter_hparams()
+    names_by_id = {id(tensor): name for name, tensor in raw_model.named_parameters()}
+    history_path = muon_momentum_buffer_history_path()
+    with torch.no_grad(), open(history_path, 'a') as f:
+        for group in optimizer2.param_groups:
+            for param_index, tensor in enumerate(group['params']):
+                if param_index % ddp_world_size != ddp_rank:
+                    continue
+                if not tensor.requires_grad:
+                    continue
+                param_id = id(tensor)
+                name = names_by_id.get(param_id)
+                if name is None:
+                    raise RuntimeError("missing parameter name for Muon momentum buffer logging")
+                param_hparams = hparams.get(param_id)
+                if param_hparams is None or param_hparams['optimizer_type'] != 'Muon':
+                    raise RuntimeError(f"missing Muon optimizer hyperparameters for {name}")
+                state = optimizer2.state.get(tensor)
+                if state is None or 'momentum_buffer' not in state:
+                    raise RuntimeError(f"missing Muon momentum_buffer for {name} at step {update_step}")
+                f.write(json.dumps(muon_momentum_buffer_norm_record(
+                    update_step,
+                    name,
+                    tensor,
+                    state['momentum_buffer'],
+                    param_hparams,
+                    param_index,
+                )) + '\n')
 
 write_tensor_metadata()
 
@@ -785,6 +860,7 @@ for step in range(args.num_iterations + 1):
         opt.step()
         sched.step()
     maybe_log_optimizer_update_norms(update_step, optimizer_update_state)
+    maybe_log_muon_momentum_buffer_norms(update_step)
     ema_set.update(raw_model)
     # null the gradients
     model.zero_grad(set_to_none=True)
