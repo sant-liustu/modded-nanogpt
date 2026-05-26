@@ -2,6 +2,7 @@ import os
 import sys
 with open(sys.argv[0]) as f:
     code = f.read() # read the code of this file ASAP, for logging
+import json
 import uuid
 import glob
 import time
@@ -355,6 +356,7 @@ class Hyperparameters:
     val_tokens : int = 512 # how many tokens of validation data? it's important to keep this fixed for consistent comparisons
     save_every : int = 0 # every how many steps to save the checkpoint? 0 for only at the end
     compile_model : int = 0 # compile the model with torch.compile
+    tensor_norm_every : int = 1 # every how many steps to log tensor norm history? 0 disables
 args = Hyperparameters()
 
 # set up DDP (distributed data parallel). torchrun sets this env variable
@@ -449,6 +451,52 @@ if master_process:
         f.write(f'{result.stdout}\n')
         f.write('='*100 + '\n')
 
+def tensor_metadata_records(model):
+    records = []
+    for name, tensor in model.named_parameters():
+        records.append(dict(
+            name=name,
+            shape=list(tensor.shape),
+            ndim=tensor.ndim,
+            numel=tensor.numel(),
+            dtype=str(tensor.dtype),
+            trainable=tensor.requires_grad,
+        ))
+    return records
+
+def write_tensor_metadata():
+    if not master_process:
+        return
+    metadata_path = os.path.join(logdir, 'tensor_metadata.json')
+    with open(metadata_path, 'w') as f:
+        json.dump(tensor_metadata_records(raw_model), f, indent=2)
+
+def tensor_norm_fields(tensor, prefix=''):
+    x = tensor.detach().float()
+    return {
+        f'{prefix}fro_norm': torch.linalg.vector_norm(x).item(),
+        f'{prefix}rms_norm': torch.sqrt(x.square().mean()).item(),
+    }
+
+def tensor_norm_record(step, name, tensor):
+    record = dict(step=step, name=name, shape=list(tensor.shape), ndim=tensor.ndim)
+    record.update(tensor_norm_fields(tensor))
+    return record
+
+def maybe_log_tensor_norms(step):
+    if not master_process or args.tensor_norm_every <= 0:
+        return
+    if step % args.tensor_norm_every != 0 and step != args.num_iterations:
+        return
+    history_path = os.path.join(logdir, 'tensor_norm_history.jsonl')
+    with torch.no_grad(), open(history_path, 'a') as f:
+        for name, tensor in raw_model.named_parameters():
+            if not tensor.requires_grad:
+                continue
+            f.write(json.dumps(tensor_norm_record(step, name, tensor)) + '\n')
+
+write_tensor_metadata()
+
 training_time_ms = 0
 # start the clock
 torch.cuda.synchronize()
@@ -502,6 +550,8 @@ for step in range(args.num_iterations + 1):
         # start the clock again
         torch.cuda.synchronize()
         t0 = time.time()
+
+    maybe_log_tensor_norms(step)
 
     # bit confusing: we want to make sure to eval on 0th iteration
     # but also after the very last iteration. so we loop for step <= num_iterations
