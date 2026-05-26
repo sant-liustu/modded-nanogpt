@@ -335,6 +335,105 @@ class DistributedDataLoader:
         return x.cuda(), y.cuda()
 
 # -----------------------------------------------------------------------------
+# EMA weights for eval-time model swapping
+
+class EMASet:
+    """
+    Track multiple exponential moving averages of trainable model parameters.
+
+    This helper stays separate from the optimizer. Update it only after the raw
+    optimizer step has been logged, then use apply_to()/restore() for eval-time
+    weight swaps.
+    """
+
+    def __init__(self, model, half_lives, device=None):
+        self.params = self._trainable_params(model)
+        if not self.params:
+            raise ValueError("EMASet requires at least one trainable parameter")
+
+        self.device = device
+        self.half_lives = [float(h) for h in half_lives]
+        if any(h <= 0 for h in self.half_lives):
+            raise ValueError("EMA half-lives must be positive")
+
+        self.names = [self._name_for_half_life(h) for h in self.half_lives]
+        if len(set(self.names)) != len(self.names):
+            raise ValueError("EMA half-lives must produce unique names")
+
+        self.decays = {
+            name: 0.5 ** (1.0 / half_life)
+            for name, half_life in zip(self.names, self.half_lives)
+        }
+        self.shadows = {
+            name: [p.detach().clone().to(device=device) for p in self.params]
+            for name in self.names
+        }
+        self._backup = None
+
+    @staticmethod
+    def _trainable_params(model):
+        return [p for p in model.parameters() if p.requires_grad]
+
+    @staticmethod
+    def _name_for_half_life(half_life):
+        if float(half_life).is_integer():
+            return f"ema_h{int(half_life)}"
+        return f"ema_h{half_life:g}"
+
+    @torch.no_grad()
+    def update(self, model=None):
+        if self._backup is not None:
+            raise RuntimeError("Cannot update EMA while EMA weights are applied")
+        params = self.params if model is None else self._trainable_params(model)
+        if len(params) != len(self.params):
+            raise ValueError("Model parameter count changed since EMASet initialization")
+
+        for name in self.names:
+            decay = self.decays[name]
+            for shadow, param in zip(self.shadows[name], params):
+                value = param.detach()
+                if value.device != shadow.device or value.dtype != shadow.dtype:
+                    value = value.to(device=shadow.device, dtype=shadow.dtype)
+                shadow.lerp_(value, 1.0 - decay)
+
+    @torch.no_grad()
+    def apply_to(self, model, name):
+        if self._backup is not None:
+            raise RuntimeError("EMA weights are already applied; call restore() first")
+        if name not in self.shadows:
+            raise KeyError(f"Unknown EMA name: {name}")
+
+        params = self._trainable_params(model)
+        if len(params) != len(self.params):
+            raise ValueError("Model parameter count changed since EMASet initialization")
+
+        self._backup = [p.detach().clone() for p in params]
+        for param, shadow in zip(params, self.shadows[name]):
+            value = shadow
+            if value.device != param.device or value.dtype != param.dtype:
+                value = value.to(device=param.device, dtype=param.dtype)
+            param.copy_(value)
+
+    @torch.no_grad()
+    def restore(self, model):
+        if self._backup is None:
+            raise RuntimeError("No EMA weights are currently applied")
+
+        params = self._trainable_params(model)
+        if len(params) != len(self._backup):
+            raise ValueError("Model parameter count changed since apply_to()")
+
+        for param, backup in zip(params, self._backup):
+            param.copy_(backup)
+        self._backup = None
+
+    def description(self):
+        return {
+            name: dict(half_life=half_life, decay=self.decays[name])
+            for name, half_life in zip(self.names, self.half_lives)
+        }
+
+# -----------------------------------------------------------------------------
 # int main
 
 @dataclass
@@ -355,6 +454,7 @@ class Hyperparameters:
     # evaluation and logging hyperparams
     val_loss_every : int = 10 # every how many steps to evaluate val loss? 0 for only at the end
     val_tokens : int = 512 # how many tokens of validation data? it's important to keep this fixed for consistent comparisons
+    ema_halflife_steps : str = '32,128' # comma-separated EMA half-lives, in optimizer steps
     save_every : int = 0 # every how many steps to save the checkpoint? 0 for only at the end
     compile_model : int = 0 # compile the model with torch.compile
     tensor_norm_every : int = 1 # every how many steps to log tensor norm history? 0 disables
@@ -411,6 +511,8 @@ if use_ddp:
 else:
     raw_model = model
 ctx = torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16)
+ema_half_lives = [float(x) for x in args.ema_halflife_steps.split(',') if x.strip()]
+ema_set = EMASet(raw_model, ema_half_lives)
 
 # init the optimizer(s)
 optimizer1 = torch.optim.AdamW(raw_model.lm_head.parameters(), lr=args.learning_rate, betas=(0.9, 0.95),
@@ -453,6 +555,22 @@ if master_process:
         result = subprocess.run(['nvidia-smi'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         f.write(f'{result.stdout}\n')
         f.write('='*100 + '\n')
+        f.write(f'EMA: {ema_set.description()}\n')
+    print(f"EMA tracking: {ema_set.description()}")
+
+def evaluate_val_loss():
+    model.eval()
+    val_loader.reset()
+    val_loss = torch.zeros((), device=device)
+    for _ in range(val_steps):
+        x_val, y_val = val_loader.next_batch()
+        with ctx: # of course, we'd like to use no_grad() here too, but that creates a torch.compile error for some reason
+            _, loss = model(x_val, y_val, return_logits=False)
+            val_loss += loss.detach()
+            del loss
+    if use_ddp:
+        dist.all_reduce(val_loss, op=dist.ReduceOp.AVG)
+    return val_loss / val_steps
 
 def tensor_metadata_records(model):
     records = []
@@ -604,24 +722,21 @@ for step in range(args.num_iterations + 1):
         # stop the clock
         torch.cuda.synchronize()
         training_time_ms += 1000 * (time.time() - t0)
-        # run validation batches
-        model.eval()
-        val_loader.reset()
-        val_loss = 0.0
-        for _ in range(val_steps):
-            x_val, y_val = val_loader.next_batch()
-            with ctx: # of course, we'd like to use no_grad() here too, but that creates a torch.compile error for some reason
-                _, loss = model(x_val, y_val, return_logits=False)
-                val_loss += loss.detach()
-                del loss
-        if use_ddp:
-            dist.all_reduce(val_loss, op=dist.ReduceOp.AVG)
-        val_loss /= val_steps
+        # run validation batches on raw weights and each EMA weight set
+        val_losses = {"raw": evaluate_val_loss()}
+        for ema_name in ema_set.names:
+            ema_set.apply_to(raw_model, ema_name)
+            try:
+                val_losses[ema_name] = evaluate_val_loss()
+            finally:
+                ema_set.restore(raw_model)
         # log val loss to console and to logfile
         if master_process:
-            print(f'step:{step}/{args.num_iterations} val_loss:{val_loss:.4f} train_time:{training_time_ms:.0f}ms step_avg:{training_time_ms/(timed_steps-1):.2f}ms')
+            raw_val_loss = val_losses["raw"]
+            val_loss_text = ' '.join(f'val_loss/{name}:{loss:.4f}' for name, loss in val_losses.items())
+            print(f'step:{step}/{args.num_iterations} val_loss:{raw_val_loss:.4f} {val_loss_text} train_time:{training_time_ms:.0f}ms step_avg:{training_time_ms/(timed_steps-1):.2f}ms')
             with open(logfile, "a") as f:
-                f.write(f'step:{step}/{args.num_iterations} val_loss:{val_loss:.4f} train_time:{training_time_ms:.0f}ms step_avg:{training_time_ms/(timed_steps-1):.2f}ms\n')
+                f.write(f'step:{step}/{args.num_iterations} val_loss:{raw_val_loss:.4f} {val_loss_text} train_time:{training_time_ms:.0f}ms step_avg:{training_time_ms/(timed_steps-1):.2f}ms\n')
         # start the clock again
         torch.cuda.synchronize()
         t0 = time.time()
@@ -670,6 +785,7 @@ for step in range(args.num_iterations + 1):
         opt.step()
         sched.step()
     maybe_log_optimizer_update_norms(update_step, optimizer_update_state)
+    ema_set.update(raw_model)
     # null the gradients
     model.zero_grad(set_to_none=True)
     # --------------- TRAINING SECTION END -------------------

@@ -154,9 +154,31 @@ def validate_update_history(path, trainable, errors):
     }
 
 
+def default_log_file_for_run(run_dir):
+    return run_dir.parent / f"{run_dir.name}.txt"
+
+
+def validate_ema_loss_log(path, ema_names, errors):
+    if not path.exists():
+        errors.append(f"missing text log file for EMA loss check: {path}")
+        return {"log_file": str(path), "ema_fields": []}
+    text = path.read_text(encoding="utf-8", errors="replace")
+    required_fields = ["val_loss/raw", *[f"val_loss/{name}" for name in ema_names]]
+    found_fields = []
+    for field in required_fields:
+        if f"{field}:" not in text:
+            errors.append(f"{path.name}: missing EMA validation field {field}")
+        else:
+            found_fields.append(field)
+    return {"log_file": str(path), "ema_fields": found_fields}
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--run-dir", required=True)
+    parser.add_argument("--log-file")
+    parser.add_argument("--require-ema-losses", action="store_true")
+    parser.add_argument("--ema-names", default="ema_h32,ema_h128")
     args = parser.parse_args()
 
     run_dir = Path(args.run_dir)
@@ -164,6 +186,11 @@ def main():
     metadata = validate_metadata(run_dir / "tensor_metadata.json", errors)
     tensor_history = validate_tensor_history(run_dir / "tensor_norm_history.jsonl", metadata, errors)
     update_history = validate_update_history(run_dir / "optimizer_update_norm_history.jsonl", metadata, errors)
+    ema_loss_log = None
+    if args.require_ema_losses:
+        log_file = Path(args.log_file) if args.log_file else default_log_file_for_run(run_dir)
+        ema_names = [name.strip() for name in args.ema_names.split(",") if name.strip()]
+        ema_loss_log = validate_ema_loss_log(log_file, ema_names, errors)
 
     result = {
         "ok": not errors,
@@ -176,6 +203,8 @@ def main():
         "optimizer_update_steps": update_history["steps"],
         "optimizer_types": update_history["optimizer_types"],
     }
+    if ema_loss_log is not None:
+        result["ema_loss_log"] = ema_loss_log
     print(json.dumps(result, indent=2))
     if errors:
         raise SystemExit(1)
@@ -183,4 +212,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
