@@ -476,9 +476,11 @@ def write_tensor_metadata():
 
 def tensor_norm_fields(tensor, prefix=''):
     x = tensor.detach().float()
+    sq_sum = x.square().sum()
+    fro_norm = torch.sqrt(sq_sum).item()
     return {
-        f'{prefix}fro_norm': torch.linalg.vector_norm(x).item(),
-        f'{prefix}rms_norm': torch.sqrt(x.square().mean()).item(),
+        f'{prefix}fro_norm': fro_norm,
+        f'{prefix}rms_norm': fro_norm / (x.numel() ** 0.5),
     }
 
 def tensor_norm_record(step, name, tensor):
