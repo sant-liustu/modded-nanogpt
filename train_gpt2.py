@@ -357,6 +357,7 @@ class Hyperparameters:
     save_every : int = 0 # every how many steps to save the checkpoint? 0 for only at the end
     compile_model : int = 0 # compile the model with torch.compile
     tensor_norm_every : int = 1 # every how many steps to log tensor norm history? 0 disables
+    optimizer_update_norm_every : int = 1 # every how many optimizer steps to log applied update norms? 0 disables
 args = Hyperparameters()
 
 # set up DDP (distributed data parallel). torchrun sets this env variable
@@ -412,7 +413,7 @@ ctx = torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16)
 
 # init the optimizer(s)
 optimizer1 = torch.optim.AdamW(raw_model.lm_head.parameters(), lr=args.learning_rate, betas=(0.9, 0.95),
-                               weight_decay=args.weight_decay, fused=True)
+                               weight_decay=0.0, fused=True)
 optimizer2 = Muon(raw_model.transformer.h.parameters(), lr=0.1*args.learning_rate, momentum=0.95,
                   rank=ddp_rank, world_size=ddp_world_size)
 optimizers = [optimizer1, optimizer2]
@@ -494,6 +495,87 @@ def maybe_log_tensor_norms(step):
             if not tensor.requires_grad:
                 continue
             f.write(json.dumps(tensor_norm_record(step, name, tensor)) + '\n')
+
+def optimizer_parameter_hparams():
+    hparams = {}
+    for optimizer_index, optimizer in enumerate(optimizers):
+        optimizer_type = type(optimizer).__name__
+        for param_group_index, group in enumerate(optimizer.param_groups):
+            for param in group['params']:
+                hparams[id(param)] = dict(
+                    optimizer_index=optimizer_index,
+                    optimizer_type=optimizer_type,
+                    param_group_index=param_group_index,
+                    lr=float(group['lr']),
+                    weight_decay=float(group.get('weight_decay', 0.0)),
+                )
+    return hparams
+
+def should_log_optimizer_update_norms(update_step):
+    if not master_process or args.optimizer_update_norm_every <= 0:
+        return False
+    return update_step % args.optimizer_update_norm_every == 0 or update_step == args.num_iterations
+
+def maybe_capture_optimizer_update_state(update_step):
+    if not should_log_optimizer_update_norms(update_step):
+        return None
+    hparams = optimizer_parameter_hparams()
+    snapshots = {}
+    for tensor in raw_model.parameters():
+        param_id = id(tensor)
+        if tensor.requires_grad and param_id in hparams:
+            snapshots[param_id] = tensor.detach().clone()
+    return dict(hparams=hparams, snapshots=snapshots)
+
+def optimizer_update_norm_record(step, name, tensor, tensor_before, param_hparams):
+    lr = param_hparams['lr']
+    if lr == 0:
+        raise RuntimeError(f"cannot infer optimizer update for {name} at step {step}: lr is 0")
+    before = tensor_before.float()
+    after = tensor.detach().float()
+    applied_update = (before - after) / lr
+    record = dict(
+        step=step,
+        name=name,
+        shape=list(tensor.shape),
+        ndim=tensor.ndim,
+        lr=lr,
+        weight_decay=param_hparams['weight_decay'],
+        optimizer_index=param_hparams['optimizer_index'],
+        optimizer_type=param_hparams['optimizer_type'],
+        param_group_index=param_hparams['param_group_index'],
+    )
+    record.update(tensor_norm_fields(before, prefix='param_before_'))
+    record.update(tensor_norm_fields(after, prefix='param_after_'))
+    record.update(tensor_norm_fields(applied_update, prefix='applied_update_'))
+    return record
+
+def maybe_log_optimizer_update_norms(update_step, update_state):
+    if update_state is None:
+        return
+    history_path = os.path.join(logdir, 'optimizer_update_norm_history.jsonl')
+    hparams = update_state['hparams']
+    snapshots = update_state['snapshots']
+    with torch.no_grad(), open(history_path, 'a') as f:
+        for name, tensor in raw_model.named_parameters():
+            if not tensor.requires_grad:
+                continue
+            param_id = id(tensor)
+            if param_id not in hparams:
+                raise RuntimeError(f"missing optimizer hyperparameters for {name}")
+            if param_id not in snapshots:
+                raise RuntimeError(f"missing parameter snapshot for {name}")
+            tensor_before = snapshots.pop(param_id)
+            f.write(json.dumps(optimizer_update_norm_record(
+                update_step,
+                name,
+                tensor,
+                tensor_before,
+                hparams[param_id],
+            )) + '\n')
+            del tensor_before
+    if snapshots:
+        raise RuntimeError(f"unused optimizer update snapshots: {len(snapshots)}")
 
 write_tensor_metadata()
 
@@ -578,9 +660,12 @@ for step in range(args.num_iterations + 1):
     for p in model.parameters():
         p.grad /= train_accumulation_steps
     # step the optimizers and schedulers
+    update_step = step + 1
+    optimizer_update_state = maybe_capture_optimizer_update_state(update_step)
     for opt, sched in zip(optimizers, schedulers):
         opt.step()
         sched.step()
+    maybe_log_optimizer_update_norms(update_step, optimizer_update_state)
     # null the gradients
     model.zero_grad(set_to_none=True)
     # --------------- TRAINING SECTION END -------------------
