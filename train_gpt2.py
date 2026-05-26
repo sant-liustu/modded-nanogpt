@@ -351,6 +351,7 @@ class Hyperparameters:
     warmup_iters : int = 2
     warmdown_iters : int = 5 # number of iterations of linear warmup/warmdown for triangular or trapezoidal schedule
     weight_decay : float = 0
+    muon_backend : str = 'svd' # local smoke avoids torch.compile/Triton dependency in Newton-Schulz
     # evaluation and logging hyperparams
     val_loss_every : int = 10 # every how many steps to evaluate val loss? 0 for only at the end
     val_tokens : int = 512 # how many tokens of validation data? it's important to keep this fixed for consistent comparisons
@@ -415,6 +416,7 @@ ctx = torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16)
 optimizer1 = torch.optim.AdamW(raw_model.lm_head.parameters(), lr=args.learning_rate, betas=(0.9, 0.95),
                                weight_decay=0.0, fused=True)
 optimizer2 = Muon(raw_model.transformer.h.parameters(), lr=0.1*args.learning_rate, momentum=0.95,
+                  backend=args.muon_backend,
                   rank=ddp_rank, world_size=ddp_world_size)
 optimizers = [optimizer1, optimizer2]
 # learning rate decay scheduler (linear warmup and warmdown)
