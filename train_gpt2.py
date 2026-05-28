@@ -3,6 +3,7 @@ import sys
 with open(sys.argv[0]) as f:
     code = f.read() # read the code of this file ASAP, for logging
 import contextlib
+import fnmatch
 import hashlib
 import json
 import uuid
@@ -363,7 +364,13 @@ class Hyperparameters:
     activation_probe_every : int = 10 # every how many steps to log fixed-probe activation RMS ratios? 0 disables
     spectral_norm_estimate_enabled : int = 1 # whether to estimate 2D spectral norms in tensor/update norm histories
     activation_probe_eps : float = 1e-12 # denominator epsilon for activation RMS ratios
+    norm_control_config : str = '' # optional JSON config for per-tensor RMS norm control
 args = Hyperparameters()
+for arg in sys.argv[1:]:
+    if arg.startswith('--norm_control_config='):
+        args.norm_control_config = arg.split('=', 1)[1]
+    else:
+        raise ValueError(f"unknown command line argument: {arg}")
 
 # set up DDP (distributed data parallel). torchrun sets this env variable
 assert torch.cuda.is_available()
@@ -416,11 +423,160 @@ else:
     raw_model = model
 ctx = torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16)
 
+def load_norm_control_config(path):
+    if not path:
+        return dict(enabled=False, targets=[], eps=1e-12, log_every=1)
+    with open(path, 'r') as f:
+        spec = json.load(f)
+    if not spec.get('enabled', True):
+        return dict(enabled=False, targets=[], eps=float(spec.get('eps', 1e-12)), log_every=int(spec.get('log_every', 1)))
+    if spec.get('norm_type', 'rms') != 'rms':
+        raise ValueError("norm_control_config only supports norm_type='rms'")
+    targets = spec.get('targets')
+    if not isinstance(targets, list) or not targets:
+        raise ValueError("enabled norm_control_config requires a non-empty targets list")
+    for target in targets:
+        if 'pattern' not in target:
+            raise ValueError("each norm-control target requires a pattern")
+        target_rms = float(target.get('target_rms', 0.0))
+        if not (target_rms > 0.0):
+            raise ValueError(f"target_rms must be positive for pattern {target['pattern']}")
+        target['target_rms'] = target_rms
+    return dict(
+        enabled=True,
+        targets=targets,
+        eps=float(spec.get('eps', 1e-12)),
+        log_every=int(spec.get('log_every', 1)),
+    )
+
+def pattern_matches_name(pattern, name):
+    return pattern == name or fnmatch.fnmatchcase(name, pattern)
+
+def build_norm_control_state(raw_model, path):
+    spec = load_norm_control_config(path)
+    if not spec['enabled']:
+        return dict(enabled=False, params=[], eps=spec['eps'], log_every=spec['log_every'], targets=[])
+    named_parameters = list(raw_model.named_parameters())
+    matched_by_name = {}
+    target_records = []
+    for target in spec['targets']:
+        pattern = target['pattern']
+        target_rms = target['target_rms']
+        matches = [(name, p) for name, p in named_parameters if pattern_matches_name(pattern, name)]
+        if not matches:
+            raise ValueError(f"norm-control pattern matched no parameters: {pattern}")
+        for name, p in matches:
+            if name in matched_by_name:
+                previous = matched_by_name[name]['pattern']
+                raise ValueError(f"norm-control parameter {name} matched multiple patterns: {previous}, {pattern}")
+            if not p.requires_grad:
+                raise ValueError(f"norm-control target is not trainable: {name}")
+            if not torch.is_floating_point(p):
+                raise ValueError(f"norm-control target is not floating point: {name}")
+            if p.ndim < 2:
+                raise ValueError(f"norm-control target must have ndim >= 2: {name}")
+            matched_by_name[name] = dict(name=name, param=p, pattern=pattern, target_rms=target_rms)
+        target_records.append(dict(pattern=pattern, target_rms=target_rms, matched_names=[name for name, _ in matches]))
+    controlled = [matched_by_name[name] for name in sorted(matched_by_name)]
+    return dict(
+        enabled=True,
+        params=controlled,
+        eps=spec['eps'],
+        log_every=spec['log_every'],
+        targets=target_records,
+    )
+
+@torch.no_grad()
+def apply_rms_norm_control(norm_control_state, step, event):
+    if not norm_control_state['enabled']:
+        return
+    should_log = (
+        master_process
+        and norm_control_state['log_every'] > 0
+        and (step % norm_control_state['log_every'] == 0 or step == args.num_iterations or event == 'initial')
+    )
+    history_path = os.path.join(logdir, 'norm_control_history.jsonl') if should_log else None
+    f = open(history_path, 'a') if should_log else None
+    try:
+        for entry in norm_control_state['params']:
+            p = entry['param']
+            target_rms = entry['target_rms']
+            rms_before = p.detach().float().square().mean().sqrt()
+            if rms_before > norm_control_state['eps']:
+                scale = target_rms / rms_before
+                p.mul_(scale.to(dtype=p.dtype, device=p.device))
+            else:
+                scale = torch.ones((), dtype=torch.float32, device=p.device)
+            rms_after = p.detach().float().square().mean().sqrt()
+            if f is not None:
+                relative_error = (rms_after - target_rms).abs() / target_rms
+                f.write(json.dumps(dict(
+                    step=step,
+                    event=event,
+                    name=entry['name'],
+                    pattern=entry['pattern'],
+                    target_rms=target_rms,
+                    pre_control_rms=rms_before.item(),
+                    post_control_rms=rms_after.item(),
+                    scale=scale.item(),
+                    relative_error=relative_error.item(),
+                    weight_decay=0.0,
+                )) + '\n')
+    finally:
+        if f is not None:
+            f.close()
+
+def write_norm_control_metadata(norm_control_state):
+    if not master_process or not norm_control_state['enabled']:
+        return
+    metadata = dict(
+        enabled=True,
+        norm_type='rms',
+        eps=norm_control_state['eps'],
+        log_every=norm_control_state['log_every'],
+        targets=norm_control_state['targets'],
+        controlled_parameters=[
+            dict(
+                name=entry['name'],
+                pattern=entry['pattern'],
+                target_rms=entry['target_rms'],
+                shape=list(entry['param'].shape),
+                ndim=entry['param'].ndim,
+                weight_decay=0.0,
+            )
+            for entry in norm_control_state['params']
+        ],
+    )
+    with open(os.path.join(logdir, 'norm_control_metadata.json'), 'w') as f:
+        json.dump(metadata, f, indent=2)
+
+norm_control_state = build_norm_control_state(raw_model, args.norm_control_config)
+controlled_param_ids = {id(entry['param']) for entry in norm_control_state['params']}
+block_named_parameters = [
+    (name, p)
+    for name, p in raw_model.named_parameters()
+    if name.startswith('transformer.h.')
+]
+controlled_block_parameters = [p for _, p in block_named_parameters if id(p) in controlled_param_ids]
+uncontrolled_block_parameters = [p for _, p in block_named_parameters if id(p) not in controlled_param_ids]
+unexpected_controlled = [
+    entry['name']
+    for entry in norm_control_state['params']
+    if not entry['name'].startswith('transformer.h.')
+]
+if unexpected_controlled:
+    raise ValueError(f"norm-control targets must be transformer block parameters in this implementation: {unexpected_controlled}")
+
 # init the optimizer(s)
 optimizer1 = torch.optim.AdamW(raw_model.lm_head.parameters(), lr=args.embed_learning_rate, betas=(0.9, 0.95),
                                weight_decay=0.0, fused=True)
-optimizer2 = torch.optim.AdamW(raw_model.transformer.h.parameters(), lr=0.5*args.embed_learning_rate, betas=(0.9, 0.95),
-                               weight_decay=args.weight_decay, fused=True)
+optimizer2_groups = []
+if uncontrolled_block_parameters:
+    optimizer2_groups.append(dict(params=uncontrolled_block_parameters, weight_decay=args.weight_decay))
+if controlled_block_parameters:
+    optimizer2_groups.append(dict(params=controlled_block_parameters, weight_decay=0.0))
+optimizer2 = torch.optim.AdamW(optimizer2_groups, lr=0.5*args.embed_learning_rate, betas=(0.9, 0.95),
+                               fused=True)
 optimizers = [optimizer1, optimizer2]
 # learning rate decay scheduler (linear warmup and warmdown)
 def get_lr(it):
@@ -827,6 +983,8 @@ def maybe_log_tensor_norms(step):
             )) + '\n')
 
 activation_probe_x = build_activation_probe_batch()
+write_norm_control_metadata(norm_control_state)
+apply_rms_norm_control(norm_control_state, step=0, event='initial')
 write_tensor_metadata()
 write_activation_probe_metadata(activation_probe_x)
 
@@ -915,10 +1073,12 @@ for step in range(args.num_iterations + 1):
     # step the optimizers and schedulers
     update_step = step + 1
     adamw_update_state = maybe_capture_adamw_update_state(update_step)
-    for opt, sched in zip(optimizers, schedulers):
+    for opt in optimizers:
         opt.step()
-        sched.step()
     maybe_log_adamw_update_norms(update_step, adamw_update_state)
+    apply_rms_norm_control(norm_control_state, step=update_step, event='post_step')
+    for sched in schedulers:
+        sched.step()
     # null the gradients
     model.zero_grad(set_to_none=True)
     # --------------- TRAINING SECTION END -------------------
