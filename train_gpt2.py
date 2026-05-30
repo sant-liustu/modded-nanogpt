@@ -423,6 +423,9 @@ else:
     raw_model = model
 ctx = torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16)
 
+DEFAULT_NORM_CONTROL_MODE = 'delayed_captured_constant'
+DEFAULT_NORM_CONTROL_START_STEP = 1000
+
 def load_norm_control_config(path):
     if not path:
         return dict(enabled=False, mode='disabled', targets=[], eps=1e-12, log_every=1, start_step=None)
@@ -439,7 +442,7 @@ def load_norm_control_config(path):
         )
     if spec.get('norm_type', 'rms') != 'rms':
         raise ValueError("norm_control_config only supports norm_type='rms'")
-    mode = spec.get('mode', 'specified_target')
+    mode = spec.get('mode', DEFAULT_NORM_CONTROL_MODE)
     mode_aliases = {
         'specified_target': 'specified_target',
         'constant_from_start': 'specified_target',
@@ -476,9 +479,7 @@ def load_norm_control_config(path):
             )
     start_step = None
     if mode == 'delayed_captured_constant':
-        if 'start_step' not in spec:
-            raise ValueError("delayed_captured_constant requires explicit start_step")
-        start_step = int(spec['start_step'])
+        start_step = int(spec.get('start_step', DEFAULT_NORM_CONTROL_START_STEP))
         if start_step < 0:
             raise ValueError("norm-control start_step must be non-negative")
     return dict(
