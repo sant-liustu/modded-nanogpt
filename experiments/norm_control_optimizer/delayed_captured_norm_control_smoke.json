@@ -1,0 +1,12 @@
+{
+  "enabled": true,
+  "mode": "delayed_captured_constant",
+  "norm_type": "rms",
+  "eps": 1e-12,
+  "log_every": 1,
+  "start_step": 5,
+  "controlled_patterns": [
+    "transformer.h.0.attn.c_q.weight",
+    "transformer.h.0.mlp.c_fc.weight"
+  ]
+}

@@ -237,9 +237,182 @@ def validate_activation_probe(run_dir, errors):
     }
 
 
+def close_enough(actual, expected, rtol=1e-6, atol=1e-12):
+    if not is_finite_number(actual) or not is_finite_number(expected):
+        return False
+    return abs(actual - expected) <= atol + rtol * abs(expected)
+
+
+def validate_norm_control(run_dir, trainable, errors, rms_rtol):
+    metadata_path = run_dir / "norm_control_metadata.json"
+    history_path = run_dir / "norm_control_history.jsonl"
+    targets_path = run_dir / "norm_control_targets.json"
+    if not metadata_path.exists() and not history_path.exists():
+        return {
+            "norm_control_enabled": False,
+            "norm_control_mode": None,
+            "norm_control_history_rows": 0,
+            "norm_control_controlled_tensors": 0,
+        }
+    if not metadata_path.exists():
+        errors.append(f"missing norm-control metadata file: {metadata_path}")
+        return {
+            "norm_control_enabled": False,
+            "norm_control_mode": None,
+            "norm_control_history_rows": 0,
+            "norm_control_controlled_tensors": 0,
+        }
+    if not history_path.exists():
+        errors.append(f"missing norm-control history file: {history_path}")
+        return {
+            "norm_control_enabled": True,
+            "norm_control_mode": None,
+            "norm_control_history_rows": 0,
+            "norm_control_controlled_tensors": 0,
+        }
+
+    metadata = json.loads(metadata_path.read_text())
+    mode = metadata.get("mode", "specified_target")
+    controlled_records = metadata.get("controlled_parameters", [])
+    controlled = {record.get("name"): record for record in controlled_records}
+    if not controlled:
+        errors.append("norm-control metadata has no controlled_parameters")
+    for name, record in controlled.items():
+        if name not in trainable:
+            errors.append(f"norm-control metadata references unknown tensor {name}")
+        if record.get("weight_decay") != 0.0:
+            errors.append(f"norm-control controlled tensor {name} should have weight_decay=0.0")
+        if mode == "specified_target":
+            target_rms = record.get("target_rms")
+            if not is_finite_number(target_rms) or target_rms <= 0:
+                errors.append(f"norm-control metadata has invalid target_rms for {name}")
+
+    start_step = metadata.get("start_step")
+    if mode == "delayed_captured_constant":
+        if not isinstance(start_step, int) or start_step < 0:
+            errors.append("delayed norm-control metadata requires non-negative integer start_step")
+            start_step = None
+    elif mode != "specified_target":
+        errors.append(f"unknown norm-control mode in metadata: {mode}")
+
+    rows = 0
+    seen_by_name = defaultdict(list)
+    captured_by_name = {}
+    projected_rows = 0
+    max_relative_error = 0.0
+    for line_number, record in load_jsonl(history_path):
+        rows += 1
+        name = record.get("name")
+        if name not in controlled:
+            errors.append(f"{history_path.name} line {line_number}: unknown controlled tensor {name}")
+            continue
+        seen_by_name[name].append(record)
+        step = record.get("step")
+        if not isinstance(step, int) or step < 0:
+            errors.append(f"{history_path.name} line {line_number}: invalid step for {name}")
+            continue
+        if record.get("weight_decay") != 0.0:
+            errors.append(f"{history_path.name} line {line_number}: controlled tensor {name} should log weight_decay=0.0")
+        for key in ("pre_control_rms", "post_control_rms", "scale"):
+            if not is_finite_number(record.get(key)):
+                errors.append(f"{history_path.name} line {line_number}: missing or non-finite {key} for {name}")
+        target_rms = record.get("target_rms")
+        relative_error = record.get("relative_error")
+        projected = record.get("projected")
+        captured = record.get("captured")
+
+        if mode == "specified_target":
+            if record.get("mode") not in (None, "specified_target"):
+                errors.append(f"{history_path.name} line {line_number}: wrong mode for specified-target run")
+            if record.get("phase") not in (None, "specified_target"):
+                errors.append(f"{history_path.name} line {line_number}: wrong phase for specified-target run")
+            if projected is not True:
+                errors.append(f"{history_path.name} line {line_number}: specified-target rows should be projected")
+            if not is_finite_number(target_rms) or target_rms <= 0:
+                errors.append(f"{history_path.name} line {line_number}: invalid target_rms for {name}")
+            if not is_finite_number(relative_error) or relative_error > rms_rtol:
+                errors.append(f"{history_path.name} line {line_number}: RMS relative_error too large for {name}: {relative_error}")
+            elif is_finite_number(relative_error):
+                max_relative_error = max(max_relative_error, relative_error)
+            projected_rows += 1
+            continue
+
+        if start_step is None:
+            continue
+        phase = record.get("phase")
+        if step < start_step:
+            if phase != "pre_start":
+                errors.append(f"{history_path.name} line {line_number}: expected pre_start phase before start_step")
+            if projected is not False or captured is not False:
+                errors.append(f"{history_path.name} line {line_number}: pre-start rows must not project or capture")
+            if target_rms is not None or relative_error is not None:
+                errors.append(f"{history_path.name} line {line_number}: pre-start rows should not have target_rms/relative_error")
+            if is_finite_number(record.get("pre_control_rms")) and is_finite_number(record.get("post_control_rms")):
+                if not close_enough(record["post_control_rms"], record["pre_control_rms"]):
+                    errors.append(f"{history_path.name} line {line_number}: pre-start RMS changed for {name}")
+        elif step == start_step:
+            if phase != "capture":
+                errors.append(f"{history_path.name} line {line_number}: expected capture phase at start_step")
+            if projected is not False or captured is not True:
+                errors.append(f"{history_path.name} line {line_number}: capture rows must capture without projection")
+            if not is_finite_number(target_rms) or target_rms <= 0:
+                errors.append(f"{history_path.name} line {line_number}: invalid captured target_rms for {name}")
+            else:
+                captured_by_name[name] = target_rms
+                if not close_enough(record.get("pre_control_rms"), target_rms, rtol=rms_rtol):
+                    errors.append(f"{history_path.name} line {line_number}: captured target does not match pre_control_rms for {name}")
+            if is_finite_number(record.get("pre_control_rms")) and is_finite_number(record.get("post_control_rms")):
+                if not close_enough(record["post_control_rms"], record["pre_control_rms"]):
+                    errors.append(f"{history_path.name} line {line_number}: capture step RMS changed for {name}")
+        else:
+            if phase != "post_start":
+                errors.append(f"{history_path.name} line {line_number}: expected post_start phase after start_step")
+            if projected is not True or captured is not False:
+                errors.append(f"{history_path.name} line {line_number}: post-start rows must project without capture")
+            if not is_finite_number(target_rms) or target_rms <= 0:
+                errors.append(f"{history_path.name} line {line_number}: invalid post-start target_rms for {name}")
+            if not is_finite_number(relative_error) or relative_error > rms_rtol:
+                errors.append(f"{history_path.name} line {line_number}: RMS relative_error too large for {name}: {relative_error}")
+            elif is_finite_number(relative_error):
+                max_relative_error = max(max_relative_error, relative_error)
+            projected_rows += 1
+
+    missing_history = sorted(set(controlled) - set(seen_by_name))
+    if missing_history:
+        errors.append(f"norm-control history missing controlled tensors: {missing_history}")
+    if mode == "delayed_captured_constant":
+        missing_capture = sorted(set(controlled) - set(captured_by_name))
+        if missing_capture:
+            errors.append(f"delayed norm-control missing capture rows for: {missing_capture}")
+        if not targets_path.exists():
+            errors.append(f"missing delayed norm-control targets file: {targets_path}")
+        else:
+            targets = json.loads(targets_path.read_text())
+            target_by_name = {record.get("name"): record for record in targets}
+            for name, target in captured_by_name.items():
+                record = target_by_name.get(name)
+                if record is None:
+                    errors.append(f"norm_control_targets.json missing {name}")
+                elif not close_enough(record.get("target_rms"), target, rtol=rms_rtol):
+                    errors.append(f"norm_control_targets.json target mismatch for {name}")
+    if projected_rows == 0:
+        errors.append("norm-control history has no projected rows")
+
+    return {
+        "norm_control_enabled": True,
+        "norm_control_mode": mode,
+        "norm_control_history_rows": rows,
+        "norm_control_controlled_tensors": len(controlled),
+        "norm_control_projected_rows": projected_rows,
+        "norm_control_max_relative_error": max_relative_error,
+        "norm_control_start_step": start_step,
+    }
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--run-dir", required=True)
+    parser.add_argument("--norm-control-rms-rtol", type=float, default=1e-5)
     args = parser.parse_args()
 
     run_dir = Path(args.run_dir)
@@ -269,6 +442,7 @@ def main():
         require_optimizer_fields=True,
     )
     activation_probe = validate_activation_probe(run_dir, errors)
+    norm_control = validate_norm_control(run_dir, trainable, errors, args.norm_control_rms_rtol)
     tensor_steps = set(tensor_history["distinct_steps"])
     update_steps = set(update_history["distinct_steps"])
     if not update_steps:
@@ -294,6 +468,7 @@ def main():
         "adamw_update_min_records_per_tensor": update_history["min_records_per_tensor"],
         "adamw_update_max_records_per_tensor": update_history["max_records_per_tensor"],
         **activation_probe,
+        **norm_control,
     }
     print(json.dumps(result, indent=2))
     if errors:
