@@ -423,30 +423,72 @@ else:
     raw_model = model
 ctx = torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16)
 
+DEFAULT_NORM_CONTROL_MODE = 'delayed_captured_constant'
+DEFAULT_NORM_CONTROL_START_STEP = 1000
+
 def load_norm_control_config(path):
     if not path:
-        return dict(enabled=False, targets=[], eps=1e-12, log_every=1)
+        return dict(enabled=False, mode='disabled', targets=[], eps=1e-12, log_every=1, start_step=None)
     with open(path, 'r') as f:
         spec = json.load(f)
     if not spec.get('enabled', True):
-        return dict(enabled=False, targets=[], eps=float(spec.get('eps', 1e-12)), log_every=int(spec.get('log_every', 1)))
+        return dict(
+            enabled=False,
+            mode='disabled',
+            targets=[],
+            eps=float(spec.get('eps', 1e-12)),
+            log_every=int(spec.get('log_every', 1)),
+            start_step=None,
+        )
     if spec.get('norm_type', 'rms') != 'rms':
         raise ValueError("norm_control_config only supports norm_type='rms'")
+    mode = spec.get('mode', DEFAULT_NORM_CONTROL_MODE)
+    mode_aliases = {
+        'specified_target': 'specified_target',
+        'constant_from_start': 'specified_target',
+        'immediate': 'specified_target',
+        'immediate_target': 'specified_target',
+        'delayed_captured_constant': 'delayed_captured_constant',
+        'delayed_start_captured_constant': 'delayed_captured_constant',
+        'warmup_then_constant': 'delayed_captured_constant',
+    }
+    if mode not in mode_aliases:
+        raise ValueError(f"unknown norm-control mode: {mode}")
+    mode = mode_aliases[mode]
+
     targets = spec.get('targets')
+    if targets is None and 'controlled_patterns' in spec:
+        targets = [
+            {'pattern': pattern} if isinstance(pattern, str) else pattern
+            for pattern in spec['controlled_patterns']
+        ]
     if not isinstance(targets, list) or not targets:
         raise ValueError("enabled norm_control_config requires a non-empty targets list")
     for target in targets:
         if 'pattern' not in target:
             raise ValueError("each norm-control target requires a pattern")
-        target_rms = float(target.get('target_rms', 0.0))
-        if not (target_rms > 0.0):
-            raise ValueError(f"target_rms must be positive for pattern {target['pattern']}")
-        target['target_rms'] = target_rms
+        if mode == 'specified_target':
+            target_rms = float(target.get('target_rms', 0.0))
+            if not (target_rms > 0.0):
+                raise ValueError(f"target_rms must be positive for pattern {target['pattern']}")
+            target['target_rms'] = target_rms
+        elif 'target_rms' in target:
+            raise ValueError(
+                "delayed_captured_constant captures target_rms at start_step; "
+                f"remove target_rms for pattern {target['pattern']}"
+            )
+    start_step = None
+    if mode == 'delayed_captured_constant':
+        start_step = int(spec.get('start_step', DEFAULT_NORM_CONTROL_START_STEP))
+        if start_step < 0:
+            raise ValueError("norm-control start_step must be non-negative")
     return dict(
         enabled=True,
+        mode=mode,
         targets=targets,
         eps=float(spec.get('eps', 1e-12)),
         log_every=int(spec.get('log_every', 1)),
+        start_step=start_step,
     )
 
 def pattern_matches_name(pattern, name):
@@ -455,13 +497,23 @@ def pattern_matches_name(pattern, name):
 def build_norm_control_state(raw_model, path):
     spec = load_norm_control_config(path)
     if not spec['enabled']:
-        return dict(enabled=False, params=[], eps=spec['eps'], log_every=spec['log_every'], targets=[])
+        return dict(
+            enabled=False,
+            mode=spec['mode'],
+            params=[],
+            eps=spec['eps'],
+            log_every=spec['log_every'],
+            targets=[],
+            start_step=spec['start_step'],
+        )
+    if spec['mode'] == 'delayed_captured_constant' and spec['start_step'] > args.num_iterations:
+        raise ValueError("norm-control start_step must be <= num_iterations")
     named_parameters = list(raw_model.named_parameters())
     matched_by_name = {}
     target_records = []
     for target in spec['targets']:
         pattern = target['pattern']
-        target_rms = target['target_rms']
+        target_rms = target.get('target_rms')
         matches = [(name, p) for name, p in named_parameters if pattern_matches_name(pattern, name)]
         if not matches:
             raise ValueError(f"norm-control pattern matched no parameters: {pattern}")
@@ -475,63 +527,132 @@ def build_norm_control_state(raw_model, path):
                 raise ValueError(f"norm-control target is not floating point: {name}")
             if p.ndim < 2:
                 raise ValueError(f"norm-control target must have ndim >= 2: {name}")
-            matched_by_name[name] = dict(name=name, param=p, pattern=pattern, target_rms=target_rms)
-        target_records.append(dict(pattern=pattern, target_rms=target_rms, matched_names=[name for name, _ in matches]))
+            matched_by_name[name] = dict(
+                name=name,
+                param=p,
+                pattern=pattern,
+                target_rms=target_rms,
+                captured=False,
+            )
+        record = dict(pattern=pattern, matched_names=[name for name, _ in matches])
+        if target_rms is not None:
+            record['target_rms'] = target_rms
+        target_records.append(record)
     controlled = [matched_by_name[name] for name in sorted(matched_by_name)]
     return dict(
         enabled=True,
+        mode=spec['mode'],
         params=controlled,
         eps=spec['eps'],
         log_every=spec['log_every'],
         targets=target_records,
+        start_step=spec['start_step'],
     )
 
 @torch.no_grad()
 def apply_rms_norm_control(norm_control_state, step, event):
     if not norm_control_state['enabled']:
         return
+    mode = norm_control_state['mode']
+    start_step = norm_control_state['start_step']
+    if mode == 'specified_target':
+        phase = 'specified_target'
+    elif step < start_step:
+        phase = 'pre_start'
+    elif step == start_step:
+        phase = 'capture'
+    else:
+        phase = 'post_start'
     should_log = (
         master_process
         and norm_control_state['log_every'] > 0
-        and (step % norm_control_state['log_every'] == 0 or step == args.num_iterations or event == 'initial')
+        and (
+            step % norm_control_state['log_every'] == 0
+            or step == args.num_iterations
+            or event == 'initial'
+            or phase == 'capture'
+        )
     )
     history_path = os.path.join(logdir, 'norm_control_history.jsonl') if should_log else None
     f = open(history_path, 'a') if should_log else None
+    captured_any = False
     try:
         for entry in norm_control_state['params']:
             p = entry['param']
-            target_rms = entry['target_rms']
             rms_before = p.detach().float().square().mean().sqrt()
-            if rms_before > norm_control_state['eps']:
-                scale = target_rms / rms_before
-                p.mul_(scale.to(dtype=p.dtype, device=p.device))
+            target_rms = entry['target_rms']
+            projected = phase in ('specified_target', 'post_start')
+            captured = phase == 'capture'
+            if captured:
+                target_rms = rms_before.item()
+                entry['target_rms'] = target_rms
+                entry['captured'] = True
+                captured_any = True
+            if projected:
+                if target_rms is None:
+                    raise RuntimeError(f"missing captured target RMS for norm-control parameter {entry['name']}")
+                if rms_before > norm_control_state['eps']:
+                    target = torch.tensor(target_rms, dtype=torch.float32, device=p.device)
+                    scale = target / rms_before
+                    p.mul_(scale.to(dtype=p.dtype, device=p.device))
+                else:
+                    scale = torch.ones((), dtype=torch.float32, device=p.device)
             else:
                 scale = torch.ones((), dtype=torch.float32, device=p.device)
             rms_after = p.detach().float().square().mean().sqrt()
             if f is not None:
-                relative_error = (rms_after - target_rms).abs() / target_rms
+                relative_error = None
+                if target_rms is not None:
+                    target = torch.tensor(target_rms, dtype=torch.float32, device=p.device)
+                    relative_error = ((rms_after - target).abs() / target).item()
                 f.write(json.dumps(dict(
                     step=step,
                     event=event,
+                    mode=mode,
+                    phase=phase,
                     name=entry['name'],
                     pattern=entry['pattern'],
                     target_rms=target_rms,
                     pre_control_rms=rms_before.item(),
                     post_control_rms=rms_after.item(),
                     scale=scale.item(),
-                    relative_error=relative_error.item(),
+                    relative_error=relative_error,
+                    projected=projected,
+                    captured=captured,
+                    start_step=start_step,
                     weight_decay=0.0,
                 )) + '\n')
     finally:
         if f is not None:
             f.close()
+    if captured_any:
+        write_norm_control_targets(norm_control_state)
+
+def write_norm_control_targets(norm_control_state):
+    if not master_process or not norm_control_state['enabled']:
+        return
+    records = []
+    for entry in norm_control_state['params']:
+        if entry['target_rms'] is not None:
+            records.append(dict(
+                name=entry['name'],
+                pattern=entry['pattern'],
+                target_rms=entry['target_rms'],
+                captured=entry['captured'],
+                start_step=norm_control_state['start_step'],
+                mode=norm_control_state['mode'],
+            ))
+    with open(os.path.join(logdir, 'norm_control_targets.json'), 'w') as f:
+        json.dump(records, f, indent=2)
 
 def write_norm_control_metadata(norm_control_state):
     if not master_process or not norm_control_state['enabled']:
         return
     metadata = dict(
         enabled=True,
+        mode=norm_control_state['mode'],
         norm_type='rms',
+        start_step=norm_control_state['start_step'],
         eps=norm_control_state['eps'],
         log_every=norm_control_state['log_every'],
         targets=norm_control_state['targets'],
@@ -540,6 +661,7 @@ def write_norm_control_metadata(norm_control_state):
                 name=entry['name'],
                 pattern=entry['pattern'],
                 target_rms=entry['target_rms'],
+                captured=entry['captured'],
                 shape=list(entry['param'].shape),
                 ndim=entry['param'].ndim,
                 weight_decay=0.0,
@@ -983,8 +1105,8 @@ def maybe_log_tensor_norms(step):
             )) + '\n')
 
 activation_probe_x = build_activation_probe_batch()
-write_norm_control_metadata(norm_control_state)
 apply_rms_norm_control(norm_control_state, step=0, event='initial')
+write_norm_control_metadata(norm_control_state)
 write_tensor_metadata()
 write_activation_probe_metadata(activation_probe_x)
 
