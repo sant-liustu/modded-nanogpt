@@ -456,9 +456,9 @@ class Hyperparameters:
     warmdown_iters : int = 1450 # number of iterations of linear warmup/warmdown for triangular or trapezoidal schedule
     weight_decay : float = 0
     muon_backend : str = 'newtonschulz5' # Muon orthogonalization backend
-    muon_momentum : float = 0.95 # Muon momentum beta
+    muon_momentum : float = 0.99 # Muon momentum beta
     muon_nesterov : bool = False # whether to use Nesterov-style Muon momentum
-    muon_weight_decay : float = 0 # decoupled weight decay for Muon parameters
+    muon_weight_decay : float = 0.2 # decoupled weight decay for Muon parameters
     # evaluation and logging hyperparams
     val_loss_every : int = 125 # every how many steps to evaluate val loss? 0 for only at the end
     val_tokens : int = 10485760 # how many tokens of validation data? it's important to keep this fixed for consistent comparisons
