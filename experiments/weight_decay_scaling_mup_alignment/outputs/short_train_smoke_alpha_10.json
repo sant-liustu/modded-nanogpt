@@ -1,0 +1,37 @@
+{
+  "config": {
+    "alpha_in": 10.0,
+    "n_embd": 64,
+    "n_head": 4,
+    "n_layer": 1,
+    "sequence_length": 32,
+    "batch_size": 4,
+    "vocab_size": 50304,
+    "steps": 3,
+    "lr": 0.001,
+    "seed": 1234,
+    "output": "experiments\\weight_decay_scaling_mup_alignment\\outputs\\short_train_smoke_alpha_10.json"
+  },
+  "records": [
+    {
+      "step": 0,
+      "loss": 10.829036712646484,
+      "grad_norm": 1.0072901172644537,
+      "logits_std": 0.16014468669891357
+    },
+    {
+      "step": 1,
+      "loss": 10.844295501708984,
+      "grad_norm": 1.008373805068234,
+      "logits_std": 0.15916357934474945
+    },
+    {
+      "step": 2,
+      "loss": 10.84864616394043,
+      "grad_norm": 1.0106428186932186,
+      "logits_std": 0.1576281040906906
+    }
+  ],
+  "all_losses_finite": true,
+  "all_grad_norms_finite": true
+}
