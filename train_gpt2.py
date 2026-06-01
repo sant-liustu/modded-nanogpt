@@ -7,6 +7,7 @@ import hashlib
 import json
 import uuid
 import glob
+import math
 import time
 from collections import defaultdict
 from dataclasses import dataclass
@@ -164,13 +165,15 @@ class CausalSelfAttention(nn.Module):
         self.n_head = config.n_head
         self.n_embd = config.n_embd
         self.head_dim = self.n_embd // self.n_head
+        self.mup_attention_scale_mode = config.mup_attention_scale_mode
         assert self.n_embd % self.n_head == 0
         self.c_q = nn.Linear(self.n_embd, self.n_embd, bias=False)
         self.c_k = nn.Linear(self.n_embd, self.n_embd, bias=False)
         self.c_v = nn.Linear(self.n_embd, self.n_embd, bias=False)
         # output projection
         self.c_proj = nn.Linear(self.n_embd, self.n_embd, bias=False)
-        self.c_proj.weight.data.zero_() # zero init suggested by @Grad62304977
+        if not config.mup_init_smoke:
+            self.c_proj.weight.data.zero_() # zero init suggested by @Grad62304977
         self.rotary = Rotary(self.head_dim)
 
     def forward(self, x):
@@ -181,7 +184,18 @@ class CausalSelfAttention(nn.Module):
         cos, sin = self.rotary(q)
         q, k = F.rms_norm(q, (q.size(-1),)), F.rms_norm(k, (k.size(-1),)) # QK norm suggested by @Grad62304977
         q, k = apply_rotary_emb(q, cos, sin), apply_rotary_emb(k, cos, sin)
-        y = F.scaled_dot_product_attention(q.transpose(1, 2), k.transpose(1, 2), v.transpose(1, 2), is_causal=True)
+        if self.mup_attention_scale_mode == "default":
+            y = F.scaled_dot_product_attention(q.transpose(1, 2), k.transpose(1, 2), v.transpose(1, 2), is_causal=True)
+        elif self.mup_attention_scale_mode == "one_over_d_head":
+            y = F.scaled_dot_product_attention(
+                q.transpose(1, 2),
+                k.transpose(1, 2),
+                v.transpose(1, 2),
+                is_causal=True,
+                scale=1.0 / self.head_dim,
+            )
+        else:
+            raise ValueError(f"unknown mup_attention_scale_mode={self.mup_attention_scale_mode!r}")
         y = y.transpose(1, 2).contiguous().view_as(x) # re-assemble all head outputs side by side
         y = self.c_proj(y)
         return y
@@ -192,7 +206,8 @@ class MLP(nn.Module):
         super().__init__()
         self.c_fc    = nn.Linear(config.n_embd, 4 * config.n_embd, bias=False)
         self.c_proj  = nn.Linear(4 * config.n_embd, config.n_embd, bias=False)
-        self.c_proj.weight.data.zero_() # zero init suggested by @Grad62304977
+        if not config.mup_init_smoke:
+            self.c_proj.weight.data.zero_() # zero init suggested by @Grad62304977
 
     def forward(self, x):
         x = self.c_fc(x)
@@ -221,6 +236,10 @@ class GPTConfig:
     n_layer : int = 12
     n_head : int = 6 # head dim 128 suggested by @Grad62304977
     n_embd : int = 768
+    mup_init_smoke : bool = False
+    mup_init_std : float = 0.02
+    mup_input_alpha : float = 1.0
+    mup_attention_scale_mode : str = "default"
 
 class GPT(nn.Module):
 
@@ -234,11 +253,27 @@ class GPT(nn.Module):
         ))
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
         self.transformer.wte.weight = self.lm_head.weight # https://paperswithcode.com/method/weight-tying
+        if config.mup_init_smoke:
+            self.apply(self._init_mup_smoke_weights)
+            c_proj_std = config.mup_init_std / math.sqrt(2 * config.n_layer)
+            for pn, p in self.named_parameters():
+                if pn.endswith("c_proj.weight"):
+                    torch.nn.init.normal_(p, mean=0.0, std=c_proj_std)
+
+    def _init_mup_smoke_weights(self, module):
+        if isinstance(module, nn.Linear):
+            torch.nn.init.normal_(module.weight, mean=0.0, std=self.config.mup_init_std)
+            if module.bias is not None:
+                torch.nn.init.zeros_(module.bias)
+        elif isinstance(module, nn.Embedding):
+            torch.nn.init.normal_(module.weight, mean=0.0, std=self.config.mup_init_std)
 
     def forward(self, idx, targets=None, return_logits=True):
 
         # forward the GPT model itself
         x = self.transformer.wte(idx) # token embeddings of shape (b, t, n_embd)
+        if self.config.mup_init_smoke:
+            x = x * self.config.mup_input_alpha
         for block in self.transformer.h:
             x = block(x)
         x = F.rms_norm(x, (x.size(-1),))
