@@ -6,6 +6,7 @@ EXPERIMENTS = [
         experiment_id="baseline_m095_wd0",
         role="baseline",
         muon_momentum=0.95,
+        muon_nesterov=False,
         muon_weight_decay=0.0,
         script_name="train_baseline_m095_wd0.py",
     ),
@@ -13,6 +14,7 @@ EXPERIMENTS = [
         experiment_id="baseline_m095_wd0p1",
         role="baseline + weight decay",
         muon_momentum=0.95,
+        muon_nesterov=False,
         muon_weight_decay=0.1,
         script_name="train_baseline_m095_wd0p1.py",
     ),
@@ -20,6 +22,7 @@ EXPERIMENTS = [
         experiment_id="try_m099_wd0p1",
         role="trial",
         muon_momentum=0.99,
+        muon_nesterov=False,
         muon_weight_decay=0.1,
         script_name="train_try_m099_wd0p1.py",
     ),
@@ -27,6 +30,7 @@ EXPERIMENTS = [
         experiment_id="try_m099_wd0p2",
         role="trial",
         muon_momentum=0.99,
+        muon_nesterov=False,
         muon_weight_decay=0.2,
         script_name="train_try_m099_wd0p2.py",
     ),
@@ -34,8 +38,49 @@ EXPERIMENTS = [
         experiment_id="try_m099_wd0",
         role="momentum-only control",
         muon_momentum=0.99,
+        muon_nesterov=False,
         muon_weight_decay=0.0,
         script_name="train_try_m099_wd0.py",
+    ),
+    dict(
+        experiment_id="baseline_m095_wd0_nesterov",
+        role="baseline + Nesterov",
+        muon_momentum=0.95,
+        muon_nesterov=True,
+        muon_weight_decay=0.0,
+        script_name="train_baseline_m095_wd0_nesterov.py",
+    ),
+    dict(
+        experiment_id="baseline_m095_wd0p1_nesterov",
+        role="baseline + weight decay + Nesterov",
+        muon_momentum=0.95,
+        muon_nesterov=True,
+        muon_weight_decay=0.1,
+        script_name="train_baseline_m095_wd0p1_nesterov.py",
+    ),
+    dict(
+        experiment_id="try_m099_wd0p1_nesterov",
+        role="trial + Nesterov",
+        muon_momentum=0.99,
+        muon_nesterov=True,
+        muon_weight_decay=0.1,
+        script_name="train_try_m099_wd0p1_nesterov.py",
+    ),
+    dict(
+        experiment_id="try_m099_wd0p2_nesterov",
+        role="trial + Nesterov",
+        muon_momentum=0.99,
+        muon_nesterov=True,
+        muon_weight_decay=0.2,
+        script_name="train_try_m099_wd0p2_nesterov.py",
+    ),
+    dict(
+        experiment_id="try_m099_wd0_nesterov",
+        role="momentum-only control + Nesterov",
+        muon_momentum=0.99,
+        muon_nesterov=True,
+        muon_weight_decay=0.0,
+        script_name="train_try_m099_wd0_nesterov.py",
     ),
 ]
 
@@ -61,11 +106,17 @@ def main():
     for experiment in EXPERIMENTS:
         code = template
         momentum = float_literal(experiment["muon_momentum"])
+        nesterov = str(bool(experiment["muon_nesterov"]))
         weight_decay = float_literal(experiment["muon_weight_decay"])
         code = replace_exact(
             code,
             "    muon_momentum : float = 0.95 # Muon momentum beta",
             f"    muon_momentum : float = {momentum} # Muon momentum beta",
+        )
+        code = replace_exact(
+            code,
+            "    muon_nesterov : bool = False # whether to use Nesterov-style Muon momentum",
+            f"    muon_nesterov : bool = {nesterov} # whether to use Nesterov-style Muon momentum",
         )
         code = replace_exact(
             code,
