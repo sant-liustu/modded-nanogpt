@@ -35,6 +35,14 @@ EXPERIMENTS = [
         script_name="train_try_m099_wd0p2.py",
     ),
     dict(
+        experiment_id="try_m099_wd0p7",
+        role="trial",
+        muon_momentum=0.99,
+        muon_nesterov=False,
+        muon_weight_decay=0.7,
+        script_name="train_try_m099_wd0p7.py",
+    ),
+    dict(
         experiment_id="try_m099_wd0",
         role="momentum-only control",
         muon_momentum=0.99,
