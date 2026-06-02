@@ -33,14 +33,16 @@ def test_muon_weight_decay_schedule_values():
     schedule = ns["MUON_WEIGHT_DECAY_SCHEDULE"]
     wd_for_step = ns["muon_weight_decay_for_step"]
 
-    assert wd_for_step(0) == schedule["scale"] * schedule["start"]
-    expected_500 = schedule["scale"] * (
-        schedule["floor"]
-        + (schedule["start"] - schedule["floor"]) * math.exp(-500 / schedule["tau"])
-    )
-    assert math.isclose(wd_for_step(500), expected_500)
-    assert wd_for_step(500) < wd_for_step(0)
-    assert wd_for_step(5100) > schedule["scale"] * schedule["floor"]
+    assert wd_for_step(0) == schedule["start"]
+    assert wd_for_step(schedule["hold_steps"] - 1) == schedule["start"]
+    assert wd_for_step(schedule["hold_steps"]) == schedule["start"]
+    assert wd_for_step(schedule["decay_end"]) == schedule["floor"]
+    assert wd_for_step(5100) == schedule["floor"]
+
+    midpoint = (schedule["hold_steps"] + schedule["decay_end"]) // 2
+    expected_midpoint = schedule["floor"] + 0.5 * (schedule["start"] - schedule["floor"])
+    assert math.isclose(wd_for_step(midpoint), expected_midpoint)
+    assert wd_for_step(1000) > wd_for_step(1500)
 
 
 def test_set_muon_weight_decay_updates_all_param_groups():

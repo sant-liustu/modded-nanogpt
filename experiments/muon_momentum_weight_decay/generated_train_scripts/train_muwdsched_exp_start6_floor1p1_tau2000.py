@@ -524,21 +524,29 @@ ema_half_lives = [float(x) for x in args.ema_halflife_steps.split(',') if x.stri
 ema_set = EMASet(raw_model, ema_half_lives)
 
 MUON_WEIGHT_DECAY_SCHEDULE = dict(
-    scale=1.0,
     start=6.0,
-    floor=1.1,
-    tau=2000.0,
+    floor=1.0,
+    hold_steps=500,
+    decay_end=2000,
 )
 
 def muon_weight_decay_for_step(update_index):
     schedule = MUON_WEIGHT_DECAY_SCHEDULE
-    scale = float(schedule['scale'])
     start = float(schedule['start'])
     floor = float(schedule['floor'])
-    tau = float(schedule['tau'])
-    if tau <= 0:
-        raise ValueError(f"Muon weight decay schedule tau must be positive, got {tau}")
-    return scale * (floor + (start - floor) * math.exp(-float(update_index) / tau))
+    hold_steps = int(schedule['hold_steps'])
+    decay_end = int(schedule['decay_end'])
+    if hold_steps < 0:
+        raise ValueError(f"Muon weight decay schedule hold_steps must be non-negative, got {hold_steps}")
+    if decay_end <= hold_steps:
+        raise ValueError(f"Muon weight decay schedule decay_end must be > hold_steps, got {decay_end} <= {hold_steps}")
+    step = float(update_index)
+    if step < hold_steps:
+        return start
+    if step >= decay_end:
+        return floor
+    progress = (step - hold_steps) / (decay_end - hold_steps)
+    return floor + 0.5 * (start - floor) * (1.0 + math.cos(math.pi * progress))
 
 def set_muon_weight_decay_for_step(update_index):
     weight_decay = muon_weight_decay_for_step(update_index)

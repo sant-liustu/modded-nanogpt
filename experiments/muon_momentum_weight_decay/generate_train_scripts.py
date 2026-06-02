@@ -96,18 +96,18 @@ EXPERIMENTS = [
 SCHEDULE_EXPERIMENTS = [
     dict(
         experiment_id="muwdsched_exp_start6_floor1p1_tau2000",
-        role="trial + smooth Muon weight decay schedule",
+        role="trial + plateau/cosine Muon weight decay schedule",
         muon_momentum=0.99,
         muon_nesterov=False,
-        muon_weight_decay_schedule=dict(scale=1.0, start=6.0, floor=1.1, tau=2000.0),
+        muon_weight_decay_schedule=dict(start=6.0, floor=1.0, hold_steps=500, decay_end=2000),
         script_name="train_muwdsched_exp_start6_floor1p1_tau2000.py",
     ),
     dict(
         experiment_id="muwdsched_exp_start6_floor1p1_tau1200",
-        role="trial + smooth Muon weight decay schedule",
+        role="trial + plateau/cosine Muon weight decay schedule",
         muon_momentum=0.99,
         muon_nesterov=False,
-        muon_weight_decay_schedule=dict(scale=1.0, start=6.0, floor=1.1, tau=1200.0),
+        muon_weight_decay_schedule=dict(start=6.0, floor=1.0, hold_steps=500, decay_end=2000),
         script_name="train_muwdsched_exp_start6_floor1p1_tau1200.py",
     ),
 ]
@@ -117,10 +117,10 @@ LEGACY_WEIGHT_DECAY_LINE = "    muon_weight_decay : float = 0 # decoupled weight
 
 SCHEDULE_TEMPLATE = (
     "MUON_WEIGHT_DECAY_SCHEDULE = dict(\n"
-    "    scale=1.0,\n"
-    "    start=5.0,\n"
-    "    floor=1.2,\n"
-    "    tau=1200.0,\n"
+    "    start=6.0,\n"
+    "    floor=1.0,\n"
+    "    hold_steps=500,\n"
+    "    decay_end=2000,\n"
     ")"
 )
 
@@ -138,10 +138,10 @@ def float_literal(value):
 def format_schedule(schedule):
     return (
         "MUON_WEIGHT_DECAY_SCHEDULE = dict(\n"
-        f"    scale={float_literal(schedule['scale'])},\n"
         f"    start={float_literal(schedule['start'])},\n"
         f"    floor={float_literal(schedule['floor'])},\n"
-        f"    tau={float_literal(schedule['tau'])},\n"
+        f"    hold_steps={int(schedule['hold_steps'])},\n"
+        f"    decay_end={int(schedule['decay_end'])},\n"
         ")"
     )
 
