@@ -5,6 +5,7 @@ with open(sys.argv[0]) as f:
 import json
 import uuid
 import glob
+import math
 import time
 from contextlib import nullcontext
 from dataclasses import dataclass
@@ -458,7 +459,6 @@ class Hyperparameters:
     muon_backend : str = 'newtonschulz5' # Muon orthogonalization backend
     muon_momentum : float = 0.95 # Muon momentum beta
     muon_nesterov : bool = False # whether to use Nesterov-style Muon momentum
-    muon_weight_decay : float = 0 # decoupled weight decay for Muon parameters
     # evaluation and logging hyperparams
     val_loss_every : int = 125 # every how many steps to evaluate val loss? 0 for only at the end
     val_tokens : int = 10485760 # how many tokens of validation data? it's important to keep this fixed for consistent comparisons
@@ -523,12 +523,35 @@ ctx = torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16)
 ema_half_lives = [float(x) for x in args.ema_halflife_steps.split(',') if x.strip()]
 ema_set = EMASet(raw_model, ema_half_lives)
 
+MUON_WEIGHT_DECAY_SCHEDULE = dict(
+    scale=1.0,
+    start=5.0,
+    floor=1.2,
+    tau=1200.0,
+)
+
+def muon_weight_decay_for_step(update_index):
+    schedule = MUON_WEIGHT_DECAY_SCHEDULE
+    scale = float(schedule['scale'])
+    start = float(schedule['start'])
+    floor = float(schedule['floor'])
+    tau = float(schedule['tau'])
+    if tau <= 0:
+        raise ValueError(f"Muon weight decay schedule tau must be positive, got {tau}")
+    return scale * (floor + (start - floor) * math.exp(-float(update_index) / tau))
+
+def set_muon_weight_decay_for_step(update_index):
+    weight_decay = muon_weight_decay_for_step(update_index)
+    for group in optimizer2.param_groups:
+        group['weight_decay'] = weight_decay
+    return weight_decay
+
 # init the optimizer(s)
 optimizer1 = torch.optim.AdamW(raw_model.lm_head.parameters(), lr=args.learning_rate, betas=(0.9, 0.95),
                                weight_decay=0.0, fused=True)
 optimizer2 = Muon(raw_model.transformer.h.parameters(), lr=0.1*args.learning_rate, momentum=args.muon_momentum,
                   nesterov=args.muon_nesterov,
-                  weight_decay=args.muon_weight_decay,
+                  weight_decay=muon_weight_decay_for_step(0),
                   backend=args.muon_backend,
                   rank=ddp_rank, world_size=ddp_world_size)
 optimizers = [optimizer1, optimizer2]
@@ -741,6 +764,7 @@ def muon_momentum_buffer_norm_record(step, name, tensor, momentum_buffer, param_
         param_group_index=param_hparams['param_group_index'],
         momentum=param_hparams['momentum'],
         nesterov=param_hparams['nesterov'],
+        weight_decay=param_hparams['weight_decay'],
         backend=param_hparams['backend'],
         backend_steps=param_hparams['backend_steps'],
     )
@@ -865,6 +889,7 @@ for step in range(args.num_iterations + 1):
         p.grad /= train_accumulation_steps
     # step the optimizers and schedulers
     update_step = step + 1
+    set_muon_weight_decay_for_step(step)
     optimizer_update_state = maybe_capture_optimizer_update_state(update_step)
     for opt, sched in zip(optimizers, schedulers):
         opt.step()
