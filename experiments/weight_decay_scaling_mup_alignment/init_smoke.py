@@ -10,7 +10,7 @@ def load_model_defs():
     train_py = root / "train_gpt2.py"
     source = train_py.read_text(encoding="utf-8")
     prefix = source.split("# -----------------------------------------------------------------------------\n# Our own simple Distributed Data Loader", 1)[0]
-    namespace = {"__file__": str(train_py), "__name__": "mup_init_smoke_defs"}
+    namespace = {"__file__": str(train_py), "__name__": "mup_parameterization_defs"}
     exec(compile(prefix, str(train_py), "exec"), namespace)
     return namespace["GPT"], namespace["GPTConfig"]
 
@@ -30,7 +30,7 @@ def summarize_param(name, tensor):
     }
 
 
-def run_smoke(alpha_in, n_embd, n_head, n_layer, sequence_length, batch_size, vocab_size):
+def run_smoke(scale_emb, scale_base_model, n_embd, n_head, n_layer, sequence_length, batch_size, vocab_size):
     GPT, GPTConfig = load_model_defs()
     torch.manual_seed(1234)
     config = GPTConfig(
@@ -38,10 +38,9 @@ def run_smoke(alpha_in, n_embd, n_head, n_layer, sequence_length, batch_size, vo
         n_layer=n_layer,
         n_head=n_head,
         n_embd=n_embd,
-        mup_init_smoke=True,
-        mup_init_std=0.02,
-        mup_input_alpha=alpha_in,
-        mup_attention_scale_mode="one_over_d_head",
+        init_std=0.02,
+        scale_emb=scale_emb,
+        scale_base_model=scale_base_model,
     )
     model = GPT(config)
     model.eval()
@@ -63,7 +62,7 @@ def run_smoke(alpha_in, n_embd, n_head, n_layer, sequence_length, batch_size, vo
 
     with torch.no_grad():
         embedding_raw = model.transformer.wte(idx)
-        embedding_scaled = embedding_raw * model.config.mup_input_alpha
+        embedding_scaled = embedding_raw * model.config.scale_emb
         logits, loss = model(idx, targets, return_logits=True)
 
     for handle in handles:
@@ -81,16 +80,18 @@ def run_smoke(alpha_in, n_embd, n_head, n_layer, sequence_length, batch_size, vo
     param_dict = dict(model.named_parameters())
     result = {
         "config": {
-            "alpha_in": alpha_in,
+            "alpha_in": scale_emb,
+            "scale_emb": scale_emb,
+            "scale_base_model": scale_base_model,
             "n_embd": n_embd,
             "n_head": n_head,
             "n_layer": n_layer,
             "sequence_length": sequence_length,
             "batch_size": batch_size,
             "vocab_size": vocab_size,
-            "mup_init_std": model.config.mup_init_std,
-            "mup_attention_scale_mode": model.config.mup_attention_scale_mode,
-            "expected_c_proj_std": 0.02 / (2 * n_layer) ** 0.5,
+            "init_std": model.config.init_std,
+            "attention_scale": "one_over_d_head",
+            "expected_c_proj_std": 0.02 / (2 * n_layer * n_embd / scale_base_model) ** 0.5,
         },
         "activation": {
             "embedding_raw_rms": rms(embedding_raw),
@@ -112,6 +113,7 @@ def run_smoke(alpha_in, n_embd, n_head, n_layer, sequence_length, batch_size, vo
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--alpha-in", type=float, nargs="+", default=[1.0, 10.0, 15.0])
+    parser.add_argument("--scale-base-model", type=int, default=768)
     parser.add_argument("--n-embd", type=int, default=64)
     parser.add_argument("--n-head", type=int, default=4)
     parser.add_argument("--n-layer", type=int, default=1)
@@ -123,7 +125,8 @@ def main():
 
     results = [
         run_smoke(
-            alpha_in=alpha,
+            scale_emb=alpha,
+            scale_base_model=args.scale_base_model,
             n_embd=args.n_embd,
             n_head=args.n_head,
             n_layer=args.n_layer,

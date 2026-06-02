@@ -2,30 +2,32 @@
   {
     "config": {
       "alpha_in": 1.0,
+      "scale_emb": 1.0,
+      "scale_base_model": 768,
       "n_embd": 64,
       "n_head": 4,
       "n_layer": 1,
       "sequence_length": 32,
       "batch_size": 4,
       "vocab_size": 50304,
-      "mup_init_std": 0.02,
-      "mup_attention_scale_mode": "one_over_d_head",
-      "expected_c_proj_std": 0.014142135623730949
+      "init_std": 0.02,
+      "attention_scale": "one_over_d_head",
+      "expected_c_proj_std": 0.048989794855663564
     },
     "activation": {
       "embedding_raw_rms": 0.02000316046178341,
       "embedding_scaled_rms": 0.02000316046178341,
-      "logits_std": 0.16008199751377106,
-      "logits_rms": 0.16008202731609344,
-      "initial_loss": 10.833352088928223,
+      "logits_std": 0.16000594198703766,
+      "logits_rms": 0.16000595688819885,
+      "initial_loss": 10.843238830566406,
       "layer_0.attn_branch_rms": [
-        0.007148368749767542
+        0.024762678891420364
       ],
       "layer_0.mlp_branch_rms": [
-        0.007110800594091415
+        0.02489757165312767
       ],
       "layer_0.residual_after_block_rms": [
-        0.022367024794220924
+        0.040502432733774185
       ]
     },
     "parameters": [
@@ -75,9 +77,9 @@
           64,
           64
         ],
-        "mean": 0.00028842128813266754,
-        "std": 0.014235126785933971,
-        "rms": 0.014238047413527966
+        "mean": 0.0009991205297410488,
+        "std": 0.04931192472577095,
+        "rms": 0.04932204633951187
       },
       {
         "name": "transformer.h.0.mlp.c_fc.weight",
@@ -95,39 +97,41 @@
           64,
           256
         ],
-        "mean": -8.166256884578615e-05,
-        "std": 0.01421463955193758,
-        "rms": 0.014214873313903809
+        "mean": -0.00028288745670579374,
+        "std": 0.04924095794558525,
+        "rms": 0.04924176633358002
       }
     ]
   },
   {
     "config": {
       "alpha_in": 10.0,
+      "scale_emb": 10.0,
+      "scale_base_model": 768,
       "n_embd": 64,
       "n_head": 4,
       "n_layer": 1,
       "sequence_length": 32,
       "batch_size": 4,
       "vocab_size": 50304,
-      "mup_init_std": 0.02,
-      "mup_attention_scale_mode": "one_over_d_head",
-      "expected_c_proj_std": 0.014142135623730949
+      "init_std": 0.02,
+      "attention_scale": "one_over_d_head",
+      "expected_c_proj_std": 0.048989794855663564
     },
     "activation": {
       "embedding_raw_rms": 0.02000316046178341,
       "embedding_scaled_rms": 0.2000316083431244,
-      "logits_std": 0.16014468669891357,
-      "logits_rms": 0.16014471650123596,
-      "initial_loss": 10.829036712646484,
+      "logits_std": 0.1601381003856659,
+      "logits_rms": 0.16013813018798828,
+      "initial_loss": 10.829798698425293,
       "layer_0.attn_branch_rms": [
-        0.00714948819950223
+        0.024766555055975914
       ],
       "layer_0.mlp_branch_rms": [
-        0.007017922587692738
+        0.024442380294203758
       ],
       "layer_0.residual_after_block_rms": [
-        0.20022791624069214
+        0.20284757018089294
       ]
     },
     "parameters": [
@@ -177,9 +181,9 @@
           64,
           64
         ],
-        "mean": 0.00028842128813266754,
-        "std": 0.014235126785933971,
-        "rms": 0.014238047413527966
+        "mean": 0.0009991205297410488,
+        "std": 0.04931192472577095,
+        "rms": 0.04932204633951187
       },
       {
         "name": "transformer.h.0.mlp.c_fc.weight",
@@ -197,39 +201,41 @@
           64,
           256
         ],
-        "mean": -8.166256884578615e-05,
-        "std": 0.01421463955193758,
-        "rms": 0.014214873313903809
+        "mean": -0.00028288745670579374,
+        "std": 0.04924095794558525,
+        "rms": 0.04924176633358002
       }
     ]
   },
   {
     "config": {
       "alpha_in": 15.0,
+      "scale_emb": 15.0,
+      "scale_base_model": 768,
       "n_embd": 64,
       "n_head": 4,
       "n_layer": 1,
       "sequence_length": 32,
       "batch_size": 4,
       "vocab_size": 50304,
-      "mup_init_std": 0.02,
-      "mup_attention_scale_mode": "one_over_d_head",
-      "expected_c_proj_std": 0.014142135623730949
+      "init_std": 0.02,
+      "attention_scale": "one_over_d_head",
+      "expected_c_proj_std": 0.048989794855663564
     },
     "activation": {
       "embedding_raw_rms": 0.02000316046178341,
       "embedding_scaled_rms": 0.3000473976135254,
-      "logits_std": 0.16014531254768372,
-      "logits_rms": 0.1601453423500061,
-      "initial_loss": 10.82896614074707,
+      "logits_std": 0.1601419895887375,
+      "logits_rms": 0.16014200448989868,
+      "initial_loss": 10.829383850097656,
       "layer_0.attn_branch_rms": [
-        0.007149494718760252
+        0.024766577407717705
       ],
       "layer_0.mlp_branch_rms": [
-        0.007012180518358946
+        0.024384837597608566
       ],
       "layer_0.residual_after_block_rms": [
-        0.30016058683395386
+        0.3018626272678375
       ]
     },
     "parameters": [
@@ -279,9 +285,9 @@
           64,
           64
         ],
-        "mean": 0.00028842128813266754,
-        "std": 0.014235126785933971,
-        "rms": 0.014238047413527966
+        "mean": 0.0009991205297410488,
+        "std": 0.04931192472577095,
+        "rms": 0.04932204633951187
       },
       {
         "name": "transformer.h.0.mlp.c_fc.weight",
@@ -299,9 +305,9 @@
           64,
           256
         ],
-        "mean": -8.166256884578615e-05,
-        "std": 0.01421463955193758,
-        "rms": 0.014214873313903809
+        "mean": -0.00028288745670579374,
+        "std": 0.04924095794558525,
+        "rms": 0.04924176633358002
       }
     ]
   }

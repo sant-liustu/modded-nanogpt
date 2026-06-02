@@ -25,10 +25,9 @@ def run_short_train(args):
         n_layer=args.n_layer,
         n_head=args.n_head,
         n_embd=args.n_embd,
-        mup_init_smoke=True,
-        mup_init_std=0.02,
-        mup_input_alpha=args.alpha_in,
-        mup_attention_scale_mode="one_over_d_head",
+        init_std=0.02,
+        scale_emb=args.alpha_in,
+        scale_base_model=args.scale_base_model,
     )
     model = GPT(config)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, betas=(0.9, 0.95), weight_decay=0.0)
@@ -67,6 +66,7 @@ def run_short_train(args):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--alpha-in", type=float, default=10.0)
+    parser.add_argument("--scale-base-model", type=int, default=768)
     parser.add_argument("--n-embd", type=int, default=64)
     parser.add_argument("--n-head", type=int, default=4)
     parser.add_argument("--n-layer", type=int, default=1)

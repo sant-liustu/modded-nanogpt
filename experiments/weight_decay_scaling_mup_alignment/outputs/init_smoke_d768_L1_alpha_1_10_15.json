@@ -2,14 +2,16 @@
   {
     "config": {
       "alpha_in": 1.0,
+      "scale_emb": 1.0,
+      "scale_base_model": 768,
       "n_embd": 768,
       "n_head": 6,
       "n_layer": 1,
       "sequence_length": 16,
       "batch_size": 2,
       "vocab_size": 50304,
-      "mup_init_std": 0.02,
-      "mup_attention_scale_mode": "one_over_d_head",
+      "init_std": 0.02,
+      "attention_scale": "one_over_d_head",
       "expected_c_proj_std": 0.014142135623730949
     },
     "activation": {
@@ -104,14 +106,16 @@
   {
     "config": {
       "alpha_in": 10.0,
+      "scale_emb": 10.0,
+      "scale_base_model": 768,
       "n_embd": 768,
       "n_head": 6,
       "n_layer": 1,
       "sequence_length": 16,
       "batch_size": 2,
       "vocab_size": 50304,
-      "mup_init_std": 0.02,
-      "mup_attention_scale_mode": "one_over_d_head",
+      "init_std": 0.02,
+      "attention_scale": "one_over_d_head",
       "expected_c_proj_std": 0.014142135623730949
     },
     "activation": {
@@ -206,14 +210,16 @@
   {
     "config": {
       "alpha_in": 15.0,
+      "scale_emb": 15.0,
+      "scale_base_model": 768,
       "n_embd": 768,
       "n_head": 6,
       "n_layer": 1,
       "sequence_length": 16,
       "batch_size": 2,
       "vocab_size": 50304,
-      "mup_init_std": 0.02,
-      "mup_attention_scale_mode": "one_over_d_head",
+      "init_std": 0.02,
+      "attention_scale": "one_over_d_head",
       "expected_c_proj_std": 0.014142135623730949
     },
     "activation": {
