@@ -93,6 +93,38 @@ EXPERIMENTS = [
 ]
 
 
+SCHEDULE_EXPERIMENTS = [
+    dict(
+        experiment_id="muwdsched_exp_start6_floor1p1_tau2000",
+        role="trial + smooth Muon weight decay schedule",
+        muon_momentum=0.99,
+        muon_nesterov=False,
+        muon_weight_decay_schedule=dict(scale=1.0, start=6.0, floor=1.1, tau=2000.0),
+        script_name="train_muwdsched_exp_start6_floor1p1_tau2000.py",
+    ),
+    dict(
+        experiment_id="muwdsched_exp_start6_floor1p1_tau1200",
+        role="trial + smooth Muon weight decay schedule",
+        muon_momentum=0.99,
+        muon_nesterov=False,
+        muon_weight_decay_schedule=dict(scale=1.0, start=6.0, floor=1.1, tau=1200.0),
+        script_name="train_muwdsched_exp_start6_floor1p1_tau1200.py",
+    ),
+]
+
+
+LEGACY_WEIGHT_DECAY_LINE = "    muon_weight_decay : float = 0 # decoupled weight decay for Muon parameters"
+
+SCHEDULE_TEMPLATE = (
+    "MUON_WEIGHT_DECAY_SCHEDULE = dict(\n"
+    "    scale=1.0,\n"
+    "    start=5.0,\n"
+    "    floor=1.2,\n"
+    "    tau=1200.0,\n"
+    ")"
+)
+
+
 def replace_exact(source, old, new):
     if old not in source:
         raise RuntimeError(f"missing template line: {old}")
@@ -101,6 +133,32 @@ def replace_exact(source, old, new):
 
 def float_literal(value):
     return repr(float(value))
+
+
+def format_schedule(schedule):
+    return (
+        "MUON_WEIGHT_DECAY_SCHEDULE = dict(\n"
+        f"    scale={float_literal(schedule['scale'])},\n"
+        f"    start={float_literal(schedule['start'])},\n"
+        f"    floor={float_literal(schedule['floor'])},\n"
+        f"    tau={float_literal(schedule['tau'])},\n"
+        ")"
+    )
+
+
+def apply_momentum_settings(code, experiment):
+    momentum = float_literal(experiment["muon_momentum"])
+    nesterov = str(bool(experiment["muon_nesterov"]))
+    code = replace_exact(
+        code,
+        "    muon_momentum : float = 0.95 # Muon momentum beta",
+        f"    muon_momentum : float = {momentum} # Muon momentum beta",
+    )
+    return replace_exact(
+        code,
+        "    muon_nesterov : bool = False # whether to use Nesterov-style Muon momentum",
+        f"    muon_nesterov : bool = {nesterov} # whether to use Nesterov-style Muon momentum",
+    )
 
 
 def main():
@@ -112,24 +170,26 @@ def main():
 
     template = template_path.read_text(encoding="utf-8")
     for experiment in EXPERIMENTS:
+        if LEGACY_WEIGHT_DECAY_LINE not in template:
+            continue
         code = template
-        momentum = float_literal(experiment["muon_momentum"])
-        nesterov = str(bool(experiment["muon_nesterov"]))
         weight_decay = float_literal(experiment["muon_weight_decay"])
+        code = apply_momentum_settings(code, experiment)
         code = replace_exact(
             code,
-            "    muon_momentum : float = 0.95 # Muon momentum beta",
-            f"    muon_momentum : float = {momentum} # Muon momentum beta",
-        )
-        code = replace_exact(
-            code,
-            "    muon_nesterov : bool = False # whether to use Nesterov-style Muon momentum",
-            f"    muon_nesterov : bool = {nesterov} # whether to use Nesterov-style Muon momentum",
-        )
-        code = replace_exact(
-            code,
-            "    muon_weight_decay : float = 0 # decoupled weight decay for Muon parameters",
+            LEGACY_WEIGHT_DECAY_LINE,
             f"    muon_weight_decay : float = {weight_decay} # decoupled weight decay for Muon parameters",
+        )
+
+        script_path = output_dir / experiment["script_name"]
+        script_path.write_text(code, encoding="utf-8")
+
+    for experiment in SCHEDULE_EXPERIMENTS:
+        code = apply_momentum_settings(template, experiment)
+        code = replace_exact(
+            code,
+            SCHEDULE_TEMPLATE,
+            format_schedule(experiment["muon_weight_decay_schedule"]),
         )
 
         script_path = output_dir / experiment["script_name"]
