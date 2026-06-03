@@ -93,21 +93,21 @@ EXPERIMENTS = [
 ]
 
 
-CONTROL_EXPERIMENTS = [
+SCHEDULE_EXPERIMENTS = [
     dict(
         experiment_id="muwdsched_exp_start6_floor1p1_tau2000",
-        role="trial + bang-bang Muon weight decay control",
+        role="trial + plateau/cosine Muon weight decay schedule",
         muon_momentum=0.99,
         muon_nesterov=False,
-        muon_weight_decay_control=dict(initial_weight_decay=1.0, multiplier=1.05, lower_ratio=0.97, upper_ratio=1.03),
+        muon_weight_decay_schedule=dict(start=6.0, floor=1.0, hold_steps=500, decay_end=2000),
         script_name="train_muwdsched_exp_start6_floor1p1_tau2000.py",
     ),
     dict(
         experiment_id="muwdsched_exp_start6_floor1p1_tau1200",
-        role="trial + bang-bang Muon weight decay control",
+        role="trial + plateau/cosine Muon weight decay schedule",
         muon_momentum=0.99,
         muon_nesterov=False,
-        muon_weight_decay_control=dict(initial_weight_decay=1.0, multiplier=1.05, lower_ratio=0.97, upper_ratio=1.03),
+        muon_weight_decay_schedule=dict(start=6.0, floor=1.0, hold_steps=500, decay_end=2000),
         script_name="train_muwdsched_exp_start6_floor1p1_tau1200.py",
     ),
 ]
@@ -115,12 +115,12 @@ CONTROL_EXPERIMENTS = [
 
 LEGACY_WEIGHT_DECAY_LINE = "    muon_weight_decay : float = 0 # decoupled weight decay for Muon parameters"
 
-CONTROL_TEMPLATE = (
-    "MUON_WEIGHT_DECAY_CONTROL = dict(\n"
-    "    initial_weight_decay=1.0,\n"
-    "    multiplier=1.05,\n"
-    "    lower_ratio=0.97,\n"
-    "    upper_ratio=1.03,\n"
+SCHEDULE_TEMPLATE = (
+    "MUON_WEIGHT_DECAY_SCHEDULE = dict(\n"
+    "    start=6.0,\n"
+    "    floor=1.0,\n"
+    "    hold_steps=500,\n"
+    "    decay_end=2000,\n"
     ")"
 )
 
@@ -135,13 +135,13 @@ def float_literal(value):
     return repr(float(value))
 
 
-def format_control(control):
+def format_schedule(schedule):
     return (
-        "MUON_WEIGHT_DECAY_CONTROL = dict(\n"
-        f"    initial_weight_decay={float_literal(control['initial_weight_decay'])},\n"
-        f"    multiplier={float_literal(control['multiplier'])},\n"
-        f"    lower_ratio={float_literal(control['lower_ratio'])},\n"
-        f"    upper_ratio={float_literal(control['upper_ratio'])},\n"
+        "MUON_WEIGHT_DECAY_SCHEDULE = dict(\n"
+        f"    start={float_literal(schedule['start'])},\n"
+        f"    floor={float_literal(schedule['floor'])},\n"
+        f"    hold_steps={int(schedule['hold_steps'])},\n"
+        f"    decay_end={int(schedule['decay_end'])},\n"
         ")"
     )
 
@@ -184,12 +184,12 @@ def main():
         script_path = output_dir / experiment["script_name"]
         script_path.write_text(code, encoding="utf-8")
 
-    for experiment in CONTROL_EXPERIMENTS:
+    for experiment in SCHEDULE_EXPERIMENTS:
         code = apply_momentum_settings(template, experiment)
         code = replace_exact(
             code,
-            CONTROL_TEMPLATE,
-            format_control(experiment["muon_weight_decay_control"]),
+            SCHEDULE_TEMPLATE,
+            format_schedule(experiment["muon_weight_decay_schedule"]),
         )
 
         script_path = output_dir / experiment["script_name"]

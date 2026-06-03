@@ -5,6 +5,7 @@ with open(sys.argv[0]) as f:
 import json
 import uuid
 import glob
+import math
 import time
 from contextlib import nullcontext
 from dataclasses import dataclass
@@ -522,63 +523,46 @@ ctx = torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16)
 ema_half_lives = [float(x) for x in args.ema_halflife_steps.split(',') if x.strip()]
 ema_set = EMASet(raw_model, ema_half_lives)
 
-MUON_WEIGHT_DECAY_CONTROL = dict(
-    initial_weight_decay=1.0,
-    multiplier=1.05,
-    lower_ratio=0.97,
-    upper_ratio=1.03,
+MUON_WEIGHT_DECAY_SCHEDULE = dict(
+    start=6.0,
+    floor=1.0,
+    hold_steps=500,
+    decay_end=2000,
 )
 
-MUON_WEIGHT_DECAY_CONTROL_STATE = dict(
-    current_weight_decay=float(MUON_WEIGHT_DECAY_CONTROL['initial_weight_decay']),
-    target_norm=None,
-)
+def muon_weight_decay_for_step(update_index):
+    schedule = MUON_WEIGHT_DECAY_SCHEDULE
+    start = float(schedule['start'])
+    floor = float(schedule['floor'])
+    hold_steps = int(schedule['hold_steps'])
+    decay_end = int(schedule['decay_end'])
+    if hold_steps < 0:
+        raise ValueError(f"Muon weight decay schedule hold_steps must be non-negative, got {hold_steps}")
+    if decay_end <= hold_steps:
+        raise ValueError(f"Muon weight decay schedule decay_end must be > hold_steps, got {decay_end} <= {hold_steps}")
+    step = float(update_index)
+    if step < hold_steps:
+        return start
+    if step >= decay_end:
+        return floor
+    progress = (step - hold_steps) / (decay_end - hold_steps)
+    return floor + 0.5 * (start - floor) * (1.0 + math.cos(math.pi * progress))
 
-def set_muon_weight_decay(weight_decay):
+def set_muon_weight_decay_for_step(update_index):
+    weight_decay = muon_weight_decay_for_step(update_index)
     for group in optimizer2.param_groups:
         group['weight_decay'] = weight_decay
     return weight_decay
-
-def muon_parameter_rms_norm():
-    sq_sum = torch.zeros((), device=device, dtype=torch.float32)
-    numel = 0
-    with torch.no_grad():
-        for group in optimizer2.param_groups:
-            for tensor in group['params']:
-                value = tensor.detach().float()
-                sq_sum += value.square().sum()
-                numel += value.numel()
-    if numel == 0:
-        raise RuntimeError("cannot compute Muon parameter RMS norm: no parameters")
-    return torch.sqrt(sq_sum / numel).item()
-
-def update_muon_weight_decay_for_current_norm():
-    target_norm = MUON_WEIGHT_DECAY_CONTROL_STATE['target_norm']
-    if target_norm is None:
-        raise RuntimeError("Muon weight decay control target_norm has not been initialized")
-    if target_norm <= 0:
-        raise RuntimeError(f"Muon weight decay control target_norm must be positive, got {target_norm}")
-
-    control = MUON_WEIGHT_DECAY_CONTROL
-    weight_decay = float(MUON_WEIGHT_DECAY_CONTROL_STATE['current_weight_decay'])
-    ratio = muon_parameter_rms_norm() / target_norm
-    if ratio > float(control['upper_ratio']):
-        weight_decay *= float(control['multiplier'])
-    elif ratio < float(control['lower_ratio']):
-        weight_decay /= float(control['multiplier'])
-    MUON_WEIGHT_DECAY_CONTROL_STATE['current_weight_decay'] = weight_decay
-    return set_muon_weight_decay(weight_decay)
 
 # init the optimizer(s)
 optimizer1 = torch.optim.AdamW(raw_model.lm_head.parameters(), lr=args.learning_rate, betas=(0.9, 0.95),
                                weight_decay=0.0, fused=True)
 optimizer2 = Muon(raw_model.transformer.h.parameters(), lr=0.1*args.learning_rate, momentum=args.muon_momentum,
                   nesterov=args.muon_nesterov,
-                  weight_decay=MUON_WEIGHT_DECAY_CONTROL_STATE['current_weight_decay'],
+                  weight_decay=muon_weight_decay_for_step(0),
                   backend=args.muon_backend,
                   rank=ddp_rank, world_size=ddp_world_size)
 optimizers = [optimizer1, optimizer2]
-MUON_WEIGHT_DECAY_CONTROL_STATE['target_norm'] = muon_parameter_rms_norm()
 # learning rate decay scheduler (linear warmup and warmdown)
 def get_lr(it):
     assert it <= args.num_iterations
@@ -913,7 +897,7 @@ for step in range(args.num_iterations + 1):
         p.grad /= train_accumulation_steps
     # step the optimizers and schedulers
     update_step = step + 1
-    update_muon_weight_decay_for_current_norm()
+    set_muon_weight_decay_for_step(step)
     optimizer_update_state = maybe_capture_optimizer_update_state(update_step)
     for opt, sched in zip(optimizers, schedulers):
         opt.step()
