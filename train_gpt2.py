@@ -19,6 +19,8 @@ import torch.distributed as dist
 import torch._inductor.config as config
 from torch.nn.parallel import DistributedDataParallel as DDP
 
+from ademamix import AdEMAMix
+
 # -----------------------------------------------------------------------------
 # Muon optimizer
 
@@ -353,6 +355,14 @@ class Hyperparameters:
     warmup_iters : int = 250
     warmdown_iters : int = 1450 # number of iterations of linear warmup/warmdown for triangular or trapezoidal schedule
     weight_decay : float = 0 # transformer block weight decay; tied wte/lm_head is always excluded
+    optimizer2_type : str = 'adamw' # optimizer for transformer blocks: adamw or ademamix
+    adema_beta1 : float = 0.9 # AdEMAMix fast EMA beta
+    adema_beta2 : float = 0.95 # AdEMAMix second-moment beta; matches local AdamW default
+    adema_beta3 : float = 0.9999 # AdEMAMix slow EMA beta
+    adema_alpha : float = 8.0 # AdEMAMix slow EMA mixing coefficient
+    adema_beta3_warmup : int = 0 # 0 means warm beta3 across num_iterations
+    adema_alpha_warmup : int = 0 # 0 means warm alpha across num_iterations
+    adema_eps : float = 1e-8 # AdEMAMix denominator epsilon
     # evaluation and logging hyperparams
     val_loss_every : int = 125 # every how many steps to evaluate val loss? 0 for only at the end
     val_tokens : int = 10485760 # how many tokens of validation data? it's important to keep this fixed for consistent comparisons
@@ -419,9 +429,26 @@ ctx = torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16)
 # init the optimizer(s)
 optimizer1 = torch.optim.AdamW(raw_model.lm_head.parameters(), lr=args.embed_learning_rate, betas=(0.9, 0.95),
                                weight_decay=0.0, fused=True)
-optimizer2 = torch.optim.AdamW(raw_model.transformer.h.parameters(), lr=0.5*args.embed_learning_rate, betas=(0.9, 0.95),
-                               weight_decay=args.weight_decay, fused=True)
+if args.optimizer2_type == 'adamw':
+    optimizer2 = torch.optim.AdamW(raw_model.transformer.h.parameters(), lr=0.5*args.embed_learning_rate,
+                                   betas=(0.9, 0.95), weight_decay=args.weight_decay, fused=True)
+elif args.optimizer2_type == 'ademamix':
+    adema_beta3_warmup = args.num_iterations if args.adema_beta3_warmup <= 0 else args.adema_beta3_warmup
+    adema_alpha_warmup = args.num_iterations if args.adema_alpha_warmup <= 0 else args.adema_alpha_warmup
+    optimizer2 = AdEMAMix(
+        raw_model.transformer.h.parameters(),
+        lr=0.5*args.embed_learning_rate,
+        betas=(args.adema_beta1, args.adema_beta2, args.adema_beta3),
+        alpha=args.adema_alpha,
+        beta3_warmup=adema_beta3_warmup,
+        alpha_warmup=adema_alpha_warmup,
+        eps=args.adema_eps,
+        weight_decay=args.weight_decay,
+    )
+else:
+    raise ValueError(f"unknown optimizer2_type: {args.optimizer2_type}")
 optimizers = [optimizer1, optimizer2]
+optimizer_names = ['adamw_lm_head', args.optimizer2_type]
 # learning rate decay scheduler (linear warmup and warmdown)
 def get_lr(it):
     assert it <= args.num_iterations
@@ -711,6 +738,7 @@ def optimizer_parameter_hparams():
             for p in group['params']:
                 hparams[id(p)] = dict(
                     optimizer_index=optimizer_index,
+                    optimizer_name=optimizer_names[optimizer_index],
                     param_group_index=param_group_index,
                     lr=float(group['lr']),
                     weight_decay=float(group.get('weight_decay', 0.0)),
@@ -753,6 +781,7 @@ def adamw_update_norm_record(step, name, tensor, adamw_update, param_hparams, sp
         ndim=tensor.ndim,
         lr=lr,
         weight_decay=weight_decay,
+        optimizer_name=param_hparams['optimizer_name'],
         optimizer_index=param_hparams['optimizer_index'],
         param_group_index=param_hparams['param_group_index'],
     )

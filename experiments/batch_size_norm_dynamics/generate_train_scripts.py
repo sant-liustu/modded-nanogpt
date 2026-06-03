@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -9,9 +10,11 @@ EXPERIMENT_DIR = Path(__file__).resolve().parent
 REPO_DIR = EXPERIMENT_DIR.parents[1]
 TEMPLATE = REPO_DIR / "train_gpt2.py"
 OUTPUT_DIR = EXPERIMENT_DIR / "generated_train_scripts"
+HELPER_FILES = (REPO_DIR / "ademamix.py",)
 
 BATCH_SIZES = (8 * 64, 16 * 64, 32 * 64, 64 * 64)
 BLOCK_WEIGHT_DECAYS = (0.0, 0.1, 0.2)
+OPTIMIZER2_TYPES = ("adamw", "ademamix")
 SEEDS = (0,)
 
 
@@ -19,6 +22,7 @@ SEEDS = (0,)
 class TrainConfig:
     batch_size: int
     weight_decay: float
+    optimizer2_type: str = "adamw"
     seed: int = 0
     device_batch_size: int = 64
     sequence_length: int = 1024
@@ -33,20 +37,29 @@ class TrainConfig:
     adamw_update_norm_every: int = 1
     activation_probe_every: int = 0
     spectral_norm_estimate_enabled: int = 0
+    adema_beta1: float = 0.9
+    adema_beta2: float = 0.95
+    adema_beta3: float = 0.9999
+    adema_alpha: float = 8.0
+    adema_beta3_warmup: int = 0
+    adema_alpha_warmup: int = 0
+    adema_eps: float = 1e-8
 
     @property
     def filename(self) -> str:
         return (
             f"train_B{self.batch_size:04d}_"
             f"blockwd{format_tag(self.weight_decay)}_"
-            f"seed{self.seed:02d}.py"
+            f"seed{self.seed:02d}_"
+            f"opt{self.optimizer2_type}.py"
         )
 
 
 CONFIGS = [
-    TrainConfig(batch_size=batch_size, weight_decay=weight_decay, seed=seed)
+    TrainConfig(batch_size=batch_size, weight_decay=weight_decay, optimizer2_type=optimizer2_type, seed=seed)
     for weight_decay in BLOCK_WEIGHT_DECAYS
     for batch_size in BATCH_SIZES
+    for optimizer2_type in OPTIMIZER2_TYPES
     for seed in SEEDS
 ]
 
@@ -61,6 +74,14 @@ FIELD_TYPES = {
     "warmup_iters": "int",
     "warmdown_iters": "int",
     "weight_decay": "float",
+    "optimizer2_type": "str",
+    "adema_beta1": "float",
+    "adema_beta2": "float",
+    "adema_beta3": "float",
+    "adema_alpha": "float",
+    "adema_beta3_warmup": "int",
+    "adema_alpha_warmup": "int",
+    "adema_eps": "float",
     "val_loss_every": "int",
     "val_tokens": "int",
     "save_every": "int",
@@ -139,6 +160,14 @@ def render_script(template: str, config: TrainConfig) -> str:
         "warmup_iters": config.warmup_iters,
         "warmdown_iters": config.warmdown_iters,
         "weight_decay": config.weight_decay,
+        "optimizer2_type": config.optimizer2_type,
+        "adema_beta1": config.adema_beta1,
+        "adema_beta2": config.adema_beta2,
+        "adema_beta3": config.adema_beta3,
+        "adema_alpha": config.adema_alpha,
+        "adema_beta3_warmup": config.adema_beta3_warmup,
+        "adema_alpha_warmup": config.adema_alpha_warmup,
+        "adema_eps": config.adema_eps,
         "val_loss_every": config.val_loss_every,
         "val_tokens": config.val_tokens,
         "save_every": config.save_every,
@@ -157,7 +186,8 @@ def render_script(template: str, config: TrainConfig) -> str:
         "# Do not hand edit; regenerate this file from the template training script.\n",
         f"# Config: batch_size={config.batch_size}, block_weight_decay={config.weight_decay}, "
         f"lm_head_weight_decay=0.0, seed={config.seed}, "
-        f"device_batch_size={config.device_batch_size}, num_iterations={config.num_iterations}\n",
+        f"device_batch_size={config.device_batch_size}, num_iterations={config.num_iterations}, "
+        f"optimizer2_type={config.optimizer2_type}\n",
         "\n",
     ]
     return "".join(header + lines)
@@ -169,6 +199,10 @@ def main() -> None:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     for old_script in OUTPUT_DIR.glob("train_*.py"):
         old_script.unlink()
+    for helper in HELPER_FILES:
+        if not helper.exists():
+            raise FileNotFoundError(f"missing helper file: {helper}")
+        shutil.copy2(helper, OUTPUT_DIR / helper.name)
 
     template = TEMPLATE.read_text(encoding="utf-8")
     generated = []
