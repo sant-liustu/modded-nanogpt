@@ -1,5 +1,4 @@
 import ast
-import math
 from pathlib import Path
 
 
@@ -11,9 +10,11 @@ def load_schedule_namespace():
     source = TRAIN_SOURCE.read_text(encoding="utf-8")
     module = ast.parse(source)
     wanted = {
-        "MUON_WEIGHT_DECAY_SCHEDULE",
-        "muon_weight_decay_for_step",
-        "set_muon_weight_decay_for_step",
+        "MUON_WEIGHT_DECAY_CONTROL",
+        "MUON_WEIGHT_DECAY_CONTROL_STATE",
+        "set_muon_weight_decay",
+        "muon_parameter_rms_norm",
+        "update_muon_weight_decay_for_current_norm",
     }
     nodes = []
     for node in module.body:
@@ -23,26 +24,34 @@ def load_schedule_namespace():
                 nodes.append(node)
         elif isinstance(node, ast.FunctionDef) and node.name in wanted:
             nodes.append(node)
-    namespace = {"math": math}
+    namespace = {}
     exec(compile(ast.Module(body=nodes, type_ignores=[]), str(TRAIN_SOURCE), "exec"), namespace)
     return namespace
 
 
-def test_muon_weight_decay_schedule_values():
+def test_muon_weight_decay_control_values():
     ns = load_schedule_namespace()
-    schedule = ns["MUON_WEIGHT_DECAY_SCHEDULE"]
-    wd_for_step = ns["muon_weight_decay_for_step"]
+    control = ns["MUON_WEIGHT_DECAY_CONTROL"]
+    state = ns["MUON_WEIGHT_DECAY_CONTROL_STATE"]
 
-    assert wd_for_step(0) == schedule["start"]
-    assert wd_for_step(schedule["hold_steps"] - 1) == schedule["start"]
-    assert wd_for_step(schedule["hold_steps"]) == schedule["start"]
-    assert wd_for_step(schedule["decay_end"]) == schedule["floor"]
-    assert wd_for_step(5100) == schedule["floor"]
+    class FakeOptimizer:
+        def __init__(self):
+            self.param_groups = [{"weight_decay": -1.0}, {"weight_decay": -2.0}]
 
-    midpoint = (schedule["hold_steps"] + schedule["decay_end"]) // 2
-    expected_midpoint = schedule["floor"] + 0.5 * (schedule["start"] - schedule["floor"])
-    assert math.isclose(wd_for_step(midpoint), expected_midpoint)
-    assert wd_for_step(1000) > wd_for_step(1500)
+    ns["optimizer2"] = FakeOptimizer()
+    state["target_norm"] = 10.0
+
+    state["current_weight_decay"] = 1.0
+    ns["muon_parameter_rms_norm"] = lambda: 10.4
+    assert ns["update_muon_weight_decay_for_current_norm"]() == 1.0 * control["multiplier"]
+
+    state["current_weight_decay"] = 1.0
+    ns["muon_parameter_rms_norm"] = lambda: 9.6
+    assert ns["update_muon_weight_decay_for_current_norm"]() == 1.0 / control["multiplier"]
+
+    state["current_weight_decay"] = 1.0
+    ns["muon_parameter_rms_norm"] = lambda: 10.0
+    assert ns["update_muon_weight_decay_for_current_norm"]() == 1.0
 
 
 def test_set_muon_weight_decay_updates_all_param_groups():
@@ -53,10 +62,10 @@ def test_set_muon_weight_decay_updates_all_param_groups():
             self.param_groups = [{"weight_decay": -1.0}, {"weight_decay": -2.0}]
 
     ns["optimizer2"] = FakeOptimizer()
-    weight_decay = ns["set_muon_weight_decay_for_step"](1000)
+    weight_decay = ns["set_muon_weight_decay"](1.25)
 
-    assert math.isclose(ns["optimizer2"].param_groups[0]["weight_decay"], weight_decay)
-    assert math.isclose(ns["optimizer2"].param_groups[1]["weight_decay"], weight_decay)
+    assert ns["optimizer2"].param_groups[0]["weight_decay"] == weight_decay
+    assert ns["optimizer2"].param_groups[1]["weight_decay"] == weight_decay
 
 
 def test_muon_step_reads_current_group_weight_decay():
@@ -70,14 +79,14 @@ def test_muon_step_reads_current_group_weight_decay():
 def test_schedule_is_set_before_update_state_capture():
     source = TRAIN_SOURCE.read_text(encoding="utf-8")
     update_step_pos = source.index("    update_step = step + 1")
-    set_pos = source.index("    set_muon_weight_decay_for_step(step)")
+    set_pos = source.index("    update_muon_weight_decay_for_current_norm()")
     capture_pos = source.index("    optimizer_update_state = maybe_capture_optimizer_update_state(update_step)")
 
     assert update_step_pos < set_pos < capture_pos
 
 
 if __name__ == "__main__":
-    test_muon_weight_decay_schedule_values()
+    test_muon_weight_decay_control_values()
     test_set_muon_weight_decay_updates_all_param_groups()
     test_muon_step_reads_current_group_weight_decay()
     test_schedule_is_set_before_update_state_capture()
