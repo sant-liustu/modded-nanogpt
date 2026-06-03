@@ -523,28 +523,76 @@ ema_half_lives = [float(x) for x in args.ema_halflife_steps.split(',') if x.stri
 ema_set = EMASet(raw_model, ema_half_lives)
 
 MUON_TARGET_NORM_FILE = 'target_norm_mom0p95_muwd0p1_nestF_5100.json'
+MUON_TARGET_UPDATE_NORM_FILE = 'target_update_norm_mom0p95_muwd0p1_nestF_5100.json'
 MUON_WEIGHT_DECAY_INITIAL = 0.0
+MUON_LR_MULTIPLIER_MIN = 0.5
+MUON_LR_MULTIPLIER_MAX = 2.0
 MUON_WD_MIN = 0.0
 MUON_WD_MAX = 10.0
 
 _train_script_dir = os.path.dirname(os.path.abspath(__file__))
-_target_norm_path = os.path.join(
-    _train_script_dir,
-    'experiments',
-    'muon_momentum_weight_decay',
-    MUON_TARGET_NORM_FILE,
-)
-if not os.path.exists(_target_norm_path):
-    _target_norm_path = os.path.join(os.path.dirname(_train_script_dir), MUON_TARGET_NORM_FILE)
-with open(_target_norm_path, encoding='utf-8') as f:
-    MUON_TARGET_NORMS = json.load(f)
+
+def clamp_scalar(value, lower, upper):
+    return min(max(value, lower), upper)
+
+def resolve_muon_target_path(filename):
+    candidate_paths = [
+        os.path.join(_train_script_dir, filename),
+        os.path.join(_train_script_dir, 'experiments', 'muon_momentum_weight_decay', filename),
+        os.path.join(os.path.dirname(_train_script_dir), filename),
+    ]
+    for path in candidate_paths:
+        if os.path.exists(path):
+            return path
+    raise FileNotFoundError(f"Muon controller target file not found: {filename}")
+
+def load_muon_target_series(filename):
+    with open(resolve_muon_target_path(filename), encoding='utf-8') as f:
+        return json.load(f)
+
+MUON_TARGET_NORMS = load_muon_target_series(MUON_TARGET_NORM_FILE)
+MUON_TARGET_UPDATE_NORMS = load_muon_target_series(MUON_TARGET_UPDATE_NORM_FILE)
 muon_weight_decay = MUON_WEIGHT_DECAY_INITIAL
 
-def update_muon_weight_decay(step, update_step):
+def current_muon_update_norm():
+    local_sq_sum = torch.zeros((), device=device, dtype=torch.float64)
+    local_numel = torch.zeros((), device=device, dtype=torch.float64)
+    with torch.no_grad():
+        for group in optimizer2.param_groups:
+            momentum = group['momentum']
+            nesterov = group['nesterov']
+            zeropower_backend = zeropower_backends[group['backend']]
+            backend_steps = group['backend_steps']
+            for param_index, tensor in enumerate(group['params']):
+                if param_index % optimizer2.world_size != optimizer2.rank:
+                    continue
+                if tensor.grad is None:
+                    continue
+                grad = tensor.grad.detach()
+                state = optimizer2.state.get(tensor)
+                momentum_buffer = state.get('momentum_buffer') if state is not None else None
+                next_buffer = grad if momentum_buffer is None else momentum_buffer.detach().mul(momentum).add(grad)
+                update = grad.add(next_buffer, alpha=momentum) if nesterov else next_buffer
+                update = zeropower_backend(update, steps=backend_steps)
+                update *= max(update.size(0), update.size(1))**0.5
+                update = update.float()
+                local_sq_sum += update.square().sum()
+                local_numel += update.numel()
+    if optimizer2.world_size > 1:
+        dist.all_reduce(local_sq_sum, op=dist.ReduceOp.SUM)
+        dist.all_reduce(local_numel, op=dist.ReduceOp.SUM)
+    if local_numel.item() == 0:
+        raise RuntimeError("Muon lr controller did not find any current Muon updates")
+    return (local_sq_sum / local_numel).sqrt().item()
+
+def update_muon_lr_and_weight_decay(step, update_step):
     global muon_weight_decay
     target_norm = float(MUON_TARGET_NORMS[min(step, len(MUON_TARGET_NORMS) - 1)])
+    target_update_norm = float(MUON_TARGET_UPDATE_NORMS[min(step, len(MUON_TARGET_UPDATE_NORMS) - 1)])
     if target_norm <= 0:
         raise ValueError(f"Muon target norm must be positive, got {target_norm}")
+    if target_update_norm <= 0:
+        raise ValueError(f"Muon target update norm must be positive, got {target_update_norm}")
     sq_sum = 0.0
     numel = 0
     with torch.no_grad():
@@ -558,38 +606,52 @@ def update_muon_weight_decay(step, update_step):
         raise RuntimeError("Muon norm controller did not find any 2D transformer block parameters")
 
     current_norm = (sq_sum / numel) ** 0.5
+    current_update_norm = current_muon_update_norm()
+    if current_update_norm <= 0:
+        raw_lr_multiplier = MUON_LR_MULTIPLIER_MAX
+    else:
+        raw_lr_multiplier = target_update_norm / current_update_norm
+    lr_multiplier = clamp_scalar(raw_lr_multiplier, MUON_LR_MULTIPLIER_MIN, MUON_LR_MULTIPLIER_MAX)
+    base_muon_lr = float(optimizer2.param_groups[0]['lr'])
+    effective_muon_lr = base_muon_lr * lr_multiplier
+    if effective_muon_lr <= 0:
+        raise RuntimeError(f"Muon norm controller requires positive effective Muon lr, got {effective_muon_lr}")
+
     if current_norm <= 0:
         ratio = float('inf')
         raw_weight_decay = MUON_WD_MIN
     else:
         ratio = target_norm / current_norm
-        muon_lr = float(optimizer2.param_groups[0]['lr'])
-        if muon_lr <= 0:
-            raise RuntimeError(f"Muon norm controller requires positive Muon lr, got {muon_lr}")
-        raw_weight_decay = (1.0 - ratio) / muon_lr
+        raw_weight_decay = (1.0 - ratio) / effective_muon_lr
 
     previous_weight_decay = muon_weight_decay
-    muon_weight_decay = min(max(raw_weight_decay, MUON_WD_MIN), MUON_WD_MAX)
+    muon_weight_decay = clamp_scalar(raw_weight_decay, MUON_WD_MIN, MUON_WD_MAX)
 
     for group in optimizer2.param_groups:
+        group['lr'] *= lr_multiplier
         group['weight_decay'] = muon_weight_decay
 
     if master_process:
-        history_path = os.path.join(logdir, 'muon_weight_decay_control_history.jsonl')
+        history_path = os.path.join(logdir, 'muon_lr_weight_decay_control_history.jsonl')
         record = dict(
             step=step,
             update_step=update_step,
             target_norm=target_norm,
             current_norm=current_norm,
+            target_update_norm=target_update_norm,
+            current_update_norm=current_update_norm,
+            raw_lr_multiplier=raw_lr_multiplier,
+            lr_multiplier=lr_multiplier,
+            base_muon_lr=base_muon_lr,
+            effective_muon_lr=effective_muon_lr,
             target_to_current_ratio=ratio,
-            muon_lr=float(optimizer2.param_groups[0]['lr']),
             unclamped_weight_decay=raw_weight_decay,
             weight_decay_before=previous_weight_decay,
             weight_decay_after=muon_weight_decay,
         )
         with open(history_path, 'a') as f:
             f.write(json.dumps(record) + '\n')
-    return muon_weight_decay
+    return lr_multiplier, muon_weight_decay
 
 # init the optimizer(s)
 optimizer1 = torch.optim.AdamW(raw_model.lm_head.parameters(), lr=args.learning_rate, betas=(0.9, 0.95),
@@ -934,7 +996,7 @@ for step in range(args.num_iterations + 1):
         p.grad /= train_accumulation_steps
     # step the optimizers and schedulers
     update_step = step + 1
-    update_muon_weight_decay(step, update_step)
+    update_muon_lr_and_weight_decay(step, update_step)
     optimizer_update_state = maybe_capture_optimizer_update_state(update_step)
     for opt, sched in zip(optimizers, schedulers):
         opt.step()
