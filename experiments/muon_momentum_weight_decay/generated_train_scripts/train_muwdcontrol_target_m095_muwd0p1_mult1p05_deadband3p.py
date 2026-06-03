@@ -5,7 +5,6 @@ with open(sys.argv[0]) as f:
 import json
 import uuid
 import glob
-import math
 import time
 from contextlib import nullcontext
 from dataclasses import dataclass
@@ -523,43 +522,84 @@ ctx = torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16)
 ema_half_lives = [float(x) for x in args.ema_halflife_steps.split(',') if x.strip()]
 ema_set = EMASet(raw_model, ema_half_lives)
 
-MUON_WEIGHT_DECAY_SCHEDULE = dict(
-    start=6.0,
-    floor=1.0,
-    hold_steps=500,
-    decay_end=2000,
+MUON_TARGET_NORM_FILE = 'target_norm_mom0p95_muwd0p1_nestF_5000.json'
+MUON_WEIGHT_DECAY_INITIAL = 5.0
+MUON_WD_MULTIPLIER = 1.05
+MUON_WD_DEADBAND = 0.03
+MUON_WD_MIN = 0.0
+MUON_WD_MAX = 20.0
+
+_train_script_dir = os.path.dirname(os.path.abspath(__file__))
+_target_norm_path = os.path.join(
+    _train_script_dir,
+    'experiments',
+    'muon_momentum_weight_decay',
+    MUON_TARGET_NORM_FILE,
 )
+if not os.path.exists(_target_norm_path):
+    _target_norm_path = os.path.join(os.path.dirname(_train_script_dir), MUON_TARGET_NORM_FILE)
+with open(_target_norm_path, encoding='utf-8') as f:
+    MUON_TARGET_NORMS = json.load(f)
+muon_weight_decay = MUON_WEIGHT_DECAY_INITIAL
 
-def muon_weight_decay_for_step(update_index):
-    schedule = MUON_WEIGHT_DECAY_SCHEDULE
-    start = float(schedule['start'])
-    floor = float(schedule['floor'])
-    hold_steps = int(schedule['hold_steps'])
-    decay_end = int(schedule['decay_end'])
-    if hold_steps < 0:
-        raise ValueError(f"Muon weight decay schedule hold_steps must be non-negative, got {hold_steps}")
-    if decay_end <= hold_steps:
-        raise ValueError(f"Muon weight decay schedule decay_end must be > hold_steps, got {decay_end} <= {hold_steps}")
-    step = float(update_index)
-    if step < hold_steps:
-        return start
-    if step >= decay_end:
-        return floor
-    progress = (step - hold_steps) / (decay_end - hold_steps)
-    return floor + 0.5 * (start - floor) * (1.0 + math.cos(math.pi * progress))
+def compare_muon_norm(current_norm, target_norm, deadband=MUON_WD_DEADBAND):
+    if target_norm <= 0:
+        raise ValueError(f"Muon target norm must be positive, got {target_norm}")
+    ratio = current_norm / target_norm
+    if ratio > 1.0 + deadband:
+        return 1
+    if ratio < 1.0 - deadband:
+        return -1
+    return 0
 
-def set_muon_weight_decay_for_step(update_index):
-    weight_decay = muon_weight_decay_for_step(update_index)
+def update_muon_weight_decay(step, update_step):
+    global muon_weight_decay
+    target_norm = float(MUON_TARGET_NORMS[min(step, len(MUON_TARGET_NORMS) - 1)])
+    sq_sum = 0.0
+    numel = 0
+    with torch.no_grad():
+        for tensor in raw_model.transformer.h.parameters():
+            if tensor.ndim != 2:
+                continue
+            x = tensor.detach().float()
+            sq_sum += x.square().sum().item()
+            numel += x.numel()
+    if numel == 0:
+        raise RuntimeError("Muon norm controller did not find any 2D transformer block parameters")
+
+    current_norm = (sq_sum / numel) ** 0.5
+    comparison = compare_muon_norm(current_norm, target_norm)
+    previous_weight_decay = muon_weight_decay
+    if comparison > 0:
+        muon_weight_decay *= MUON_WD_MULTIPLIER
+    elif comparison < 0:
+        muon_weight_decay /= MUON_WD_MULTIPLIER
+    muon_weight_decay = min(max(muon_weight_decay, MUON_WD_MIN), MUON_WD_MAX)
+
     for group in optimizer2.param_groups:
-        group['weight_decay'] = weight_decay
-    return weight_decay
+        group['weight_decay'] = muon_weight_decay
+
+    if master_process:
+        history_path = os.path.join(logdir, 'muon_weight_decay_control_history.jsonl')
+        record = dict(
+            step=step,
+            update_step=update_step,
+            target_norm=target_norm,
+            current_norm=current_norm,
+            comparison=comparison,
+            weight_decay_before=previous_weight_decay,
+            weight_decay_after=muon_weight_decay,
+        )
+        with open(history_path, 'a') as f:
+            f.write(json.dumps(record) + '\n')
+    return muon_weight_decay
 
 # init the optimizer(s)
 optimizer1 = torch.optim.AdamW(raw_model.lm_head.parameters(), lr=args.learning_rate, betas=(0.9, 0.95),
                                weight_decay=0.0, fused=True)
 optimizer2 = Muon(raw_model.transformer.h.parameters(), lr=0.1*args.learning_rate, momentum=args.muon_momentum,
                   nesterov=args.muon_nesterov,
-                  weight_decay=muon_weight_decay_for_step(0),
+                  weight_decay=MUON_WEIGHT_DECAY_INITIAL,
                   backend=args.muon_backend,
                   rank=ddp_rank, world_size=ddp_world_size)
 optimizers = [optimizer1, optimizer2]
@@ -897,7 +937,7 @@ for step in range(args.num_iterations + 1):
         p.grad /= train_accumulation_steps
     # step the optimizers and schedulers
     update_step = step + 1
-    set_muon_weight_decay_for_step(step)
+    update_muon_weight_decay(step, update_step)
     optimizer_update_state = maybe_capture_optimizer_update_state(update_step)
     for opt, sched in zip(optimizers, schedulers):
         opt.step()
