@@ -523,11 +523,9 @@ ema_half_lives = [float(x) for x in args.ema_halflife_steps.split(',') if x.stri
 ema_set = EMASet(raw_model, ema_half_lives)
 
 MUON_TARGET_NORM_FILE = 'target_norm_mom0p95_muwd0p1_nestF_5100.json'
-MUON_WEIGHT_DECAY_INITIAL = 5.0
-MUON_WD_MULTIPLIER = 1.05
-MUON_WD_DEADBAND = 0.03
+MUON_WEIGHT_DECAY_INITIAL = 0.0
 MUON_WD_MIN = 0.0
-MUON_WD_MAX = 20.0
+MUON_WD_MAX = 10.0
 
 _train_script_dir = os.path.dirname(os.path.abspath(__file__))
 _target_norm_path = os.path.join(
@@ -542,19 +540,11 @@ with open(_target_norm_path, encoding='utf-8') as f:
     MUON_TARGET_NORMS = json.load(f)
 muon_weight_decay = MUON_WEIGHT_DECAY_INITIAL
 
-def compare_muon_norm(current_norm, target_norm, deadband=MUON_WD_DEADBAND):
-    if target_norm <= 0:
-        raise ValueError(f"Muon target norm must be positive, got {target_norm}")
-    ratio = current_norm / target_norm
-    if ratio > 1.0 + deadband:
-        return 1
-    if ratio < 1.0 - deadband:
-        return -1
-    return 0
-
 def update_muon_weight_decay(step, update_step):
     global muon_weight_decay
     target_norm = float(MUON_TARGET_NORMS[min(step, len(MUON_TARGET_NORMS) - 1)])
+    if target_norm <= 0:
+        raise ValueError(f"Muon target norm must be positive, got {target_norm}")
     sq_sum = 0.0
     numel = 0
     with torch.no_grad():
@@ -568,13 +558,18 @@ def update_muon_weight_decay(step, update_step):
         raise RuntimeError("Muon norm controller did not find any 2D transformer block parameters")
 
     current_norm = (sq_sum / numel) ** 0.5
-    comparison = compare_muon_norm(current_norm, target_norm)
+    if current_norm <= 0:
+        ratio = float('inf')
+        raw_weight_decay = MUON_WD_MIN
+    else:
+        ratio = target_norm / current_norm
+        muon_lr = float(optimizer2.param_groups[0]['lr'])
+        if muon_lr <= 0:
+            raise RuntimeError(f"Muon norm controller requires positive Muon lr, got {muon_lr}")
+        raw_weight_decay = (1.0 - ratio) / muon_lr
+
     previous_weight_decay = muon_weight_decay
-    if comparison > 0:
-        muon_weight_decay *= MUON_WD_MULTIPLIER
-    elif comparison < 0:
-        muon_weight_decay /= MUON_WD_MULTIPLIER
-    muon_weight_decay = min(max(muon_weight_decay, MUON_WD_MIN), MUON_WD_MAX)
+    muon_weight_decay = min(max(raw_weight_decay, MUON_WD_MIN), MUON_WD_MAX)
 
     for group in optimizer2.param_groups:
         group['weight_decay'] = muon_weight_decay
@@ -586,7 +581,9 @@ def update_muon_weight_decay(step, update_step):
             update_step=update_step,
             target_norm=target_norm,
             current_norm=current_norm,
-            comparison=comparison,
+            target_to_current_ratio=ratio,
+            muon_lr=float(optimizer2.param_groups[0]['lr']),
+            unclamped_weight_decay=raw_weight_decay,
             weight_decay_before=previous_weight_decay,
             weight_decay_after=muon_weight_decay,
         )
