@@ -522,7 +522,7 @@ ctx = torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16)
 ema_half_lives = [float(x) for x in args.ema_halflife_steps.split(',') if x.strip()]
 ema_set = EMASet(raw_model, ema_half_lives)
 
-MUON_TARGET_NORM_FILE = 'target_norm_mom0p95_muwd0p1_nestF_5000.json'
+MUON_TARGET_NORM_FILE = 'target_norm_mom0p95_muwd0p1_nestF_5100.json'
 MUON_WEIGHT_DECAY_INITIAL = 5.0
 MUON_WD_MULTIPLIER = 1.05
 MUON_WD_DEADBAND = 0.03
