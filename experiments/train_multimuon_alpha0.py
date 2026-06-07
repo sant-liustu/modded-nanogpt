@@ -498,7 +498,7 @@ class Hyperparameters:
     val_loss_every : int = 125 # every how many steps to evaluate val loss? 0 for only at the end
     val_tokens : int = 10485760 # how many tokens of validation data? it's important to keep this fixed for consistent comparisons
     ema_halflife_steps : str = '32,128' # comma-separated EMA half-lives, in optimizer steps
-    save_every : int = 0 # every how many steps to save the checkpoint? 0 for only at the end
+    save_every : int = 100 # every how many steps to save the checkpoint? 0 for only at the end
     compile_model : int = 1 # compile the model with torch.compile
     tensor_norm_every : int = 1 # every how many steps to log tensor norms? 0 disables
     optimizer_update_norm_every : int = 1 # every how many optimizer steps to log applied update norms? 0 disables
