@@ -488,7 +488,7 @@ class Hyperparameters:
     warmup_iters : int = 0
     warmdown_iters : int = 1450 # number of iterations of linear warmup/warmdown for triangular or trapezoidal schedule
     adamw_weight_decay : float = 0
-    muon_weight_decay : float = 0
+    muon_weight_decay : float = 0.2
     muon_momentum : float = 0.95
     muon_slow_momentum : float = 0.995
     muon_slow_alpha : float = 4

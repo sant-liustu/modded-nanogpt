@@ -491,7 +491,7 @@ class Hyperparameters:
     muon_weight_decay : float = 0
     muon_momentum : float = 0.95
     muon_slow_momentum : float = 0.995
-    muon_slow_alpha : float = 4
+    muon_slow_alpha : float = 0
     muon_nesterov : bool = False
     muon_backend : str = 'newtonschulz5'
     # evaluation and logging hyperparams

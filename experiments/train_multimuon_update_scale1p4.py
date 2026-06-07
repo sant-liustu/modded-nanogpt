@@ -84,11 +84,14 @@ class MultiMuon(torch.optim.Optimizer):
     """
     def __init__(self, params, lr, momentum, slow_momentum, slow_alpha,
                   slow_alpha_warmup_steps, slow_momentum_warmup_steps,
+                  update_scale_final=1.0, update_scale_warmup_steps=1,
                   weight_decay=0.0, nesterov=True, backend='newtonschulz5', backend_steps=5,
                   rank=0, world_size=1):
         defaults = dict(lr=lr, momentum=momentum, slow_momentum=slow_momentum, slow_alpha=slow_alpha,
                         slow_alpha_warmup_steps=slow_alpha_warmup_steps,
                         slow_momentum_warmup_steps=slow_momentum_warmup_steps,
+                        update_scale_final=update_scale_final,
+                        update_scale_warmup_steps=update_scale_warmup_steps,
                         weight_decay=weight_decay, nesterov=nesterov, backend=backend, backend_steps=backend_steps)
         super().__init__(params, defaults)
         self.rank = rank
@@ -97,6 +100,8 @@ class MultiMuon(torch.optim.Optimizer):
         assert 0 < slow_momentum < 1
         assert slow_alpha_warmup_steps > 0
         assert slow_momentum_warmup_steps > 0
+        assert update_scale_warmup_steps > 0
+        assert update_scale_final >= 0
         assert weight_decay >= 0
 
     def step(self):
@@ -112,13 +117,17 @@ class MultiMuon(torch.optim.Optimizer):
             slow_alpha = group['slow_alpha']
             slow_alpha_warmup_steps = group['slow_alpha_warmup_steps']
             slow_momentum_warmup_steps = group['slow_momentum_warmup_steps']
+            update_scale_final = group['update_scale_final']
+            update_scale_warmup_steps = group['update_scale_warmup_steps']
             alpha_t = slow_alpha * min(step / slow_alpha_warmup_steps, 1.0)
             beta3_warmup = min(step / slow_momentum_warmup_steps, 1.0)
+            update_scale_t = 1.0 + (update_scale_final - 1.0) * min(step / update_scale_warmup_steps, 1.0)
             h1 = math.log(0.5) / math.log(momentum) - 1
             h3 = math.log(0.5) / math.log(slow_momentum) - 1
             slow_momentum_t = 0.5 ** (1 / ((1 - beta3_warmup) * h1 + beta3_warmup * h3 + 1))
             group['slow_alpha_t'] = alpha_t
             group['slow_momentum_t'] = slow_momentum_t
+            group['update_scale_t'] = update_scale_t
             zeropower_backend = zeropower_backends[group['backend']]
 
             # generate weight updates in distributed fashion
@@ -160,7 +169,7 @@ class MultiMuon(torch.optim.Optimizer):
                 g = updates_flat[curr_idx:curr_idx+p.numel()].view_as(p.data).type_as(p.data)
                 if weight_decay != 0 and p.grad is not None:
                     p.data.mul_(1 - lr * weight_decay)
-                p.data.add_(g, alpha=-lr)
+                p.data.add_(g, alpha=-lr * update_scale_t)
                 curr_idx += p.numel()
 
 # -----------------------------------------------------------------------------
@@ -493,6 +502,7 @@ class Hyperparameters:
     muon_slow_momentum : float = 0.995
     muon_slow_alpha : float = 4
     muon_nesterov : bool = False
+    muon_update_scale_final : float = 1.4
     muon_backend : str = 'newtonschulz5'
     # evaluation and logging hyperparams
     val_loss_every : int = 125 # every how many steps to evaluate val loss? 0 for only at the end
@@ -566,6 +576,8 @@ optimizer2 = MultiMuon(raw_model.transformer.h.parameters(), lr=0.1*args.learnin
                        slow_momentum=args.muon_slow_momentum, slow_alpha=args.muon_slow_alpha,
                        slow_alpha_warmup_steps=args.num_iterations,
                        slow_momentum_warmup_steps=args.num_iterations,
+                       update_scale_final=args.muon_update_scale_final,
+                       update_scale_warmup_steps=args.num_iterations,
                        weight_decay=args.muon_weight_decay,
                        nesterov=args.muon_nesterov,
                        backend=args.muon_backend)
@@ -688,6 +700,9 @@ def optimizer_parameter_hparams():
                     slow_alpha=float(group['slow_alpha']) if 'slow_alpha' in group else None,
                     slow_alpha_t=float(group['slow_alpha_t']) if 'slow_alpha_t' in group else None,
                     slow_momentum_t=float(group['slow_momentum_t']) if 'slow_momentum_t' in group else None,
+                    update_scale_final=float(group['update_scale_final']) if 'update_scale_final' in group else None,
+                    update_scale_t=float(group['update_scale_t']) if 'update_scale_t' in group else None,
+                    update_scale_warmup_steps=int(group['update_scale_warmup_steps']) if 'update_scale_warmup_steps' in group else None,
                     slow_alpha_warmup_steps=int(group['slow_alpha_warmup_steps']) if 'slow_alpha_warmup_steps' in group else None,
                     slow_momentum_warmup_steps=int(group['slow_momentum_warmup_steps']) if 'slow_momentum_warmup_steps' in group else None,
                     nesterov=bool(group['nesterov']) if 'nesterov' in group else None,
@@ -734,6 +749,8 @@ def optimizer_update_norm_record(step, name, tensor, tensor_before, param_hparam
         slow_alpha=param_hparams['slow_alpha'],
         slow_alpha_t=param_hparams['slow_alpha_t'],
         slow_momentum_t=param_hparams['slow_momentum_t'],
+        update_scale_final=param_hparams['update_scale_final'],
+        update_scale_t=param_hparams['update_scale_t'],
         nesterov=param_hparams['nesterov'],
         backend=param_hparams['backend'],
         backend_steps=param_hparams['backend_steps'],
@@ -780,13 +797,17 @@ def write_multimuon_schedule_metadata_for_next_step():
         slow_alpha = group['slow_alpha']
         slow_alpha_warmup_steps = group['slow_alpha_warmup_steps']
         slow_momentum_warmup_steps = group['slow_momentum_warmup_steps']
+        update_scale_final = group['update_scale_final']
+        update_scale_warmup_steps = group['update_scale_warmup_steps']
         alpha_t = slow_alpha * min(next_step / slow_alpha_warmup_steps, 1.0)
         beta3_warmup = min(next_step / slow_momentum_warmup_steps, 1.0)
+        update_scale_t = 1.0 + (update_scale_final - 1.0) * min(next_step / update_scale_warmup_steps, 1.0)
         h1 = math.log(0.5) / math.log(momentum) - 1
         h3 = math.log(0.5) / math.log(slow_momentum) - 1
         slow_momentum_t = 0.5 ** (1 / ((1 - beta3_warmup) * h1 + beta3_warmup * h3 + 1))
         group['slow_alpha_t'] = alpha_t
         group['slow_momentum_t'] = slow_momentum_t
+        group['update_scale_t'] = update_scale_t
 
 def should_log_multimuon_buffer_norms(update_step):
     if args.multimuon_buffer_norm_every <= 0:
@@ -812,6 +833,8 @@ def multimuon_buffer_norm_record(step, name, tensor, buffer_kind, buffer_tensor,
         slow_alpha=param_hparams['slow_alpha'],
         slow_alpha_t=param_hparams['slow_alpha_t'],
         slow_momentum_t=param_hparams['slow_momentum_t'],
+        update_scale_final=param_hparams['update_scale_final'],
+        update_scale_t=param_hparams['update_scale_t'],
         nesterov=param_hparams['nesterov'],
         weight_decay=param_hparams['weight_decay'],
         backend=param_hparams['backend'],
