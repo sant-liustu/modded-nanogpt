@@ -1,0 +1,320 @@
+[
+  {
+    "config": {
+      "alpha_in": 1.0,
+      "scale_emb": 1.0,
+      "scale_base_model": 768,
+      "width_multiplier": 0.08333333333333333,
+      "n_embd": 64,
+      "n_head": 4,
+      "n_layer": 1,
+      "sequence_length": 32,
+      "batch_size": 4,
+      "vocab_size": 50304,
+      "init_std": 0.02,
+      "attention_scale": "one_over_d_head",
+      "expected_hidden_std": 0.06928203230275509,
+      "expected_c_proj_std": 0.048989794855663564
+    },
+    "activation": {
+      "embedding_raw_rms": 0.020092638209462166,
+      "embedding_scaled_rms": 0.020092638209462166,
+      "logits_std": 1.9198764562606812,
+      "logits_rms": 1.9198827743530273,
+      "initial_loss": 12.476696968078613,
+      "layer_0.attn_branch_rms": [
+        0.07925702631473541
+      ],
+      "layer_0.mlp_branch_rms": [
+        0.30647996068000793
+      ],
+      "layer_0.residual_after_block_rms": [
+        0.315625935792923
+      ]
+    },
+    "parameters": [
+      {
+        "name": "transformer.wte.weight",
+        "shape": [
+          50304,
+          64
+        ],
+        "mean": 4.905520654574502e-06,
+        "std": 0.020010266453027725,
+        "rms": 0.020010266453027725
+      },
+      {
+        "name": "transformer.h.0.attn.c_q.weight",
+        "shape": [
+          64,
+          64
+        ],
+        "mean": 0.0014129702467471361,
+        "std": 0.06973759829998016,
+        "rms": 0.06975190341472626
+      },
+      {
+        "name": "transformer.h.0.attn.c_k.weight",
+        "shape": [
+          64,
+          64
+        ],
+        "mean": -0.0018302741227671504,
+        "std": 0.06906873732805252,
+        "rms": 0.06909298896789551
+      },
+      {
+        "name": "transformer.h.0.attn.c_v.weight",
+        "shape": [
+          64,
+          64
+        ],
+        "mean": 0.0001156131038442254,
+        "std": 0.06937873363494873,
+        "rms": 0.06937883049249649
+      },
+      {
+        "name": "transformer.h.0.attn.c_proj.weight",
+        "shape": [
+          64,
+          64
+        ],
+        "mean": 6.781215779483318e-05,
+        "std": 0.0492623895406723,
+        "rms": 0.04926243796944618
+      },
+      {
+        "name": "transformer.h.0.mlp.c_fc.weight",
+        "shape": [
+          256,
+          64
+        ],
+        "mean": 0.0001196217053802684,
+        "std": 0.06968246400356293,
+        "rms": 0.06968256086111069
+      },
+      {
+        "name": "transformer.h.0.mlp.c_proj.weight",
+        "shape": [
+          64,
+          256
+        ],
+        "mean": -0.0002086854656226933,
+        "std": 0.04874932020902634,
+        "rms": 0.04874976724386215
+      }
+    ]
+  },
+  {
+    "config": {
+      "alpha_in": 10.0,
+      "scale_emb": 10.0,
+      "scale_base_model": 768,
+      "width_multiplier": 0.08333333333333333,
+      "n_embd": 64,
+      "n_head": 4,
+      "n_layer": 1,
+      "sequence_length": 32,
+      "batch_size": 4,
+      "vocab_size": 50304,
+      "init_std": 0.02,
+      "attention_scale": "one_over_d_head",
+      "expected_hidden_std": 0.06928203230275509,
+      "expected_c_proj_std": 0.048989794855663564
+    },
+    "activation": {
+      "embedding_raw_rms": 0.020092638209462166,
+      "embedding_scaled_rms": 0.20092637836933136,
+      "logits_std": 1.9215455055236816,
+      "logits_rms": 1.9215456247329712,
+      "initial_loss": 12.778191566467285,
+      "layer_0.attn_branch_rms": [
+        0.07926854491233826
+      ],
+      "layer_0.mlp_branch_rms": [
+        0.30401018261909485
+      ],
+      "layer_0.residual_after_block_rms": [
+        0.3737949728965759
+      ]
+    },
+    "parameters": [
+      {
+        "name": "transformer.wte.weight",
+        "shape": [
+          50304,
+          64
+        ],
+        "mean": 4.905520654574502e-06,
+        "std": 0.020010266453027725,
+        "rms": 0.020010266453027725
+      },
+      {
+        "name": "transformer.h.0.attn.c_q.weight",
+        "shape": [
+          64,
+          64
+        ],
+        "mean": 0.0014129702467471361,
+        "std": 0.06973759829998016,
+        "rms": 0.06975190341472626
+      },
+      {
+        "name": "transformer.h.0.attn.c_k.weight",
+        "shape": [
+          64,
+          64
+        ],
+        "mean": -0.0018302741227671504,
+        "std": 0.06906873732805252,
+        "rms": 0.06909298896789551
+      },
+      {
+        "name": "transformer.h.0.attn.c_v.weight",
+        "shape": [
+          64,
+          64
+        ],
+        "mean": 0.0001156131038442254,
+        "std": 0.06937873363494873,
+        "rms": 0.06937883049249649
+      },
+      {
+        "name": "transformer.h.0.attn.c_proj.weight",
+        "shape": [
+          64,
+          64
+        ],
+        "mean": 6.781215779483318e-05,
+        "std": 0.0492623895406723,
+        "rms": 0.04926243796944618
+      },
+      {
+        "name": "transformer.h.0.mlp.c_fc.weight",
+        "shape": [
+          256,
+          64
+        ],
+        "mean": 0.0001196217053802684,
+        "std": 0.06968246400356293,
+        "rms": 0.06968256086111069
+      },
+      {
+        "name": "transformer.h.0.mlp.c_proj.weight",
+        "shape": [
+          64,
+          256
+        ],
+        "mean": -0.0002086854656226933,
+        "std": 0.04874932020902634,
+        "rms": 0.04874976724386215
+      }
+    ]
+  },
+  {
+    "config": {
+      "alpha_in": 15.0,
+      "scale_emb": 15.0,
+      "scale_base_model": 768,
+      "width_multiplier": 0.08333333333333333,
+      "n_embd": 64,
+      "n_head": 4,
+      "n_layer": 1,
+      "sequence_length": 32,
+      "batch_size": 4,
+      "vocab_size": 50304,
+      "init_std": 0.02,
+      "attention_scale": "one_over_d_head",
+      "expected_hidden_std": 0.06928203230275509,
+      "expected_c_proj_std": 0.048989794855663564
+    },
+    "activation": {
+      "embedding_raw_rms": 0.020092638209462166,
+      "embedding_scaled_rms": 0.30138957500457764,
+      "logits_std": 1.921857237815857,
+      "logits_rms": 1.9218571186065674,
+      "initial_loss": 13.171107292175293,
+      "layer_0.attn_branch_rms": [
+        0.07926860451698303
+      ],
+      "layer_0.mlp_branch_rms": [
+        0.30367928743362427
+      ],
+      "layer_0.residual_after_block_rms": [
+        0.435848206281662
+      ]
+    },
+    "parameters": [
+      {
+        "name": "transformer.wte.weight",
+        "shape": [
+          50304,
+          64
+        ],
+        "mean": 4.905520654574502e-06,
+        "std": 0.020010266453027725,
+        "rms": 0.020010266453027725
+      },
+      {
+        "name": "transformer.h.0.attn.c_q.weight",
+        "shape": [
+          64,
+          64
+        ],
+        "mean": 0.0014129702467471361,
+        "std": 0.06973759829998016,
+        "rms": 0.06975190341472626
+      },
+      {
+        "name": "transformer.h.0.attn.c_k.weight",
+        "shape": [
+          64,
+          64
+        ],
+        "mean": -0.0018302741227671504,
+        "std": 0.06906873732805252,
+        "rms": 0.06909298896789551
+      },
+      {
+        "name": "transformer.h.0.attn.c_v.weight",
+        "shape": [
+          64,
+          64
+        ],
+        "mean": 0.0001156131038442254,
+        "std": 0.06937873363494873,
+        "rms": 0.06937883049249649
+      },
+      {
+        "name": "transformer.h.0.attn.c_proj.weight",
+        "shape": [
+          64,
+          64
+        ],
+        "mean": 6.781215779483318e-05,
+        "std": 0.0492623895406723,
+        "rms": 0.04926243796944618
+      },
+      {
+        "name": "transformer.h.0.mlp.c_fc.weight",
+        "shape": [
+          256,
+          64
+        ],
+        "mean": 0.0001196217053802684,
+        "std": 0.06968246400356293,
+        "rms": 0.06968256086111069
+      },
+      {
+        "name": "transformer.h.0.mlp.c_proj.weight",
+        "shape": [
+          64,
+          256
+        ],
+        "mean": -0.0002086854656226933,
+        "std": 0.04874932020902634,
+        "rms": 0.04874976724386215
+      }
+    ]
+  }
+]

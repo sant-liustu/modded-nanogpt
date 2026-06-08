@@ -244,9 +244,12 @@ class GPT(nn.Module):
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
         self.transformer.wte.weight = self.lm_head.weight # https://paperswithcode.com/method/weight-tying
         self.apply(self._init_mup_weights)
+        hidden_std = config.init_std / math.sqrt(self.width_multiplier)
         c_proj_std = config.init_std / math.sqrt(2 * config.n_layer * self.width_multiplier)
         for pn, p in self.named_parameters():
-            if pn.endswith("c_proj.weight"):
+            if pn.startswith("transformer.h.") and pn.endswith(".weight") and not pn.endswith("c_proj.weight"):
+                torch.nn.init.normal_(p, mean=0.0, std=hidden_std)
+            elif pn.endswith("c_proj.weight"):
                 torch.nn.init.normal_(p, mean=0.0, std=c_proj_std)
 
     def _init_mup_weights(self, module):

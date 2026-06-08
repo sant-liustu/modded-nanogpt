@@ -92,6 +92,7 @@ def run_smoke(scale_emb, scale_base_model, n_embd, n_head, n_layer, sequence_len
             "vocab_size": vocab_size,
             "init_std": model.config.init_std,
             "attention_scale": "one_over_d_head",
+            "expected_hidden_std": 0.02 / (n_embd / scale_base_model) ** 0.5,
             "expected_c_proj_std": 0.02 / (2 * n_layer * n_embd / scale_base_model) ** 0.5,
         },
         "activation": {
