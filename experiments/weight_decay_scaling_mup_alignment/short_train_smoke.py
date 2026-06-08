@@ -30,7 +30,14 @@ def run_short_train(args):
         scale_base_model=args.scale_base_model,
     )
     model = GPT(config)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, betas=(0.9, 0.95), weight_decay=0.0)
+    optimizer = torch.optim.AdamW(
+        [
+            {"params": model.lm_head.parameters(), "lr": args.lr},
+            {"params": model.transformer.h.parameters(), "lr": args.lr / model.width_multiplier},
+        ],
+        betas=(0.9, 0.95),
+        weight_decay=0.0,
+    )
     records = []
 
     for step in range(args.steps):
@@ -56,6 +63,8 @@ def run_short_train(args):
 
     result = {
         "config": {key: str(value) if isinstance(value, pathlib.Path) else value for key, value in vars(args).items()},
+        "width_multiplier": model.width_multiplier,
+        "optimizer_lrs": [group["lr"] for group in optimizer.param_groups],
         "records": records,
         "all_losses_finite": all(math.isfinite(record["loss"]) for record in records),
         "all_grad_norms_finite": all(math.isfinite(record["grad_norm"]) for record in records),

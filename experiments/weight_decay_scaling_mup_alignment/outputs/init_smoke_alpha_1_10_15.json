@@ -4,6 +4,7 @@
       "alpha_in": 1.0,
       "scale_emb": 1.0,
       "scale_base_model": 768,
+      "width_multiplier": 0.08333333333333333,
       "n_embd": 64,
       "n_head": 4,
       "n_layer": 1,
@@ -17,9 +18,9 @@
     "activation": {
       "embedding_raw_rms": 0.02000316046178341,
       "embedding_scaled_rms": 0.02000316046178341,
-      "logits_std": 0.16000594198703766,
-      "logits_rms": 0.16000595688819885,
-      "initial_loss": 10.843238830566406,
+      "logits_std": 1.9200711250305176,
+      "logits_rms": 1.9200714826583862,
+      "initial_loss": 12.7821044921875,
       "layer_0.attn_branch_rms": [
         0.024762678891420364
       ],
@@ -108,6 +109,7 @@
       "alpha_in": 10.0,
       "scale_emb": 10.0,
       "scale_base_model": 768,
+      "width_multiplier": 0.08333333333333333,
       "n_embd": 64,
       "n_head": 4,
       "n_layer": 1,
@@ -121,9 +123,9 @@
     "activation": {
       "embedding_raw_rms": 0.02000316046178341,
       "embedding_scaled_rms": 0.2000316083431244,
-      "logits_std": 0.1601381003856659,
-      "logits_rms": 0.16013813018798828,
-      "initial_loss": 10.829798698425293,
+      "logits_std": 1.9216570854187012,
+      "logits_rms": 1.9216575622558594,
+      "initial_loss": 15.132206916809082,
       "layer_0.attn_branch_rms": [
         0.024766555055975914
       ],
@@ -212,6 +214,7 @@
       "alpha_in": 15.0,
       "scale_emb": 15.0,
       "scale_base_model": 768,
+      "width_multiplier": 0.08333333333333333,
       "n_embd": 64,
       "n_head": 4,
       "n_layer": 1,
@@ -225,9 +228,9 @@
     "activation": {
       "embedding_raw_rms": 0.02000316046178341,
       "embedding_scaled_rms": 0.3000473976135254,
-      "logits_std": 0.1601419895887375,
-      "logits_rms": 0.16014200448989868,
-      "initial_loss": 10.829383850097656,
+      "logits_std": 1.9217036962509155,
+      "logits_rms": 1.9217041730880737,
+      "initial_loss": 15.232495307922363,
       "layer_0.attn_branch_rms": [
         0.024766577407717705
       ],

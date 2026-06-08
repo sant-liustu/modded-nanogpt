@@ -83,6 +83,7 @@ def run_smoke(scale_emb, scale_base_model, n_embd, n_head, n_layer, sequence_len
             "alpha_in": scale_emb,
             "scale_emb": scale_emb,
             "scale_base_model": scale_base_model,
+            "width_multiplier": model.width_multiplier,
             "n_embd": n_embd,
             "n_head": n_head,
             "n_layer": n_layer,

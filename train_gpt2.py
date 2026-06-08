@@ -235,6 +235,7 @@ class GPT(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.config = config
+        self.width_multiplier = config.n_embd / config.scale_base_model
 
         self.transformer = nn.ModuleDict(dict(
             wte = nn.Embedding(config.vocab_size, config.n_embd),
@@ -243,8 +244,7 @@ class GPT(nn.Module):
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
         self.transformer.wte.weight = self.lm_head.weight # https://paperswithcode.com/method/weight-tying
         self.apply(self._init_mup_weights)
-        width_multiplier = config.n_embd / config.scale_base_model
-        c_proj_std = config.init_std / math.sqrt(2 * config.n_layer * width_multiplier)
+        c_proj_std = config.init_std / math.sqrt(2 * config.n_layer * self.width_multiplier)
         for pn, p in self.named_parameters():
             if pn.endswith("c_proj.weight"):
                 torch.nn.init.normal_(p, mean=0.0, std=c_proj_std)
@@ -268,12 +268,12 @@ class GPT(nn.Module):
 
         if targets is not None:
             # if we are given some desired targets also calculate the loss
-            logits = self.lm_head(x)
+            logits = self.lm_head(x) / self.width_multiplier
             logits = logits.float() # use tf32/fp32 for logits
             loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
         else:
             # inference-time mini-optimization: only forward the lm_head on the very last position
-            logits = self.lm_head(x[:, [-1], :]) # note: using list [-1] to preserve the time dim
+            logits = self.lm_head(x[:, [-1], :]) / self.width_multiplier # note: using list [-1] to preserve the time dim
             logits = logits.float() # use tf32/fp32 for logits
             loss = None
 
@@ -426,6 +426,7 @@ x, y = train_loader.next_batch()
 # this originates from Karpathy's experiments.
 num_vocab = 50304
 model = GPT(GPTConfig(vocab_size=num_vocab, n_layer=12, n_head=6, n_embd=768))
+width_multiplier = model.width_multiplier
 model = model.cuda()
 if hasattr(config, "coordinate_descent_tuning"):
     config.coordinate_descent_tuning = True # suggested by @Chillee
@@ -442,7 +443,7 @@ ctx = torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16)
 # init the optimizer(s)
 optimizer1 = torch.optim.AdamW(raw_model.lm_head.parameters(), lr=args.embed_learning_rate, betas=(0.9, 0.95),
                                weight_decay=0.0, fused=True)
-optimizer2 = torch.optim.AdamW(raw_model.transformer.h.parameters(), lr=0.5*args.embed_learning_rate, betas=(0.9, 0.95),
+optimizer2 = torch.optim.AdamW(raw_model.transformer.h.parameters(), lr=0.5 * args.embed_learning_rate / width_multiplier, betas=(0.9, 0.95),
                                weight_decay=args.weight_decay, fused=True)
 optimizers = [optimizer1, optimizer2]
 # learning rate decay scheduler (linear warmup and warmdown)

@@ -13,24 +13,29 @@
     "seed": 1234,
     "output": "experiments\\weight_decay_scaling_mup_alignment\\outputs\\short_train_smoke_alpha_10.json"
   },
+  "width_multiplier": 0.08333333333333333,
+  "optimizer_lrs": [
+    0.001,
+    0.012
+  ],
   "records": [
     {
       "step": 0,
-      "loss": 10.829798698425293,
-      "grad_norm": 1.0142334953487393,
-      "logits_std": 0.1601381003856659
+      "loss": 15.132206916809082,
+      "grad_norm": 14.339678793139974,
+      "logits_std": 1.9216570854187012
     },
     {
       "step": 1,
-      "loss": 10.844077110290527,
-      "grad_norm": 1.0205607668157088,
-      "logits_std": 0.15924009680747986
+      "loss": 14.711461067199707,
+      "grad_norm": 14.401362202421605,
+      "logits_std": 1.8821836709976196
     },
     {
       "step": 2,
-      "loss": 10.849187850952148,
-      "grad_norm": 1.0212447286450972,
-      "logits_std": 0.15795288980007172
+      "loss": 13.7000150680542,
+      "grad_norm": 13.573766505165667,
+      "logits_std": 1.8429207801818848
     }
   ],
   "all_losses_finite": true,
