@@ -491,8 +491,26 @@ def load_norm_control_config(path):
         start_step=start_step,
     )
 
+def canonical_param_name(name):
+    if name.startswith('_orig_mod.'):
+        return name[len('_orig_mod.'):]
+    return name
+
 def pattern_matches_name(pattern, name):
-    return pattern == name or fnmatch.fnmatchcase(name, pattern)
+    canonical_name = canonical_param_name(name)
+    return (
+        pattern == name
+        or pattern == canonical_name
+        or fnmatch.fnmatchcase(name, pattern)
+        or fnmatch.fnmatchcase(canonical_name, pattern)
+    )
+
+def is_allowed_norm_control_parameter(name):
+    canonical_name = canonical_param_name(name)
+    return (
+        canonical_name.startswith('transformer.h.')
+        or canonical_name == 'transformer.wte.weight'
+    )
 
 def build_norm_control_state(raw_model, path):
     spec = load_norm_control_config(path)
@@ -684,10 +702,13 @@ uncontrolled_block_parameters = [p for _, p in block_named_parameters if id(p) n
 unexpected_controlled = [
     entry['name']
     for entry in norm_control_state['params']
-    if not entry['name'].startswith('transformer.h.')
+    if not is_allowed_norm_control_parameter(entry['name'])
 ]
 if unexpected_controlled:
-    raise ValueError(f"norm-control targets must be transformer block parameters in this implementation: {unexpected_controlled}")
+    raise ValueError(
+        "norm-control targets must be transformer block parameters or the tied embedding "
+        f"parameter transformer.wte.weight in this implementation: {unexpected_controlled}"
+    )
 
 # init the optimizer(s)
 optimizer1 = torch.optim.AdamW(raw_model.lm_head.parameters(), lr=args.embed_learning_rate, betas=(0.9, 0.95),

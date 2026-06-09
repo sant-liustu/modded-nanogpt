@@ -1,0 +1,21 @@
+{
+  "enabled": true,
+  "mode": "specified_target",
+  "norm_type": "rms",
+  "eps": 1e-12,
+  "log_every": 1,
+  "targets": [
+    {
+      "pattern": "transformer.wte.weight",
+      "target_rms": 0.01
+    },
+    {
+      "pattern": "transformer.h.0.attn.c_q.weight",
+      "target_rms": 0.02
+    },
+    {
+      "pattern": "transformer.h.0.mlp.c_fc.weight",
+      "target_rms": 0.018
+    }
+  ]
+}
