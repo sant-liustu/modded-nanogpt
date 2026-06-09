@@ -366,11 +366,23 @@ class Hyperparameters:
     activation_probe_eps : float = 1e-12 # denominator epsilon for activation RMS ratios
     norm_control_config : str = 'experiments/norm_control_optimizer/normctrl_fixed_from_wd01_baseline_all_matrices.json' # optional JSON config for per-tensor RMS norm control
 args = Hyperparameters()
+def parse_hparam_value(name, value):
+    current = getattr(args, name)
+    if isinstance(current, bool):
+        return value.lower() in ('1', 'true', 'yes', 'on')
+    if isinstance(current, int) and not isinstance(current, bool):
+        return int(value)
+    if isinstance(current, float):
+        return float(value)
+    return value
+
 for arg in sys.argv[1:]:
-    if arg.startswith('--norm_control_config='):
-        args.norm_control_config = arg.split('=', 1)[1]
-    else:
+    if not arg.startswith('--') or '=' not in arg:
+        raise ValueError(f"expected --name=value argument, got: {arg}")
+    name, value = arg[2:].split('=', 1)
+    if not hasattr(args, name):
         raise ValueError(f"unknown command line argument: {arg}")
+    setattr(args, name, parse_hparam_value(name, value))
 
 # set up DDP (distributed data parallel). torchrun sets this env variable
 assert torch.cuda.is_available()
@@ -429,7 +441,7 @@ DEFAULT_NORM_CONTROL_START_STEP = 1000
 def load_norm_control_config(path):
     if not path:
         return dict(enabled=False, mode='disabled', targets=[], eps=1e-12, log_every=1, start_step=None)
-    with open(path, 'r') as f:
+    with open(path, 'r', encoding='utf-8-sig') as f:
         spec = json.load(f)
     if not spec.get('enabled', True):
         return dict(
@@ -695,7 +707,7 @@ controlled_param_ids = {id(entry['param']) for entry in norm_control_state['para
 block_named_parameters = [
     (name, p)
     for name, p in raw_model.named_parameters()
-    if name.startswith('transformer.h.')
+    if canonical_param_name(name).startswith('transformer.h.')
 ]
 controlled_block_parameters = [p for _, p in block_named_parameters if id(p) in controlled_param_ids]
 uncontrolled_block_parameters = [p for _, p in block_named_parameters if id(p) not in controlled_param_ids]
