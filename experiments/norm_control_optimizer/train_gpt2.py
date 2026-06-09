@@ -364,7 +364,7 @@ class Hyperparameters:
     activation_probe_every : int = 0 # every how many steps to log fixed-probe activation RMS ratios? 0 disables
     spectral_norm_estimate_enabled : int = 1 # whether to estimate 2D spectral norms in tensor/update norm histories
     activation_probe_eps : float = 1e-12 # denominator epsilon for activation RMS ratios
-    norm_control_config : str = '' # optional JSON config for per-tensor RMS norm control
+    norm_control_config : str = 'experiments/norm_control_optimizer/normctrl_fixed_from_wd01_baseline_all_matrices.json' # optional JSON config for per-tensor RMS norm control
 args = Hyperparameters()
 for arg in sys.argv[1:]:
     if arg.startswith('--norm_control_config='):

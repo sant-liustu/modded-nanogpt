@@ -1,0 +1,307 @@
+﻿{
+    "enabled":  true,
+    "mode":  "specified_target",
+    "norm_type":  "rms",
+    "eps":  1E-12,
+    "log_every":  10,
+    "source":  {
+                   "block_targets":  "existing normctrl_fixed_from_wd01_baseline lr0p0036 rep01 norm_control_metadata.json targets",
+                   "wte_target":  "batch_size_norm__B0512__devB064__lr0p0036__wd0p1__seed0__rep01 tensor_norm_history final step",
+                   "wte_step":  5100
+               },
+    "targets":  [
+                    {
+                        "pattern":  "transformer.h.0.attn.c_k.weight",
+                        "target_rms":  0.070568
+                    },
+                    {
+                        "pattern":  "transformer.h.0.attn.c_proj.weight",
+                        "target_rms":  0.045769
+                    },
+                    {
+                        "pattern":  "transformer.h.0.attn.c_q.weight",
+                        "target_rms":  0.072842
+                    },
+                    {
+                        "pattern":  "transformer.h.0.attn.c_v.weight",
+                        "target_rms":  0.048887
+                    },
+                    {
+                        "pattern":  "transformer.h.0.mlp.c_fc.weight",
+                        "target_rms":  0.060248
+                    },
+                    {
+                        "pattern":  "transformer.h.0.mlp.c_proj.weight",
+                        "target_rms":  0.051933
+                    },
+                    {
+                        "pattern":  "transformer.h.1.attn.c_k.weight",
+                        "target_rms":  0.067458
+                    },
+                    {
+                        "pattern":  "transformer.h.1.attn.c_proj.weight",
+                        "target_rms":  0.056293
+                    },
+                    {
+                        "pattern":  "transformer.h.1.attn.c_q.weight",
+                        "target_rms":  0.070651
+                    },
+                    {
+                        "pattern":  "transformer.h.1.attn.c_v.weight",
+                        "target_rms":  0.056916
+                    },
+                    {
+                        "pattern":  "transformer.h.1.mlp.c_fc.weight",
+                        "target_rms":  0.0628
+                    },
+                    {
+                        "pattern":  "transformer.h.1.mlp.c_proj.weight",
+                        "target_rms":  0.063091
+                    },
+                    {
+                        "pattern":  "transformer.h.10.attn.c_k.weight",
+                        "target_rms":  0.068525
+                    },
+                    {
+                        "pattern":  "transformer.h.10.attn.c_proj.weight",
+                        "target_rms":  0.090886
+                    },
+                    {
+                        "pattern":  "transformer.h.10.attn.c_q.weight",
+                        "target_rms":  0.072703
+                    },
+                    {
+                        "pattern":  "transformer.h.10.attn.c_v.weight",
+                        "target_rms":  0.090392
+                    },
+                    {
+                        "pattern":  "transformer.h.10.mlp.c_fc.weight",
+                        "target_rms":  0.073316
+                    },
+                    {
+                        "pattern":  "transformer.h.10.mlp.c_proj.weight",
+                        "target_rms":  0.066456
+                    },
+                    {
+                        "pattern":  "transformer.h.11.attn.c_k.weight",
+                        "target_rms":  0.066516
+                    },
+                    {
+                        "pattern":  "transformer.h.11.attn.c_proj.weight",
+                        "target_rms":  0.075064
+                    },
+                    {
+                        "pattern":  "transformer.h.11.attn.c_q.weight",
+                        "target_rms":  0.072367
+                    },
+                    {
+                        "pattern":  "transformer.h.11.attn.c_v.weight",
+                        "target_rms":  0.076287
+                    },
+                    {
+                        "pattern":  "transformer.h.11.mlp.c_fc.weight",
+                        "target_rms":  0.081969
+                    },
+                    {
+                        "pattern":  "transformer.h.11.mlp.c_proj.weight",
+                        "target_rms":  0.066102
+                    },
+                    {
+                        "pattern":  "transformer.h.2.attn.c_k.weight",
+                        "target_rms":  0.070856
+                    },
+                    {
+                        "pattern":  "transformer.h.2.attn.c_proj.weight",
+                        "target_rms":  0.059075
+                    },
+                    {
+                        "pattern":  "transformer.h.2.attn.c_q.weight",
+                        "target_rms":  0.072434
+                    },
+                    {
+                        "pattern":  "transformer.h.2.attn.c_v.weight",
+                        "target_rms":  0.060427
+                    },
+                    {
+                        "pattern":  "transformer.h.2.mlp.c_fc.weight",
+                        "target_rms":  0.064405
+                    },
+                    {
+                        "pattern":  "transformer.h.2.mlp.c_proj.weight",
+                        "target_rms":  0.062991
+                    },
+                    {
+                        "pattern":  "transformer.h.3.attn.c_k.weight",
+                        "target_rms":  0.068905
+                    },
+                    {
+                        "pattern":  "transformer.h.3.attn.c_proj.weight",
+                        "target_rms":  0.063252
+                    },
+                    {
+                        "pattern":  "transformer.h.3.attn.c_q.weight",
+                        "target_rms":  0.072815
+                    },
+                    {
+                        "pattern":  "transformer.h.3.attn.c_v.weight",
+                        "target_rms":  0.061974
+                    },
+                    {
+                        "pattern":  "transformer.h.3.mlp.c_fc.weight",
+                        "target_rms":  0.07071
+                    },
+                    {
+                        "pattern":  "transformer.h.3.mlp.c_proj.weight",
+                        "target_rms":  0.066905
+                    },
+                    {
+                        "pattern":  "transformer.h.4.attn.c_k.weight",
+                        "target_rms":  0.068591
+                    },
+                    {
+                        "pattern":  "transformer.h.4.attn.c_proj.weight",
+                        "target_rms":  0.063876
+                    },
+                    {
+                        "pattern":  "transformer.h.4.attn.c_q.weight",
+                        "target_rms":  0.070243
+                    },
+                    {
+                        "pattern":  "transformer.h.4.attn.c_v.weight",
+                        "target_rms":  0.063655
+                    },
+                    {
+                        "pattern":  "transformer.h.4.mlp.c_fc.weight",
+                        "target_rms":  0.072233
+                    },
+                    {
+                        "pattern":  "transformer.h.4.mlp.c_proj.weight",
+                        "target_rms":  0.068817
+                    },
+                    {
+                        "pattern":  "transformer.h.5.attn.c_k.weight",
+                        "target_rms":  0.066955
+                    },
+                    {
+                        "pattern":  "transformer.h.5.attn.c_proj.weight",
+                        "target_rms":  0.074072
+                    },
+                    {
+                        "pattern":  "transformer.h.5.attn.c_q.weight",
+                        "target_rms":  0.07042
+                    },
+                    {
+                        "pattern":  "transformer.h.5.attn.c_v.weight",
+                        "target_rms":  0.072703
+                    },
+                    {
+                        "pattern":  "transformer.h.5.mlp.c_fc.weight",
+                        "target_rms":  0.071406
+                    },
+                    {
+                        "pattern":  "transformer.h.5.mlp.c_proj.weight",
+                        "target_rms":  0.066984
+                    },
+                    {
+                        "pattern":  "transformer.h.6.attn.c_k.weight",
+                        "target_rms":  0.069164
+                    },
+                    {
+                        "pattern":  "transformer.h.6.attn.c_proj.weight",
+                        "target_rms":  0.07418
+                    },
+                    {
+                        "pattern":  "transformer.h.6.attn.c_q.weight",
+                        "target_rms":  0.0724
+                    },
+                    {
+                        "pattern":  "transformer.h.6.attn.c_v.weight",
+                        "target_rms":  0.066935
+                    },
+                    {
+                        "pattern":  "transformer.h.6.mlp.c_fc.weight",
+                        "target_rms":  0.070022
+                    },
+                    {
+                        "pattern":  "transformer.h.6.mlp.c_proj.weight",
+                        "target_rms":  0.064839
+                    },
+                    {
+                        "pattern":  "transformer.h.7.attn.c_k.weight",
+                        "target_rms":  0.069918
+                    },
+                    {
+                        "pattern":  "transformer.h.7.attn.c_proj.weight",
+                        "target_rms":  0.095087
+                    },
+                    {
+                        "pattern":  "transformer.h.7.attn.c_q.weight",
+                        "target_rms":  0.072481
+                    },
+                    {
+                        "pattern":  "transformer.h.7.attn.c_v.weight",
+                        "target_rms":  0.08891
+                    },
+                    {
+                        "pattern":  "transformer.h.7.mlp.c_fc.weight",
+                        "target_rms":  0.070164
+                    },
+                    {
+                        "pattern":  "transformer.h.7.mlp.c_proj.weight",
+                        "target_rms":  0.066002
+                    },
+                    {
+                        "pattern":  "transformer.h.8.attn.c_k.weight",
+                        "target_rms":  0.066843
+                    },
+                    {
+                        "pattern":  "transformer.h.8.attn.c_proj.weight",
+                        "target_rms":  0.075424
+                    },
+                    {
+                        "pattern":  "transformer.h.8.attn.c_q.weight",
+                        "target_rms":  0.071502
+                    },
+                    {
+                        "pattern":  "transformer.h.8.attn.c_v.weight",
+                        "target_rms":  0.065539
+                    },
+                    {
+                        "pattern":  "transformer.h.8.mlp.c_fc.weight",
+                        "target_rms":  0.071212
+                    },
+                    {
+                        "pattern":  "transformer.h.8.mlp.c_proj.weight",
+                        "target_rms":  0.066772
+                    },
+                    {
+                        "pattern":  "transformer.h.9.attn.c_k.weight",
+                        "target_rms":  0.068283
+                    },
+                    {
+                        "pattern":  "transformer.h.9.attn.c_proj.weight",
+                        "target_rms":  0.102252
+                    },
+                    {
+                        "pattern":  "transformer.h.9.attn.c_q.weight",
+                        "target_rms":  0.071715
+                    },
+                    {
+                        "pattern":  "transformer.h.9.attn.c_v.weight",
+                        "target_rms":  0.086815
+                    },
+                    {
+                        "pattern":  "transformer.h.9.mlp.c_fc.weight",
+                        "target_rms":  0.070469
+                    },
+                    {
+                        "pattern":  "transformer.h.9.mlp.c_proj.weight",
+                        "target_rms":  0.064823
+                    },
+                    {
+                        "pattern":  "transformer.wte.weight",
+                        "target_rms":  0.1800868958234787
+                    }
+                ]
+}
+
