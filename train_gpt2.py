@@ -186,7 +186,7 @@ class CausalSelfAttention(nn.Module):
             k.transpose(1, 2),
             v.transpose(1, 2),
             is_causal=True,
-            scale=1.0 / self.head_dim,
+            scale=1.0 / math.sqrt(self.head_dim),
         )
         y = y.transpose(1, 2).contiguous().view_as(x) # re-assemble all head outputs side by side
         y = self.c_proj(y)
@@ -227,7 +227,7 @@ class GPTConfig:
     n_head : int = 6 # head dim 128 suggested by @Grad62304977
     n_embd : int = 768
     init_std : float = 0.02
-    scale_emb : float = 10.0
+    scale_emb : float = 1.0
     scale_base_model : int = 768
 
 class GPT(nn.Module):
