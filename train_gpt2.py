@@ -382,12 +382,12 @@ class Hyperparameters:
     # evaluation and logging hyperparams
     val_loss_every : int = 125 # every how many steps to evaluate val loss? 0 for only at the end
     val_tokens : int = 10485760 # how many tokens of validation data? it's important to keep this fixed for consistent comparisons
-    save_every : int = 0 # every how many steps to save the checkpoint? 0 for only at the end
+    save_every : int = 500 # every how many steps to save the checkpoint? 0 for only at the end
     compile_model : int = 1 # compile the model with torch.compile
     tensor_norm_every : int = 1 # every how many steps to log tensor norm history? 0 disables
     adamw_update_norm_every : int = 1 # every how many optimizer steps to log AdamW effective update norms? 0 disables
-    activation_probe_every : int = 10 # every how many steps to log fixed-probe activation RMS ratios? 0 disables
-    spectral_norm_estimate_enabled : int = 1 # whether to estimate 2D spectral norms in tensor/update norm histories
+    activation_probe_every : int = 0 # every how many steps to log fixed-probe activation RMS ratios? 0 disables
+    spectral_norm_estimate_enabled : int = 0 # whether to estimate 2D spectral norms in tensor/update norm histories
     activation_probe_eps : float = 1e-12 # denominator epsilon for activation RMS ratios
 args = Hyperparameters()
 
