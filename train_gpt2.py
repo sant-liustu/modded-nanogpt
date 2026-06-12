@@ -157,6 +157,16 @@ def apply_rotary_emb(x, cos, sin):
     y2 = x1 * (-sin) + x2 * cos
     return torch.cat([y1, y2], 3).type_as(x)
 
+class RMSNorm(nn.Module):
+
+    def __init__(self, dim, eps=None):
+        super().__init__()
+        self.weight = nn.Parameter(torch.ones(dim))
+        self.eps = eps
+
+    def forward(self, x):
+        return F.rms_norm(x, (x.size(-1),), self.weight, self.eps)
+
 class CausalSelfAttention(nn.Module):
 
     def __init__(self, config):
@@ -172,6 +182,8 @@ class CausalSelfAttention(nn.Module):
         self.c_proj = nn.Linear(self.n_embd, self.n_embd, bias=False)
         self.c_proj.weight.data.zero_() # zero init suggested by @Grad62304977
         self.rotary = Rotary(self.head_dim)
+        self.q_norm = RMSNorm(self.head_dim)
+        self.k_norm = RMSNorm(self.head_dim)
 
     def forward(self, x):
         B, T, C = x.size() # batch size, sequence length, embedding dimensionality (n_embd)
@@ -179,7 +191,7 @@ class CausalSelfAttention(nn.Module):
         k = self.c_k(x).view(B, T, self.n_head, self.head_dim)
         v = self.c_v(x).view(B, T, self.n_head, self.head_dim)
         cos, sin = self.rotary(q)
-        q, k = F.rms_norm(q, (q.size(-1),)), F.rms_norm(k, (k.size(-1),)) # QK norm suggested by @Grad62304977
+        q, k = self.q_norm(q), self.k_norm(k) # QK norm suggested by @Grad62304977
         q, k = apply_rotary_emb(q, cos, sin), apply_rotary_emb(k, cos, sin)
         y = F.scaled_dot_product_attention(q.transpose(1, 2), k.transpose(1, 2), v.transpose(1, 2), is_causal=True)
         y = y.transpose(1, 2).contiguous().view_as(x) # re-assemble all head outputs side by side
@@ -206,10 +218,12 @@ class Block(nn.Module):
         super().__init__()
         self.attn = CausalSelfAttention(config)
         self.mlp = MLP(config)
+        self.attn_norm = RMSNorm(config.n_embd)
+        self.mlp_norm = RMSNorm(config.n_embd)
 
     def forward(self, x):
-        x = x + self.attn(F.rms_norm(x, (x.size(-1),)))
-        x = x + self.mlp(F.rms_norm(x, (x.size(-1),)))
+        x = x + self.attn(self.attn_norm(x))
+        x = x + self.mlp(self.mlp_norm(x))
         return x
 
 # -----------------------------------------------------------------------------
@@ -234,6 +248,7 @@ class GPT(nn.Module):
         ))
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
         self.transformer.wte.weight = self.lm_head.weight # https://paperswithcode.com/method/weight-tying
+        self.final_norm = RMSNorm(config.n_embd)
 
     def forward(self, idx, targets=None, return_logits=True):
 
@@ -241,7 +256,7 @@ class GPT(nn.Module):
         x = self.transformer.wte(idx) # token embeddings of shape (b, t, n_embd)
         for block in self.transformer.h:
             x = block(x)
-        x = F.rms_norm(x, (x.size(-1),))
+        x = self.final_norm(x)
 
         if targets is not None:
             # if we are given some desired targets also calculate the loss
@@ -417,10 +432,39 @@ else:
 ctx = torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16)
 
 # init the optimizer(s)
+def canonical_param_name(name):
+    if name.startswith('_orig_mod.'):
+        return name[len('_orig_mod.'):]
+    return name
+
+def is_rmsnorm_gamma_name(name):
+    name = canonical_param_name(name)
+    return (
+        name == 'final_norm.weight'
+        or name.endswith('.q_norm.weight')
+        or name.endswith('.k_norm.weight')
+        or name.endswith('.attn_norm.weight')
+        or name.endswith('.mlp_norm.weight')
+    )
+
+named_parameters = list(raw_model.named_parameters())
+block_decay_parameters = [
+    p
+    for name, p in named_parameters
+    if canonical_param_name(name).startswith('transformer.h.')
+    and not is_rmsnorm_gamma_name(name)
+]
+rmsnorm_gamma_parameters = [
+    p
+    for name, p in named_parameters
+    if is_rmsnorm_gamma_name(name)
+]
 optimizer1 = torch.optim.AdamW(raw_model.lm_head.parameters(), lr=args.embed_learning_rate, betas=(0.9, 0.95),
                                weight_decay=0.0, fused=True)
-optimizer2 = torch.optim.AdamW(raw_model.transformer.h.parameters(), lr=0.5*args.embed_learning_rate, betas=(0.9, 0.95),
-                               weight_decay=args.weight_decay, fused=True)
+optimizer2 = torch.optim.AdamW([
+    dict(params=block_decay_parameters, weight_decay=args.weight_decay),
+    dict(params=rmsnorm_gamma_parameters, weight_decay=0.0),
+], lr=0.5*args.embed_learning_rate, betas=(0.9, 0.95), fused=True)
 optimizers = [optimizer1, optimizer2]
 # learning rate decay scheduler (linear warmup and warmdown)
 def get_lr(it):
