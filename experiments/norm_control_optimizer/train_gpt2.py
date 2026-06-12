@@ -9,6 +9,7 @@ import json
 import uuid
 import glob
 import time
+import math
 from collections import defaultdict
 from dataclasses import dataclass
 
@@ -171,7 +172,8 @@ class CausalSelfAttention(nn.Module):
         self.c_v = nn.Linear(self.n_embd, self.n_embd, bias=False)
         # output projection
         self.c_proj = nn.Linear(self.n_embd, self.n_embd, bias=False)
-        self.c_proj.weight.data.zero_() # zero init suggested by @Grad62304977
+        c_proj_std = config.init_std / math.sqrt(2 * config.n_layer)
+        torch.nn.init.normal_(self.c_proj.weight, mean=0.0, std=c_proj_std)
         self.rotary = Rotary(self.head_dim)
 
     def forward(self, x):
@@ -193,7 +195,8 @@ class MLP(nn.Module):
         super().__init__()
         self.c_fc    = nn.Linear(config.n_embd, 4 * config.n_embd, bias=False)
         self.c_proj  = nn.Linear(4 * config.n_embd, config.n_embd, bias=False)
-        self.c_proj.weight.data.zero_() # zero init suggested by @Grad62304977
+        c_proj_std = config.init_std / math.sqrt(2 * config.n_layer)
+        torch.nn.init.normal_(self.c_proj.weight, mean=0.0, std=c_proj_std)
 
     def forward(self, x):
         x = self.c_fc(x)
@@ -222,6 +225,7 @@ class GPTConfig:
     n_layer : int = 12
     n_head : int = 6 # head dim 128 suggested by @Grad62304977
     n_embd : int = 768
+    init_std : float = 0.02
 
 class GPT(nn.Module):
 
