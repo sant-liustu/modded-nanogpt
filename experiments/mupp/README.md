@@ -60,3 +60,13 @@ These variants change only run configuration:
 
 Because `transformer.wte.weight` is tied to `lm_head.weight`, applying weight
 decay to the `lm_head` optimizer group also applies it to the input embedding.
+
+Additional `w1536` warmup-cosine + weight decay LR sweep scripts:
+
+| script | n_embd | n_head | width_multiplier | embed/lm_head lr | hidden-block lr |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `train_gpt2_mupp_w1536_lr0p0018_cosine_wd0p1.py` | 1536 | 12 | 2.0 | 0.0018 | 0.00045 |
+| `train_gpt2_mupp_w1536_lr0p0027_cosine_wd0p1.py` | 1536 | 12 | 2.0 | 0.0027 | 0.000675 |
+| `train_gpt2_mupp_w1536_lr0p0036_cosine_wd0p1.py` | 1536 | 12 | 2.0 | 0.0036 | 0.0009 |
+| `train_gpt2_mupp_w1536_lr0p0054_cosine_wd0p1.py` | 1536 | 12 | 2.0 | 0.0054 | 0.00135 |
+| `train_gpt2_mupp_w1536_lr0p0072_cosine_wd0p1.py` | 1536 | 12 | 2.0 | 0.0072 | 0.0018 |
