@@ -44,3 +44,19 @@ uses this value directly. The transformer block optimizer uses
 | `train_gpt2_mupp_w1152_lr0p0036.py` | 1152 | 9 | 1.5 | 0.0036 | 0.0012 |
 | `train_gpt2_mupp_w1152_lr0p0054.py` | 1152 | 9 | 1.5 | 0.0054 | 0.0018 |
 | `train_gpt2_mupp_w1152_lr0p0072.py` | 1152 | 9 | 1.5 | 0.0072 | 0.0024 |
+
+## Warmup-Cosine + Weight Decay Variants
+
+For every non-cosine `train_gpt2_mupp_*.py` script, there is a copied
+`*_cosine_wd0p1.py` variant.
+
+These variants change only run configuration:
+
+- LR schedule is linear warmup for `warmup_iters = 250`, then cosine decay to
+  `0.1` times the peak LR over `cosine_decay_iters = 4850`.
+- `weight_decay = 0.1`.
+- The tied embedding/lm_head AdamW group uses `weight_decay=args.weight_decay`.
+- The transformer block AdamW group also uses `weight_decay=args.weight_decay`.
+
+Because `transformer.wte.weight` is tied to `lm_head.weight`, applying weight
+decay to the `lm_head` optimizer group also applies it to the input embedding.
