@@ -224,8 +224,8 @@ class Block(nn.Module):
 class GPTConfig:
     vocab_size : int = 50304
     n_layer : int = 12
-    n_head : int = 12 # head dim 128 suggested by @Grad62304977
-    n_embd : int = 1536
+    n_head : int = 9 # head dim 128 suggested by @Grad62304977
+    n_embd : int = 1152
     init_std : float = 0.02
     scale_emb : float = 1.0
     scale_base_model : int = 768
@@ -374,7 +374,7 @@ class Hyperparameters:
     device_batch_size : int = 64 # batch size, in sequences, per device
     sequence_length : int = 1024 # sequence length, in tokens
     num_iterations : int = 5100 # number of iterations to run
-    embed_learning_rate : float = 0.0027
+    embed_learning_rate : float = 0.0036
     muon_learning_rate : float = 0.02
     warmup_iters : int = 250
     cosine_decay_iters : int = 4850 # number of post-warmup iterations for cosine decay
@@ -429,7 +429,7 @@ x, y = train_loader.next_batch()
 # there are only 50257 unique GPT-2 tokens; we extend to nearest multiple of 128 for efficiency. suggested to me by @Grad62304977.
 # this originates from Karpathy's experiments.
 num_vocab = 50304
-model = GPT(GPTConfig(vocab_size=num_vocab, n_layer=12, n_head=12, n_embd=1536))
+model = GPT(GPTConfig(vocab_size=num_vocab, n_layer=12, n_head=9, n_embd=1152))
 width_multiplier = model.width_multiplier
 model = model.cuda()
 if hasattr(config, "coordinate_descent_tuning"):
@@ -466,7 +466,7 @@ schedulers = [torch.optim.lr_scheduler.LambdaLR(opt, get_lr) for opt in optimize
 
 # begin logging
 if master_process:
-    run_id = 'train_gpt2_mupp_w1536_lr0p0027_cosine_ivd0p1_' + str(uuid.uuid4())
+    run_id = 'train_gpt2_mupp_w1152_lr0p0036_cosine_iwd0p1_' + str(uuid.uuid4())
     logdir = 'logs/%s/' % run_id
     os.makedirs(logdir, exist_ok=True)
     logfile = 'logs/%s.txt' % run_id

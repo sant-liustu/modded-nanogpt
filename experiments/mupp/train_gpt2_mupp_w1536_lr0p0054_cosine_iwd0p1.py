@@ -374,7 +374,7 @@ class Hyperparameters:
     device_batch_size : int = 64 # batch size, in sequences, per device
     sequence_length : int = 1024 # sequence length, in tokens
     num_iterations : int = 5100 # number of iterations to run
-    embed_learning_rate : float = 0.0072
+    embed_learning_rate : float = 0.0054
     muon_learning_rate : float = 0.02
     warmup_iters : int = 250
     cosine_decay_iters : int = 4850 # number of post-warmup iterations for cosine decay
@@ -466,7 +466,7 @@ schedulers = [torch.optim.lr_scheduler.LambdaLR(opt, get_lr) for opt in optimize
 
 # begin logging
 if master_process:
-    run_id = 'train_gpt2_mupp_w1536_lr0p0072_cosine_ivd0p1_' + str(uuid.uuid4())
+    run_id = 'train_gpt2_mupp_w1536_lr0p0054_cosine_iwd0p1_' + str(uuid.uuid4())
     logdir = 'logs/%s/' % run_id
     os.makedirs(logdir, exist_ok=True)
     logfile = 'logs/%s.txt' % run_id

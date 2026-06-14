@@ -71,10 +71,10 @@ Additional `w1536` warmup-cosine + weight decay LR sweep scripts:
 | `train_gpt2_mupp_w1536_lr0p0054_cosine_wd0p1.py` | 1536 | 12 | 2.0 | 0.0054 | 0.00135 |
 | `train_gpt2_mupp_w1536_lr0p0072_cosine_wd0p1.py` | 1536 | 12 | 2.0 | 0.0072 | 0.0018 |
 
-## Warmup-Cosine + Independent Vector Decay Variants
+## Warmup-Cosine + Independent Weight Decay Variants
 
 For every `*_cosine_wd0p1.py` script, there is a copied
-`*_cosine_ivd0p1.py` variant.
+`*_cosine_iwd0p1.py` variant.
 
 These variants keep the same model width, head count, LR, warmup-cosine
 schedule, monitoring, and base `weight_decay = 0.1`. The only optimizer change

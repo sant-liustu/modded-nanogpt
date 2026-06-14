@@ -223,9 +223,9 @@ class Block(nn.Module):
 @dataclass
 class GPTConfig:
     vocab_size : int = 50304
-    n_layer : int = 2
-    n_head : int = 2
-    n_embd : int = 64
+    n_layer : int = 12
+    n_head : int = 9 # head dim 128 suggested by @Grad62304977
+    n_embd : int = 1152
     init_std : float = 0.02
     scale_emb : float = 1.0
     scale_base_model : int = 768
@@ -367,26 +367,26 @@ class DistributedDataLoader:
 @dataclass
 class Hyperparameters:
     # data hyperparams
-    input_bin : str = 'data/local_debug/fineweb_train_*.bin' # input .bin to train on
-    input_val_bin : str = 'data/local_debug/fineweb_val_*.bin' # input .bin to eval validation loss on
+    input_bin : str = 'data/fineweb10B/fineweb_train_*.bin' # input .bin to train on
+    input_val_bin : str = 'data/fineweb10B/fineweb_val_*.bin' # input .bin to eval validation loss on
     # optimization hyperparams
-    batch_size : int = 2 # batch size, in sequences, across all devices
-    device_batch_size : int = 2 # batch size, in sequences, per device
-    sequence_length : int = 16 # sequence length, in tokens
-    num_iterations : int = 20 # number of iterations to run
-    embed_learning_rate : float = 0.0036
+    batch_size : int = 8*64 # batch size, in sequences, across all devices
+    device_batch_size : int = 64 # batch size, in sequences, per device
+    sequence_length : int = 1024 # sequence length, in tokens
+    num_iterations : int = 5100 # number of iterations to run
+    embed_learning_rate : float = 0.0054
     muon_learning_rate : float = 0.02
-    warmup_iters : int = 2
-    cosine_decay_iters : int = 18 # number of post-warmup iterations for cosine decay
+    warmup_iters : int = 250
+    cosine_decay_iters : int = 4850 # number of post-warmup iterations for cosine decay
     cosine_min_lr_ratio : float = 0.1 # final LR multiplier after cosine decay
     weight_decay : float = 0.1 # base AdamW weight decay; transformer blocks use weight_decay * width_multiplier
     # evaluation and logging hyperparams
-    val_loss_every : int = 5 # every how many steps to evaluate val loss? 0 for only at the end
-    val_tokens : int = 64 # how many tokens of validation data? it's important to keep this fixed for consistent comparisons
-    save_every : int = 10 # every how many steps to save the checkpoint? 0 for only at the end
-    compile_model : int = 0 # compile the model with torch.compile
-    tensor_norm_every : int = 5 # every how many steps to log tensor norm history? 0 disables
-    adamw_update_norm_every : int = 5 # every how many optimizer steps to log AdamW effective update norms? 0 disables
+    val_loss_every : int = 125 # every how many steps to evaluate val loss? 0 for only at the end
+    val_tokens : int = 10485760 # how many tokens of validation data? it's important to keep this fixed for consistent comparisons
+    save_every : int = 500 # every how many steps to save the checkpoint? 0 for only at the end
+    compile_model : int = 1 # compile the model with torch.compile
+    tensor_norm_every : int = 1 # every how many steps to log tensor norm history? 0 disables
+    adamw_update_norm_every : int = 1 # every how many optimizer steps to log AdamW effective update norms? 0 disables
     activation_probe_every : int = 0 # every how many steps to log fixed-probe activation RMS ratios? 0 disables
     spectral_norm_estimate_enabled : int = 0 # whether to estimate 2D spectral norms in tensor/update norm histories
     activation_probe_eps : float = 1e-12 # denominator epsilon for activation RMS ratios
@@ -428,8 +428,8 @@ x, y = train_loader.next_batch()
 
 # there are only 50257 unique GPT-2 tokens; we extend to nearest multiple of 128 for efficiency. suggested to me by @Grad62304977.
 # this originates from Karpathy's experiments.
-num_vocab = 1024
-model = GPT(GPTConfig(vocab_size=num_vocab, n_layer=2, n_head=2, n_embd=64))
+num_vocab = 50304
+model = GPT(GPTConfig(vocab_size=num_vocab, n_layer=12, n_head=9, n_embd=1152))
 width_multiplier = model.width_multiplier
 model = model.cuda()
 if hasattr(config, "coordinate_descent_tuning"):
@@ -466,7 +466,7 @@ schedulers = [torch.optim.lr_scheduler.LambdaLR(opt, get_lr) for opt in optimize
 
 # begin logging
 if master_process:
-    run_id = 'mupp_smoke_tiny_cosine_ivd0p1_' + str(uuid.uuid4())
+    run_id = 'train_gpt2_mupp_w1152_lr0p0054_cosine_iwd0p1_' + str(uuid.uuid4())
     logdir = 'logs/%s/' % run_id
     os.makedirs(logdir, exist_ok=True)
     logfile = 'logs/%s.txt' % run_id
