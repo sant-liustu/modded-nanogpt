@@ -70,3 +70,30 @@ Additional `w1536` warmup-cosine + weight decay LR sweep scripts:
 | `train_gpt2_mupp_w1536_lr0p0036_cosine_wd0p1.py` | 1536 | 12 | 2.0 | 0.0036 | 0.0009 |
 | `train_gpt2_mupp_w1536_lr0p0054_cosine_wd0p1.py` | 1536 | 12 | 2.0 | 0.0054 | 0.00135 |
 | `train_gpt2_mupp_w1536_lr0p0072_cosine_wd0p1.py` | 1536 | 12 | 2.0 | 0.0072 | 0.0018 |
+
+## Warmup-Cosine + Independent Vector Decay Variants
+
+For every `*_cosine_wd0p1.py` script, there is a copied
+`*_cosine_ivd0p1.py` variant.
+
+These variants keep the same model width, head count, LR, warmup-cosine
+schedule, monitoring, and base `weight_decay = 0.1`. The only optimizer change
+is the transformer block AdamW group:
+
+- tied embedding/lm_head: `weight_decay = args.weight_decay`
+- transformer blocks: `weight_decay = args.weight_decay * width_multiplier`
+
+This keeps the hidden-block product `eta * weight_decay` width-constant when
+the hidden-block LR is scaled as `eta / width_multiplier`. Because the tied
+embedding/lm_head LR is not divided by `width_multiplier`, its weight decay is
+not multiplied by `width_multiplier`.
+
+Hidden-block weight decay values with base `weight_decay = 0.1`:
+
+| n_embd | width_multiplier | hidden-block weight_decay |
+| ---: | ---: | ---: |
+| 384 | 0.5 | 0.05 |
+| 768 | 1.0 | 0.1 |
+| 1152 | 1.5 | 0.15 |
+| 1536 | 2.0 | 0.2 |
+| 3072 | 4.0 | 0.4 |
