@@ -1,5 +1,5 @@
-# Baseline for norm-control schedule collapse experiments.
-# Delayed-captured constant RMS control, WSD LR, B=128, 20400 optimizer steps.
+# Linear-down norm-control schedule collapse experiment.
+# Delayed capture, RMS target ratio 1.0 -> 0.5, LR matched by the same ratio.
 import os
 import random
 import sys
@@ -162,6 +162,16 @@ def apply_rotary_emb(x, cos, sin):
     y2 = x1 * (-sin) + x2 * cos
     return torch.cat([y1, y2], 3).type_as(x)
 
+class RMSNorm(nn.Module):
+
+    def __init__(self, dim, eps=None):
+        super().__init__()
+        self.weight = nn.Parameter(torch.ones(dim))
+        self.eps = eps
+
+    def forward(self, x):
+        return F.rms_norm(x, (x.size(-1),), self.weight, self.eps)
+
 class CausalSelfAttention(nn.Module):
 
     def __init__(self, config):
@@ -178,6 +188,8 @@ class CausalSelfAttention(nn.Module):
         c_proj_std = config.init_std / math.sqrt(2 * config.n_layer)
         torch.nn.init.normal_(self.c_proj.weight, mean=0.0, std=c_proj_std)
         self.rotary = Rotary(self.head_dim)
+        self.q_norm = RMSNorm(self.head_dim)
+        self.k_norm = RMSNorm(self.head_dim)
 
     def forward(self, x):
         B, T, C = x.size() # batch size, sequence length, embedding dimensionality (n_embd)
@@ -185,7 +197,7 @@ class CausalSelfAttention(nn.Module):
         k = self.c_k(x).view(B, T, self.n_head, self.head_dim)
         v = self.c_v(x).view(B, T, self.n_head, self.head_dim)
         cos, sin = self.rotary(q)
-        q, k = F.rms_norm(q, (q.size(-1),)), F.rms_norm(k, (k.size(-1),)) # QK norm suggested by @Grad62304977
+        q, k = self.q_norm(q), self.k_norm(k) # QK norm suggested by @Grad62304977
         q, k = apply_rotary_emb(q, cos, sin), apply_rotary_emb(k, cos, sin)
         y = F.scaled_dot_product_attention(q.transpose(1, 2), k.transpose(1, 2), v.transpose(1, 2), is_causal=True)
         y = y.transpose(1, 2).contiguous().view_as(x) # re-assemble all head outputs side by side
@@ -213,10 +225,12 @@ class Block(nn.Module):
         super().__init__()
         self.attn = CausalSelfAttention(config)
         self.mlp = MLP(config)
+        self.attn_norm = RMSNorm(config.n_embd)
+        self.mlp_norm = RMSNorm(config.n_embd)
 
     def forward(self, x):
-        x = x + self.attn(F.rms_norm(x, (x.size(-1),)))
-        x = x + self.mlp(F.rms_norm(x, (x.size(-1),)))
+        x = x + self.attn(self.attn_norm(x))
+        x = x + self.mlp(self.mlp_norm(x))
         return x
 
 # -----------------------------------------------------------------------------
@@ -242,6 +256,7 @@ class GPT(nn.Module):
         ))
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
         self.transformer.wte.weight = self.lm_head.weight # https://paperswithcode.com/method/weight-tying
+        self.final_norm = RMSNorm(config.n_embd)
 
     def forward(self, idx, targets=None, return_logits=True):
 
@@ -249,7 +264,7 @@ class GPT(nn.Module):
         x = self.transformer.wte(idx) # token embeddings of shape (b, t, n_embd)
         for block in self.transformer.h:
             x = block(x)
-        x = F.rms_norm(x, (x.size(-1),))
+        x = self.final_norm(x)
 
         if targets is not None:
             # if we are given some desired targets also calculate the loss
@@ -724,13 +739,29 @@ def write_norm_control_metadata(norm_control_state):
 
 norm_control_state = build_norm_control_state(raw_model, args.norm_control_config)
 controlled_param_ids = {id(entry['param']) for entry in norm_control_state['params']}
+def is_rmsnorm_gamma_name(name):
+    canonical_name = canonical_param_name(name)
+    return (
+        canonical_name == 'final_norm.weight'
+        or canonical_name.endswith('.q_norm.weight')
+        or canonical_name.endswith('.k_norm.weight')
+        or canonical_name.endswith('.attn_norm.weight')
+        or canonical_name.endswith('.mlp_norm.weight')
+    )
+
 block_named_parameters = [
     (name, p)
     for name, p in raw_model.named_parameters()
     if canonical_param_name(name).startswith('transformer.h.')
+    and not is_rmsnorm_gamma_name(name)
 ]
 controlled_block_parameters = [p for _, p in block_named_parameters if id(p) in controlled_param_ids]
 uncontrolled_block_parameters = [p for _, p in block_named_parameters if id(p) not in controlled_param_ids]
+rmsnorm_gamma_parameters = [
+    p
+    for name, p in raw_model.named_parameters()
+    if is_rmsnorm_gamma_name(name)
+]
 unexpected_controlled = [
     entry['name']
     for entry in norm_control_state['params']
@@ -750,14 +781,21 @@ if uncontrolled_block_parameters:
     optimizer2_groups.append(dict(params=uncontrolled_block_parameters, weight_decay=args.weight_decay))
 if controlled_block_parameters:
     optimizer2_groups.append(dict(params=controlled_block_parameters, weight_decay=0.0))
+if rmsnorm_gamma_parameters:
+    optimizer2_groups.append(dict(params=rmsnorm_gamma_parameters, weight_decay=0.0))
 optimizer2 = torch.optim.AdamW(optimizer2_groups, lr=0.5*args.embed_learning_rate, betas=(0.9, 0.95),
                                fused=True)
 optimizers = [optimizer1, optimizer2]
 # learning rate decay scheduler (linear warmup and warmdown)
 def schedule_ratio(it):
-    return 1.0
+    start_step = norm_control_state['start_step']
+    if start_step is None or it <= start_step:
+        return 1.0
+    progress = (it - start_step) / max(1, args.num_iterations - start_step)
+    progress = min(1.0, max(0.0, progress))
+    return 1.0 - 0.5 * progress
 
-def get_lr(it):
+def get_wsd_lr(it):
     assert it <= args.num_iterations
     # 1) linear warmup for warmup_iters steps
     if it < args.warmup_iters:
@@ -769,8 +807,18 @@ def get_lr(it):
     else:
         decay_ratio = (args.num_iterations - it) / args.warmdown_iters
         wsd_ratio = decay_ratio
+    return wsd_ratio
+
+def get_lr(it):
+    wsd_ratio = get_wsd_lr(it)
     return wsd_ratio * schedule_ratio(it)
-schedulers = [torch.optim.lr_scheduler.LambdaLR(opt, get_lr) for opt in optimizers]
+optimizer2_lr_lambdas = [get_lr for _ in optimizer2.param_groups]
+if rmsnorm_gamma_parameters:
+    optimizer2_lr_lambdas[-1] = get_wsd_lr
+schedulers = [
+    torch.optim.lr_scheduler.LambdaLR(optimizer1, get_lr),
+    torch.optim.lr_scheduler.LambdaLR(optimizer2, optimizer2_lr_lambdas),
+]
 
 # begin logging
 if master_process:

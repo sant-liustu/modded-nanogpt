@@ -1,6 +1,7 @@
 # Linear-up norm-control schedule collapse experiment.
 # Delayed capture, RMS target ratio 1.0 -> 2.0, LR matched by the same ratio.
 import os
+import random
 import sys
 with open(sys.argv[0]) as f:
     code = f.read() # read the code of this file ASAP, for logging
@@ -370,6 +371,7 @@ class Hyperparameters:
     activation_probe_every : int = 0 # every how many steps to log fixed-probe activation RMS ratios? 0 disables
     spectral_norm_estimate_enabled : int = 1 # whether to estimate 2D spectral norms in tensor/update norm histories
     activation_probe_eps : float = 1e-12 # denominator epsilon for activation RMS ratios
+    seed : int = 0
     norm_control_config : str = 'experiments/norm_control_schedule_collapse/delayed_constant_all_matrices_start1000.json' # optional JSON config for per-tensor RMS norm control
 args = Hyperparameters()
 def parse_hparam_value(name, value):
@@ -389,6 +391,11 @@ for arg in sys.argv[1:]:
     if not hasattr(args, name):
         raise ValueError(f"unknown command line argument: {arg}")
     setattr(args, name, parse_hparam_value(name, value))
+
+random.seed(args.seed)
+np.random.seed(args.seed)
+torch.manual_seed(args.seed)
+torch.cuda.manual_seed_all(args.seed)
 
 # set up DDP (distributed data parallel). torchrun sets this env variable
 assert torch.cuda.is_available()
