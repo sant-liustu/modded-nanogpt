@@ -1,4 +1,5 @@
 import os
+import random
 import sys
 with open(sys.argv[0]) as f:
     code = f.read() # read the code of this file ASAP, for logging
@@ -159,6 +160,16 @@ def apply_rotary_emb(x, cos, sin):
     y2 = x1 * (-sin) + x2 * cos
     return torch.cat([y1, y2], 3).type_as(x)
 
+class RMSNorm(nn.Module):
+
+    def __init__(self, dim, eps=None):
+        super().__init__()
+        self.weight = nn.Parameter(torch.ones(dim))
+        self.eps = eps
+
+    def forward(self, x):
+        return F.rms_norm(x, (x.size(-1),), self.weight, self.eps)
+
 class CausalSelfAttention(nn.Module):
 
     def __init__(self, config):
@@ -175,6 +186,8 @@ class CausalSelfAttention(nn.Module):
         c_proj_std = config.init_std / math.sqrt(2 * config.n_layer)
         torch.nn.init.normal_(self.c_proj.weight, mean=0.0, std=c_proj_std)
         self.rotary = Rotary(self.head_dim)
+        self.q_norm = RMSNorm(self.head_dim)
+        self.k_norm = RMSNorm(self.head_dim)
 
     def forward(self, x):
         B, T, C = x.size() # batch size, sequence length, embedding dimensionality (n_embd)
@@ -182,7 +195,7 @@ class CausalSelfAttention(nn.Module):
         k = self.c_k(x).view(B, T, self.n_head, self.head_dim)
         v = self.c_v(x).view(B, T, self.n_head, self.head_dim)
         cos, sin = self.rotary(q)
-        q, k = F.rms_norm(q, (q.size(-1),)), F.rms_norm(k, (k.size(-1),)) # QK norm suggested by @Grad62304977
+        q, k = self.q_norm(q), self.k_norm(k) # QK norm suggested by @Grad62304977
         q, k = apply_rotary_emb(q, cos, sin), apply_rotary_emb(k, cos, sin)
         y = F.scaled_dot_product_attention(q.transpose(1, 2), k.transpose(1, 2), v.transpose(1, 2), is_causal=True)
         y = y.transpose(1, 2).contiguous().view_as(x) # re-assemble all head outputs side by side
@@ -210,10 +223,12 @@ class Block(nn.Module):
         super().__init__()
         self.attn = CausalSelfAttention(config)
         self.mlp = MLP(config)
+        self.attn_norm = RMSNorm(config.n_embd)
+        self.mlp_norm = RMSNorm(config.n_embd)
 
     def forward(self, x):
-        x = x + self.attn(F.rms_norm(x, (x.size(-1),)))
-        x = x + self.mlp(F.rms_norm(x, (x.size(-1),)))
+        x = x + self.attn(self.attn_norm(x))
+        x = x + self.mlp(self.mlp_norm(x))
         return x
 
 # -----------------------------------------------------------------------------
@@ -239,6 +254,7 @@ class GPT(nn.Module):
         ))
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
         self.transformer.wte.weight = self.lm_head.weight # https://paperswithcode.com/method/weight-tying
+        self.final_norm = RMSNorm(config.n_embd)
 
     def forward(self, idx, targets=None, return_logits=True):
 
@@ -246,7 +262,7 @@ class GPT(nn.Module):
         x = self.transformer.wte(idx) # token embeddings of shape (b, t, n_embd)
         for block in self.transformer.h:
             x = block(x)
-        x = F.rms_norm(x, (x.size(-1),))
+        x = self.final_norm(x)
 
         if targets is not None:
             # if we are given some desired targets also calculate the loss
@@ -349,25 +365,26 @@ class Hyperparameters:
     input_bin : str = 'data/fineweb10B/fineweb_train_*.bin' # input .bin to train on
     input_val_bin : str = 'data/fineweb10B/fineweb_val_*.bin' # input .bin to eval validation loss on
     # optimization hyperparams
-    batch_size : int = 8*64 # batch size, in sequences, across all devices
+    batch_size : int = 128 # batch size, in sequences, across all devices
     device_batch_size : int = 64 # batch size, in sequences, per device
     sequence_length : int = 1024 # sequence length, in tokens
-    num_iterations : int = 5100 # number of iterations to run
+    num_iterations : int = 20400 # number of iterations to run
     embed_learning_rate : float = 0.0036
     muon_learning_rate : float = 0.02
-    warmup_iters : int = 250
-    warmdown_iters : int = 1450 # number of iterations of linear warmup/warmdown for triangular or trapezoidal schedule
+    warmup_iters : int = 1000
+    warmdown_iters : int = 5800 # number of iterations of linear warmup/warmdown for triangular or trapezoidal schedule
     weight_decay : float = 0 # transformer block weight decay; tied wte/lm_head is always excluded
     # evaluation and logging hyperparams
-    val_loss_every : int = 125 # every how many steps to evaluate val loss? 0 for only at the end
+    val_loss_every : int = 500 # every how many steps to evaluate val loss? 0 for only at the end
     val_tokens : int = 10485760 # how many tokens of validation data? it's important to keep this fixed for consistent comparisons
-    save_every : int = 100 # every how many steps to save the checkpoint? 0 for only at the end
+    save_every : int = 0 # every how many steps to save the checkpoint? 0 for only at the end
     compile_model : int = 1 # compile the model with torch.compile
-    tensor_norm_every : int = 1 # every how many steps to log tensor norm history? 0 disables
-    adamw_update_norm_every : int = 1 # every how many optimizer steps to log AdamW effective update norms? 0 disables
+    tensor_norm_every : int = 4 # every how many steps to log tensor norm history? 0 disables
+    adamw_update_norm_every : int = 4 # every how many optimizer steps to log AdamW effective update norms? 0 disables
     activation_probe_every : int = 0 # every how many steps to log fixed-probe activation RMS ratios? 0 disables
     spectral_norm_estimate_enabled : int = 1 # whether to estimate 2D spectral norms in tensor/update norm histories
     activation_probe_eps : float = 1e-12 # denominator epsilon for activation RMS ratios
+    seed : int = 0
     norm_control_config : str = 'experiments/norm_control_optimizer/normctrl_fixed_from_wd01_baseline_all_matrices.json' # optional JSON config for per-tensor RMS norm control
 args = Hyperparameters()
 def parse_hparam_value(name, value):
@@ -387,6 +404,11 @@ for arg in sys.argv[1:]:
     if not hasattr(args, name):
         raise ValueError(f"unknown command line argument: {arg}")
     setattr(args, name, parse_hparam_value(name, value))
+
+random.seed(args.seed)
+np.random.seed(args.seed)
+torch.manual_seed(args.seed)
+torch.cuda.manual_seed_all(args.seed)
 
 # set up DDP (distributed data parallel). torchrun sets this env variable
 assert torch.cuda.is_available()
@@ -708,13 +730,29 @@ def write_norm_control_metadata(norm_control_state):
 
 norm_control_state = build_norm_control_state(raw_model, args.norm_control_config)
 controlled_param_ids = {id(entry['param']) for entry in norm_control_state['params']}
+def is_rmsnorm_gamma_name(name):
+    canonical_name = canonical_param_name(name)
+    return (
+        canonical_name == 'final_norm.weight'
+        or canonical_name.endswith('.q_norm.weight')
+        or canonical_name.endswith('.k_norm.weight')
+        or canonical_name.endswith('.attn_norm.weight')
+        or canonical_name.endswith('.mlp_norm.weight')
+    )
+
 block_named_parameters = [
     (name, p)
     for name, p in raw_model.named_parameters()
     if canonical_param_name(name).startswith('transformer.h.')
+    and not is_rmsnorm_gamma_name(name)
 ]
 controlled_block_parameters = [p for _, p in block_named_parameters if id(p) in controlled_param_ids]
 uncontrolled_block_parameters = [p for _, p in block_named_parameters if id(p) not in controlled_param_ids]
+rmsnorm_gamma_parameters = [
+    p
+    for name, p in raw_model.named_parameters()
+    if is_rmsnorm_gamma_name(name)
+]
 unexpected_controlled = [
     entry['name']
     for entry in norm_control_state['params']
@@ -734,6 +772,8 @@ if uncontrolled_block_parameters:
     optimizer2_groups.append(dict(params=uncontrolled_block_parameters, weight_decay=args.weight_decay))
 if controlled_block_parameters:
     optimizer2_groups.append(dict(params=controlled_block_parameters, weight_decay=0.0))
+if rmsnorm_gamma_parameters:
+    optimizer2_groups.append(dict(params=rmsnorm_gamma_parameters, weight_decay=0.0))
 optimizer2 = torch.optim.AdamW(optimizer2_groups, lr=0.5*args.embed_learning_rate, betas=(0.9, 0.95),
                                fused=True)
 optimizers = [optimizer1, optimizer2]

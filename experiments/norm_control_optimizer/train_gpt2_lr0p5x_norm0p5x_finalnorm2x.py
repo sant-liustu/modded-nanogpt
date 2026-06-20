@@ -1,4 +1,4 @@
-# 2x lr + 2x target-norm variant copied from train_gpt2.py.
+# 0.5x lr + 0.5x target-norm variant copied from train_gpt2.py.
 import os
 import random
 import sys
@@ -256,6 +256,7 @@ class GPT(nn.Module):
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
         self.transformer.wte.weight = self.lm_head.weight # https://paperswithcode.com/method/weight-tying
         self.final_norm = RMSNorm(config.n_embd)
+        self.final_norm.weight.data.fill_(2.0)
 
     def forward(self, idx, targets=None, return_logits=True):
 
@@ -370,7 +371,7 @@ class Hyperparameters:
     device_batch_size : int = 64 # batch size, in sequences, per device
     sequence_length : int = 1024 # sequence length, in tokens
     num_iterations : int = 20400 # number of iterations to run
-    embed_learning_rate : float = 0.0072
+    embed_learning_rate : float = 0.0018
     muon_learning_rate : float = 0.02
     warmup_iters : int = 1000
     warmdown_iters : int = 5800 # number of iterations of linear warmup/warmdown for triangular or trapezoidal schedule
@@ -386,7 +387,7 @@ class Hyperparameters:
     spectral_norm_estimate_enabled : int = 1 # whether to estimate 2D spectral norms in tensor/update norm histories
     activation_probe_eps : float = 1e-12 # denominator epsilon for activation RMS ratios
     seed : int = 0
-    norm_control_config : str = 'experiments/norm_control_optimizer/normctrl_fixed_from_wd01_baseline_all_matrices_norm2x.json' # optional JSON config for per-tensor RMS norm control
+    norm_control_config : str = 'experiments/norm_control_optimizer/normctrl_fixed_from_wd01_baseline_all_matrices_norm0p5x.json' # optional JSON config for per-tensor RMS norm control
 args = Hyperparameters()
 def parse_hparam_value(name, value):
     current = getattr(args, name)
