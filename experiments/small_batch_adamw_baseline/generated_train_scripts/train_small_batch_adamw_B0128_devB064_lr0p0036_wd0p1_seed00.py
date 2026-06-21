@@ -1,7 +1,7 @@
 # Copied from experiment/batch-size-norm-dynamics train_gpt2.py.
 # Purpose: standard AdamW baseline at B=128, T=1024, 20400 steps.
 # Token budget matches the B=512, T=1024, 5100-step large-batch setup.
-# Config: batch_size=128, device_batch_size=64, sequence_length=1024, num_iterations=20400, lr=0.0036, block_weight_decay=0.0, seed=0
+# Config: batch_size=128, device_batch_size=64, sequence_length=1024, num_iterations=20400, lr=0.0036, block_weight_decay=0.1, seed=0
 import os
 import random
 import sys
@@ -357,7 +357,7 @@ class Hyperparameters:
     muon_learning_rate : float = 0.02
     warmup_iters : int = 1000
     warmdown_iters : int = 5800 # number of iterations of linear warmup/warmdown for triangular or trapezoidal schedule
-    weight_decay : float = 0.0 # transformer block weight decay; tied wte/lm_head is always excluded
+    weight_decay : float = 0.1 # transformer block weight decay; tied wte/lm_head is always excluded
     # evaluation and logging hyperparams
     val_loss_every : int = 500 # every how many steps to evaluate val loss? 0 for only at the end
     val_tokens : int = 10485760 # how many tokens of validation data? it's important to keep this fixed for consistent comparisons
