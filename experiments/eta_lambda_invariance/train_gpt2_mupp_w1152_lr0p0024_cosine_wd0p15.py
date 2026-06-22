@@ -390,12 +390,12 @@ class Hyperparameters:
     device_batch_size : int = 64 # batch size, in sequences, per device
     sequence_length : int = 1024 # sequence length, in tokens
     num_iterations : int = 20400 # number of iterations to run
-    embed_learning_rate : float = 0.0036
+    embed_learning_rate : float = 0.0024
     muon_learning_rate : float = 0.02
     warmup_iters : int = 1000
     cosine_decay_iters : int = 19400 # number of post-warmup iterations for cosine decay
     cosine_min_lr_ratio : float = 0.1 # final LR multiplier after cosine decay
-    weight_decay : float = 0.1 # AdamW weight decay applied to tied wte/lm_head and transformer blocks
+    weight_decay : float = 0.15 # AdamW weight decay applied to tied wte/lm_head and transformer blocks
     seed : int = 0
     # evaluation and logging hyperparams
     val_loss_every : int = 125 # every how many steps to evaluate val loss? 0 for only at the end
@@ -511,7 +511,7 @@ schedulers = [torch.optim.lr_scheduler.LambdaLR(opt, get_lr) for opt in optimize
 
 # begin logging
 if master_process:
-    run_id = f'eta_lambda_invariance_w1152_lr0p0036_cosine_wd0p1_seed{args.seed}_rmsnormgamma_' + str(uuid.uuid4())
+    run_id = f'eta_lambda_invariance_w1152_lr0p0024_cosine_wd0p15_seed{args.seed}_rmsnormgamma_' + str(uuid.uuid4())
     logdir = 'logs/%s/' % run_id
     os.makedirs(logdir, exist_ok=True)
     logfile = 'logs/%s.txt' % run_id
