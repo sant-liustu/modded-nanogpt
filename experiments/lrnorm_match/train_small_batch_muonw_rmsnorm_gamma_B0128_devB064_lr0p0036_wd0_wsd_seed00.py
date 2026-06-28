@@ -799,7 +799,25 @@ def muonw_update_tensor(tensor, tensor_before, param_hparams, step, name):
     delta = after - before
     return -(delta + lr * weight_decay * before) / lr
 
-def muonw_update_norm_record(step, name, tensor, muonw_update, param_hparams, spectral_norm_estimate=None):
+def muonw_update_with_wd_tensor(tensor, tensor_before, param_hparams, step, name):
+    lr = param_hparams['lr']
+    if lr == 0:
+        raise RuntimeError(f"cannot infer MuonW update with WD for {name} at step {step}: lr is 0")
+    before = tensor_before.float()
+    after = tensor.detach().float()
+    delta = after - before
+    return -delta / lr
+
+def muonw_update_norm_record(
+    step,
+    name,
+    tensor,
+    muonw_update,
+    muonw_update_with_wd,
+    param_hparams,
+    spectral_norm_estimate=None,
+    spectral_norm_estimate_with_wd=None,
+):
     lr = param_hparams['lr']
     weight_decay = param_hparams['weight_decay']
     record = dict(
@@ -817,6 +835,11 @@ def muonw_update_norm_record(step, name, tensor, muonw_update, param_hparams, sp
         prefix='muonw_update_',
         spectral_norm_estimate=spectral_norm_estimate,
     ))
+    record.update(tensor_norm_fields(
+        muonw_update_with_wd,
+        prefix='muonw_update_with_wd_',
+        spectral_norm_estimate=spectral_norm_estimate_with_wd,
+    ))
     return record
 
 def maybe_log_muonw_update_norms(update_step, update_state):
@@ -827,6 +850,7 @@ def maybe_log_muonw_update_norms(update_step, update_state):
     snapshots = update_state['snapshots']
     pending_records = []
     pending_2d_updates = []
+    pending_2d_updates_with_wd = []
     with torch.no_grad(), open(history_path, 'a') as f:
         for name, tensor in raw_model.named_parameters():
             if not tensor.requires_grad:
@@ -838,23 +862,28 @@ def maybe_log_muonw_update_norms(update_step, update_state):
                 raise RuntimeError(f"missing parameter snapshot for {name}")
             tensor_before = snapshots.pop(param_id)
             muonw_update = muonw_update_tensor(tensor, tensor_before, hparams[param_id], update_step, name)
+            muonw_update_with_wd = muonw_update_with_wd_tensor(tensor, tensor_before, hparams[param_id], update_step, name)
             if args.spectral_norm_estimate_enabled > 0 and muonw_update.ndim == 2:
                 pending_2d_updates.append((name, muonw_update))
-                pending_records.append((name, tensor, muonw_update, hparams[param_id]))
+                pending_2d_updates_with_wd.append((name, muonw_update_with_wd))
+                pending_records.append((name, tensor, muonw_update, muonw_update_with_wd, hparams[param_id]))
             else:
-                record = muonw_update_norm_record(update_step, name, tensor, muonw_update, hparams[param_id])
+                record = muonw_update_norm_record(update_step, name, tensor, muonw_update, muonw_update_with_wd, hparams[param_id])
                 f.write(json.dumps(record) + '\n')
                 del record
             del tensor_before
         spectral_estimates = spectral_norm_estimates_by_name(pending_2d_updates)
-        for name, tensor, muonw_update, param_hparams in pending_records:
+        spectral_estimates_with_wd = spectral_norm_estimates_by_name(pending_2d_updates_with_wd)
+        for name, tensor, muonw_update, muonw_update_with_wd, param_hparams in pending_records:
             record = muonw_update_norm_record(
                 update_step,
                 name,
                 tensor,
                 muonw_update,
+                muonw_update_with_wd,
                 param_hparams,
                 spectral_norm_estimate=spectral_estimates[name],
+                spectral_norm_estimate_with_wd=spectral_estimates_with_wd[name],
             )
             f.write(json.dumps(record) + '\n')
             del record
