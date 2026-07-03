@@ -373,7 +373,7 @@ class Hyperparameters:
     sequence_length : int = 1024 # sequence length, in tokens
     num_iterations : int = 20400 # number of iterations to run
     embed_learning_rate : float = 0.0036
-    muon_learning_rate : float = 0.02
+    muon_learning_rate : float = 0.00036 # original Muon recipe: 0.1 * embed_learning_rate
     warmup_iters : int = 1000
     warmdown_iters : int = 5800 # number of iterations of linear warmup/warmdown for trapezoidal WSD schedule
     weight_decay : float = 0.1 # weight decay for block weights and tied wte/lm_head; RMSNorm gamma is excluded
@@ -382,8 +382,8 @@ class Hyperparameters:
     val_tokens : int = 10485760 # how many tokens of validation data? it's important to keep this fixed for consistent comparisons
     save_every : int = 0 # every how many steps to save the checkpoint? 0 for only at the end
     compile_model : int = 1 # compile the model with torch.compile
-    tensor_norm_every : int = 4 # every how many steps to log tensor norm history? 0 disables
-    muonw_update_norm_every : int = 4 # every how many optimizer steps to log MuonW effective update norms? 0 disables
+    tensor_norm_every : int = 1 # every how many steps to log tensor norm history? 0 disables
+    muonw_update_norm_every : int = 1 # every how many optimizer steps to log MuonW effective update norms? 0 disables
     activation_probe_every : int = 0 # every how many steps to log fixed-probe activation RMS ratios? 0 disables
     spectral_norm_estimate_enabled : int = 1 # whether to estimate 2D spectral norms in tensor/update norm histories
     activation_probe_eps : float = 1e-12 # denominator epsilon for activation RMS ratios

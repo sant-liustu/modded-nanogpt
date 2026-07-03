@@ -373,7 +373,7 @@ class Hyperparameters:
     sequence_length : int = 1024 # sequence length, in tokens
     num_iterations : int = 20400 # number of iterations to run
     embed_learning_rate : float = 0.0036
-    muon_learning_rate : float = 0.02
+    muon_learning_rate : float = 0.00036 # original Muon recipe: 0.1 * embed_learning_rate
     warmup_iters : int = 1000
     cosine_decay_iters : int = 19400 # number of post-warmup iterations for cosine decay
     cosine_min_lr_ratio : float = 0.1 # final LR multiplier after cosine decay
