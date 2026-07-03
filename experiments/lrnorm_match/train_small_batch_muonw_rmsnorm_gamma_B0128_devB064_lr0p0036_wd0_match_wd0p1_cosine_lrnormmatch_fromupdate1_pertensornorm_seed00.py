@@ -87,10 +87,11 @@ class MuonW(torch.optim.Optimizer):
 
         for group in self.param_groups:
 
-            lr = group['lr']
+            group_lr = group['lr']
             momentum = group['momentum']
             weight_decay = group['weight_decay']
             zeropower_backend = zeropower_backends[group['backend']]
+            param_lrs = group.get('param_lrs')
 
             # generate weight updates in distributed fashion
             total_params = sum(p.numel() for p in group['params'])
@@ -126,6 +127,7 @@ class MuonW(torch.optim.Optimizer):
             # deserialize and apply updates
             curr_idx = 0
             for p in group['params']:
+                lr = param_lrs.get(id(p), group_lr) if param_lrs is not None else group_lr
                 g = updates_flat[curr_idx:curr_idx+p.numel()].view_as(p.data).type_as(p.data)
                 if weight_decay != 0 and p.grad is not None:
                     p.data.mul_(1 - lr * weight_decay)
@@ -385,7 +387,7 @@ class Hyperparameters:
     compile_model : int = 1 # compile the model with torch.compile
     tensor_norm_every : int = 1 # every how many steps to log tensor norm history? 0 disables
     muonw_update_norm_every : int = 1 # every how many optimizer steps to log MuonW effective update norms? 0 disables
-    lrnorm_reference_json : str = 'experiments/lrnorm_match/reference_rmsnorm_gamma_muonw_wd0p1_cosine_rep01_block_plus_embedding_total_lr_over_norm.jsonl'
+    lrnorm_reference_json : str = 'experiments/lrnorm_match/reference_rmsnorm_gamma_muonw_wd0p1_cosine_rep01_block_plus_embedding_per_tensor_lr_over_norm.jsonl'
     lrnorm_match_start_update : int = 1 # match Muon LR / block+embedding total norm from the first update
     lrnorm_match_target_weight_decay : float = 0.0
     lrnorm_match_log_every : int = 1 # every how many optimizer steps to log LR/norm matching? 0 disables
@@ -449,9 +451,13 @@ if use_ddp:
 ctx = torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16)
 
 # init the optimizer(s)
-def is_rmsnorm_gamma_name(name):
+def canonical_parameter_name(name):
     if name.startswith('_orig_mod.'):
-        name = name[len('_orig_mod.'):]
+        return name[len('_orig_mod.'):]
+    return name
+
+def is_rmsnorm_gamma_name(name):
+    name = canonical_parameter_name(name)
     return (
         name == 'final_norm.weight'
         or name.endswith('.q_norm.weight')
@@ -460,12 +466,13 @@ def is_rmsnorm_gamma_name(name):
         or name.endswith('.mlp_norm.weight')
     )
 
-block_weight_parameters = [
-    p
+block_weight_named_parameters = [
+    (canonical_parameter_name(name), p)
     for name, p in raw_model.named_parameters()
-    if (name[len('_orig_mod.'):] if name.startswith('_orig_mod.') else name).startswith('transformer.h.')
+    if canonical_parameter_name(name).startswith('transformer.h.')
     and not is_rmsnorm_gamma_name(name)
 ]
+block_weight_parameters = [p for _, p in block_weight_named_parameters]
 rmsnorm_gamma_parameters = [
     p
     for name, p in raw_model.named_parameters()
@@ -474,7 +481,12 @@ rmsnorm_gamma_parameters = [
 optimizer1 = torch.optim.AdamW(raw_model.lm_head.parameters(), lr=args.embed_learning_rate, betas=(0.9, 0.95),
                                weight_decay=args.weight_decay, fused=True)
 optimizer2 = MuonW([
-    dict(params=block_weight_parameters, weight_decay=args.weight_decay, lrnorm_match_group=True)
+    dict(
+        params=block_weight_parameters,
+        weight_decay=args.weight_decay,
+        lrnorm_match_group=True,
+        lrnorm_param_names={id(p): name for name, p in block_weight_named_parameters},
+    )
 ], lr=args.muon_learning_rate, momentum=0.95, weight_decay=args.weight_decay,
    nesterov=True, rank=ddp_rank, world_size=ddp_world_size)
 optimizers = [optimizer1, optimizer2]
@@ -485,7 +497,9 @@ if rmsnorm_gamma_parameters:
     optimizers.append(optimizer3)
 
 
-lrnorm_denominator_params = block_weight_parameters + [raw_model.transformer.wte.weight]
+lrnorm_denominator_named_params = block_weight_named_parameters + [
+    ('transformer.wte.weight', raw_model.transformer.wte.weight)
+]
 
 def load_lrnorm_targets(path):
     targets = {}
@@ -498,11 +512,14 @@ def load_lrnorm_targets(path):
 lrnorm_targets = load_lrnorm_targets(args.lrnorm_reference_json)
 
 @torch.no_grad()
-def current_lrnorm_denominator_total_fro_norm():
-    total_sq = torch.zeros((), device=device, dtype=torch.float32)
-    for p in lrnorm_denominator_params:
-        total_sq.add_(p.detach().float().square().sum())
-    return torch.sqrt(total_sq).item()
+def current_lrnorm_tensor_fro_norms():
+    return {
+        name: p.detach().float().norm().item()
+        for name, p in lrnorm_denominator_named_params
+    }
+
+def total_fro_norm(norms):
+    return math.sqrt(sum(float(norm) * float(norm) for norm in norms.values()))
 
 def should_log_lrnorm_match(update_step):
     if not master_process or args.lrnorm_match_log_every <= 0:
@@ -519,13 +536,17 @@ def maybe_apply_lrnorm_controller(update_step):
     if update_step not in lrnorm_targets:
         raise RuntimeError(f"missing LR/norm target for update_step={update_step}")
     target = lrnorm_targets[update_step]
-    current_norm = current_lrnorm_denominator_total_fro_norm()
-    target_lr_over_norm = float(target['target_lr_over_norm'])
-    adjusted_muon_lr = target_lr_over_norm * current_norm
+    target_lr_over_tensor_norms = target.get('target_lr_over_tensor_norms')
+    if target_lr_over_tensor_norms is None:
+        raise RuntimeError('per-tensor LR/norm matching requires target_lr_over_tensor_norms in the reference JSONL')
+    current_tensor_norms = current_lrnorm_tensor_fro_norms()
+    current_norm = total_fro_norm(current_tensor_norms)
     reference_muon_lr = float(target.get('reference_muon_lr', target['reference_block_lr']))
     embed_to_muon_lr_ratio = args.embed_learning_rate / args.muon_learning_rate
     reference_embed_lr = embed_to_muon_lr_ratio * reference_muon_lr
-    adjusted_embed_lr = adjusted_muon_lr * embed_to_muon_lr_ratio
+    adjusted_embed_lr = float(target_lr_over_tensor_norms['transformer.wte.weight']) * current_tensor_norms['transformer.wte.weight']
+    adjusted_muon_lrs = {}
+    actual_lr_over_tensor_norms = {}
     target_weight_decay = args.lrnorm_match_target_weight_decay
     for group in optimizer1.param_groups:
         group['lr'] = adjusted_embed_lr
@@ -533,32 +554,51 @@ def maybe_apply_lrnorm_controller(update_step):
     for group in optimizer2.param_groups:
         if not group.get('lrnorm_match_group', False):
             continue
-        group['lr'] = adjusted_muon_lr
+        param_lrs = {}
+        for p in group['params']:
+            name = group['lrnorm_param_names'][id(p)]
+            lr = float(target_lr_over_tensor_norms[name]) * current_tensor_norms[name]
+            param_lrs[id(p)] = lr
+            adjusted_muon_lrs[name] = lr
+            actual_lr_over_tensor_norms[name] = lr / current_tensor_norms[name]
+        group['param_lrs'] = param_lrs
+        group['lr'] = sum(param_lrs.values()) / len(param_lrs)
         group['weight_decay'] = target_weight_decay
+    actual_lr_over_tensor_norms['transformer.wte.weight'] = adjusted_embed_lr / current_tensor_norms['transformer.wte.weight']
     if should_log_lrnorm_match(update_step):
+        lr_scales = {
+            name: adjusted_lr / reference_muon_lr
+            for name, adjusted_lr in adjusted_muon_lrs.items()
+        }
+        embed_lr_scale = adjusted_embed_lr / reference_embed_lr if reference_embed_lr != 0.0 else None
         record = dict(
             update_step=update_step,
             pre_update_step=update_step - 1,
             reference_lrnorm_denominator_norm=float(target['reference_lrnorm_denominator_total_fro_norm']),
             current_lrnorm_denominator_norm=current_norm,
+            reference_tensor_fro_norms=target.get('reference_tensor_fro_norms'),
+            current_tensor_fro_norms=current_tensor_norms,
             reference_muon_lr=reference_muon_lr,
             reference_block_lr=reference_muon_lr,
             reference_embed_lr=reference_embed_lr,
             embed_to_muon_lr_ratio=embed_to_muon_lr_ratio,
-            adjusted_muon_lr=adjusted_muon_lr,
-            adjusted_block_lr=adjusted_muon_lr,
+            adjusted_muon_lr=sum(adjusted_muon_lrs.values()) / len(adjusted_muon_lrs),
+            adjusted_muon_lrs=adjusted_muon_lrs,
+            adjusted_block_lr=sum(adjusted_muon_lrs.values()) / len(adjusted_muon_lrs),
             adjusted_embed_lr=adjusted_embed_lr,
-            muon_lr_scale=adjusted_muon_lr / reference_muon_lr if reference_muon_lr != 0.0 else None,
-            embed_lr_scale=adjusted_embed_lr / reference_embed_lr if reference_embed_lr != 0.0 else None,
-            target_lr_over_norm=target_lr_over_norm,
-            actual_muon_lr_over_norm=adjusted_muon_lr / current_norm,
-            actual_block_lr_over_norm=adjusted_muon_lr / current_norm,
-            actual_embed_lr_over_norm=adjusted_embed_lr / current_norm,
+            muon_lr_scale_min=min(lr_scales.values()) if lr_scales else None,
+            muon_lr_scale_max=max(lr_scales.values()) if lr_scales else None,
+            embed_lr_scale=embed_lr_scale,
+            target_lr_over_tensor_norms=target_lr_over_tensor_norms,
+            actual_lr_over_tensor_norms=actual_lr_over_tensor_norms,
+            actual_muon_lr_over_norm=None,
+            actual_block_lr_over_norm=None,
+            actual_embed_lr_over_norm=actual_lr_over_tensor_norms['transformer.wte.weight'],
             optimizer1_weight_decay=target_weight_decay,
             optimizer2_weight_decay=target_weight_decay,
             optimizer3_weight_decay=0.0,
             reference_optimizer=target.get('reference_optimizer', 'MuonW'),
-            norm_scope=target.get('norm_scope', 'transformer.h + transformer.wte total Frobenius norm'),
+            norm_scope=target.get('norm_scope', 'per tensor Frobenius norms'),
         )
         with open(os.path.join(logdir, 'lrnorm_match_history.jsonl'), 'a') as f:
             f.write(json.dumps(record) + '\n')
@@ -850,6 +890,7 @@ def optimizer_parameter_hparams():
     hparams = {}
     for optimizer_index, opt in enumerate(optimizers):
         for param_group_index, group in enumerate(opt.param_groups):
+            param_lrs = group.get('param_lrs')
             for p in group['params']:
                 pid = id(p)
                 if pid in param_id_to_name:
@@ -857,7 +898,7 @@ def optimizer_parameter_hparams():
                     hparams[name] = dict(
                         optimizer_index=optimizer_index,
                         param_group_index=param_group_index,
-                        lr=float(group['lr']),
+                        lr=float(param_lrs.get(pid, group['lr']) if param_lrs is not None else group['lr']),
                         weight_decay=float(group.get('weight_decay', 0.0)),
                     )
     return hparams
