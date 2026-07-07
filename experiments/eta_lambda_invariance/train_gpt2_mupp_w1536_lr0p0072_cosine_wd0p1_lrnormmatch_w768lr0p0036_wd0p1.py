@@ -541,8 +541,8 @@ def maybe_apply_lrnorm_controller(update_step):
     target_lr_over_norm = float(target['target_lr_over_norm'])
     adjusted_block_lr = target_lr_over_norm * current_norm
     reference_block_lr = float(target['reference_block_lr'])
-    reference_embed_lr = float(target.get('reference_embed_lr', 2.0 * reference_block_lr))
-    embed_to_block_lr_ratio = reference_embed_lr / reference_block_lr
+    embed_to_block_lr_ratio = 2.0 * width_multiplier
+    reference_embed_lr = embed_to_block_lr_ratio * reference_block_lr
     adjusted_embed_lr = adjusted_block_lr * embed_to_block_lr_ratio
     for group in optimizer1.param_groups:
         group['lr'] = adjusted_embed_lr
@@ -586,7 +586,7 @@ schedulers = [torch.optim.lr_scheduler.LambdaLR(opt, get_lr) for opt in optimize
 
 # begin logging
 if master_process:
-    run_id = f'eta_lambda_invariance_w1536_lr0p0072_cosine_wd0p1_lrnormmatch_w768lr0p0036_wd0p1_seed{args.seed}_rmsnormgamma_' + str(uuid.uuid4())
+    run_id = f'eta_lam_w1536_lr0p0072_cos_wd0p1_lrn_w768lr0p0036_wd0p1_s{args.seed}_' + str(uuid.uuid4())
     logdir = 'logs/%s/' % run_id
     os.makedirs(logdir, exist_ok=True)
     logfile = 'logs/%s.txt' % run_id
