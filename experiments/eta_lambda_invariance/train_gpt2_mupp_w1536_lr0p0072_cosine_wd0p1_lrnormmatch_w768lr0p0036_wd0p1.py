@@ -541,7 +541,7 @@ def maybe_apply_lrnorm_controller(update_step):
     target_lr_over_norm = float(target['target_lr_over_norm'])
     adjusted_block_lr = target_lr_over_norm * current_norm
     reference_block_lr = float(target['reference_block_lr'])
-    embed_to_block_lr_ratio = 2.0 * width_multiplier
+    embed_to_block_lr_ratio = 2.0
     reference_embed_lr = embed_to_block_lr_ratio * reference_block_lr
     adjusted_embed_lr = adjusted_block_lr * embed_to_block_lr_ratio
     for group in optimizer1.param_groups:

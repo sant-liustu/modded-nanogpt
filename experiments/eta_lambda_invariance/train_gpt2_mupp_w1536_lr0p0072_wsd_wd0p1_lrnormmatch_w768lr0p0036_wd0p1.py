@@ -390,12 +390,11 @@ class Hyperparameters:
     device_batch_size : int = 64 # batch size, in sequences, per device
     sequence_length : int = 1024 # sequence length, in tokens
     num_iterations : int = 20400 # number of iterations to run
-    embed_learning_rate : float = 0.0036
+    embed_learning_rate : float = 0.0072
     muon_learning_rate : float = 0.02
     warmup_iters : int = 1000
-    cosine_decay_iters : int = 19400 # number of post-warmup iterations for cosine decay
-    cosine_min_lr_ratio : float = 0.1 # final LR multiplier after cosine decay
-    weight_decay : float = 0.2 # AdamW weight decay applied to tied wte/lm_head and transformer blocks
+    warmdown_iters : int = 5800 # number of iterations of linear warmdown after the constant phase
+    weight_decay : float = 0.1 # AdamW weight decay applied to tied wte/lm_head and transformer blocks
     seed : int = 0
     # evaluation and logging hyperparams
     val_loss_every : int = 125 # every how many steps to evaluate val loss? 0 for only at the end
@@ -407,7 +406,7 @@ class Hyperparameters:
     activation_probe_every : int = 0 # every how many steps to log fixed-probe activation RMS ratios? 0 disables
     spectral_norm_estimate_enabled : int = 0 # whether to estimate 2D spectral norms in tensor/update norm histories
     activation_probe_eps : float = 1e-12 # denominator epsilon for activation RMS ratios
-    lrnorm_reference_json : str = 'experiments/eta_lambda_invariance/reference_w768_lr0p0036_cosine_wd0p1_embedding_plus_block_rms_lr_over_norm.jsonl'
+    lrnorm_reference_json : str = 'experiments/eta_lambda_invariance/reference_w768_lr0p0036_wsd_wd0p1_embedding_plus_block_rms_lr_over_norm.jsonl'
     lrnorm_match_start_update : int = 1 # match block LR / (wte + block RMS norm) from the first update
     lrnorm_match_log_every : int = 1
 args = Hyperparameters()
@@ -571,22 +570,22 @@ def maybe_apply_lrnorm_controller(update_step):
         with open(os.path.join(logdir, 'lrnorm_match_history.jsonl'), 'a') as f:
             f.write(json.dumps(record) + '\n')
 
-# learning rate decay scheduler (linear warmup followed by cosine decay to min lr)
+# learning rate decay scheduler (linear warmup, constant plateau, linear warmdown)
 def get_lr(it):
     assert it <= args.num_iterations
     # 1) linear warmup for warmup_iters steps
     if it < args.warmup_iters:
         return (it+1) / args.warmup_iters
-    # 2) cosine decay from peak lr to cosine_min_lr_ratio * peak lr
-    assert args.cosine_decay_iters == args.num_iterations - args.warmup_iters
-    decay_step = it - args.warmup_iters
-    decay_ratio = min(1.0, max(0.0, decay_step / args.cosine_decay_iters))
-    return args.cosine_min_lr_ratio + (1.0 - args.cosine_min_lr_ratio) * 0.5 * (1.0 + math.cos(math.pi * decay_ratio))
+    # 2) constant lr for a while
+    if it < args.num_iterations - args.warmdown_iters:
+        return 1.0
+    # 3) linear warmdown
+    return (args.num_iterations - it) / args.warmdown_iters
 schedulers = [torch.optim.lr_scheduler.LambdaLR(opt, get_lr) for opt in optimizers]
 
 # begin logging
 if master_process:
-    run_id = f'eta_lam_w1536_lr0p0036_cos_wd0p2_lrn_w768lr0p0036_wd0p1_s{args.seed}_' + str(uuid.uuid4())
+    run_id = f'eta_lam_w1536_lr0p0072_wsd_wd0p1_lrn_w768lr0p0036_wd0p1_s{args.seed}_' + str(uuid.uuid4())
     logdir = 'logs/%s/' % run_id
     os.makedirs(logdir, exist_ok=True)
     logfile = 'logs/%s.txt' % run_id
