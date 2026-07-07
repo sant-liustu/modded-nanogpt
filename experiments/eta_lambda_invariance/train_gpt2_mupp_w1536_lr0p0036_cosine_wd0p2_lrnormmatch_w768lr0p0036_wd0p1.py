@@ -407,6 +407,9 @@ class Hyperparameters:
     activation_probe_every : int = 0 # every how many steps to log fixed-probe activation RMS ratios? 0 disables
     spectral_norm_estimate_enabled : int = 0 # whether to estimate 2D spectral norms in tensor/update norm histories
     activation_probe_eps : float = 1e-12 # denominator epsilon for activation RMS ratios
+    lrnorm_reference_json : str = 'experiments/eta_lambda_invariance/reference_w768_lr0p0036_cosine_wd0p1_embedding_plus_block_rms_lr_over_norm.jsonl'
+    lrnorm_match_start_update : int = 1 # match block LR / (wte + block RMS norm) from the first update
+    lrnorm_match_log_every : int = 1
 args = Hyperparameters()
 
 random.seed(args.seed)
@@ -490,12 +493,84 @@ optimizer1 = torch.optim.AdamW(raw_model.lm_head.parameters(), lr=args.embed_lea
                                weight_decay=args.weight_decay, fused=True)
 optimizer2_groups = []
 if block_parameters:
-    optimizer2_groups.append(dict(params=block_parameters, weight_decay=args.weight_decay))
+    optimizer2_groups.append(dict(params=block_parameters, weight_decay=args.weight_decay, lrnorm_match_group=True))
 if rmsnorm_gamma_parameters:
-    optimizer2_groups.append(dict(params=rmsnorm_gamma_parameters, weight_decay=0.0))
+    optimizer2_groups.append(dict(params=rmsnorm_gamma_parameters, weight_decay=0.0, lrnorm_match_group=False))
 optimizer2 = torch.optim.AdamW(optimizer2_groups, lr=0.5 * args.embed_learning_rate / width_multiplier, betas=(0.9, 0.95),
                                fused=True)
 optimizers = [optimizer1, optimizer2]
+
+lrnorm_denominator_params = block_parameters + [raw_model.transformer.wte.weight]
+lrnorm_denominator_numel = sum(p.numel() for p in lrnorm_denominator_params)
+if len(lrnorm_denominator_params) != 73:
+    raise RuntimeError(f"expected 73 lrnorm denominator tensors, got {len(lrnorm_denominator_params)}")
+
+def load_lrnorm_targets(path):
+    targets = {}
+    with open(path, 'r', encoding='utf-8-sig') as f:
+        for line in f:
+            rec = json.loads(line)
+            targets[int(rec['update_step'])] = rec
+    return targets
+
+lrnorm_targets = load_lrnorm_targets(args.lrnorm_reference_json)
+
+@torch.no_grad()
+def current_lrnorm_denominator_rms_norm():
+    total_sq = torch.zeros((), device=device, dtype=torch.float32)
+    for p in lrnorm_denominator_params:
+        total_sq.add_(p.detach().float().square().sum())
+    return torch.sqrt(total_sq / lrnorm_denominator_numel).item()
+
+def should_log_lrnorm_match(update_step):
+    if not master_process or args.lrnorm_match_log_every <= 0:
+        return False
+    return (
+        update_step % args.lrnorm_match_log_every == 0
+        or update_step == args.lrnorm_match_start_update
+        or update_step == args.num_iterations
+    )
+
+def maybe_apply_lrnorm_controller(update_step):
+    if update_step < args.lrnorm_match_start_update:
+        return
+    if update_step not in lrnorm_targets:
+        raise RuntimeError(f"missing LR/norm target for update_step={update_step}")
+    target = lrnorm_targets[update_step]
+    current_norm = current_lrnorm_denominator_rms_norm()
+    target_lr_over_norm = float(target['target_lr_over_norm'])
+    adjusted_block_lr = target_lr_over_norm * current_norm
+    reference_block_lr = float(target['reference_block_lr'])
+    reference_embed_lr = float(target.get('reference_embed_lr', 2.0 * reference_block_lr))
+    embed_to_block_lr_ratio = reference_embed_lr / reference_block_lr
+    adjusted_embed_lr = adjusted_block_lr * embed_to_block_lr_ratio
+    for group in optimizer1.param_groups:
+        group['lr'] = adjusted_embed_lr
+    for group in optimizer2.param_groups:
+        if group.get('lrnorm_match_group', False):
+            group['lr'] = adjusted_block_lr
+    if should_log_lrnorm_match(update_step):
+        record = dict(
+            update_step=update_step,
+            pre_update_step=update_step - 1,
+            reference_lrnorm_denominator_rms_norm=float(target['reference_lrnorm_denominator_rms_norm']),
+            current_lrnorm_denominator_rms_norm=current_norm,
+            reference_block_lr=reference_block_lr,
+            reference_embed_lr=reference_embed_lr,
+            adjusted_block_lr=adjusted_block_lr,
+            adjusted_embed_lr=adjusted_embed_lr,
+            block_lr_scale=adjusted_block_lr / reference_block_lr if reference_block_lr != 0.0 else None,
+            embed_lr_scale=adjusted_embed_lr / reference_embed_lr if reference_embed_lr != 0.0 else None,
+            target_lr_over_norm=target_lr_over_norm,
+            actual_block_lr_over_norm=adjusted_block_lr / current_norm,
+            embed_to_block_lr_ratio=embed_to_block_lr_ratio,
+            denominator_parameter_count=len(lrnorm_denominator_params),
+            denominator_total_numel=lrnorm_denominator_numel,
+            norm_scope=target.get('norm_scope', 'transformer.wte.weight + transformer.h.* 2D non-gamma weights, global RMS'),
+        )
+        with open(os.path.join(logdir, 'lrnorm_match_history.jsonl'), 'a') as f:
+            f.write(json.dumps(record) + '\n')
+
 # learning rate decay scheduler (linear warmup followed by cosine decay to min lr)
 def get_lr(it):
     assert it <= args.num_iterations
@@ -511,7 +586,7 @@ schedulers = [torch.optim.lr_scheduler.LambdaLR(opt, get_lr) for opt in optimize
 
 # begin logging
 if master_process:
-    run_id = f'eta_lambda_invariance_w1536_lr0p0036_cosine_wd0p2_seed{args.seed}_rmsnormgamma_' + str(uuid.uuid4())
+    run_id = f'eta_lambda_invariance_w1536_lr0p0036_cosine_wd0p2_lrnormmatch_w768lr0p0036_wd0p1_seed{args.seed}_rmsnormgamma_' + str(uuid.uuid4())
     logdir = 'logs/%s/' % run_id
     os.makedirs(logdir, exist_ok=True)
     logfile = 'logs/%s.txt' % run_id
@@ -986,6 +1061,7 @@ for step in range(args.num_iterations + 1):
         p.grad /= train_accumulation_steps
     # step the optimizers and schedulers
     update_step = step + 1
+    maybe_apply_lrnorm_controller(update_step)
     adamw_update_state = maybe_capture_adamw_update_state(update_step)
     for opt, sched in zip(optimizers, schedulers):
         opt.step()
