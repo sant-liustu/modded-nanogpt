@@ -15,8 +15,9 @@ The four source scripts remain unchanged.  Each Muon sibling must preserve:
 
 - model architecture, tied embedding, and learnable RMSNorm gamma;
 - FineWeb10B data, `B=128`, per-device `B=64`, `T=1024`, and 20,400 updates;
-- seed, validation cadence, tensor/update monitoring cadence, spectral-norm
-  monitoring, and checkpoint behavior;
+- seed, validation cadence, and tensor/update monitoring cadence;
+- spectral-norm estimation is disabled; checkpoints are saved at steps 1,000,
+  2,000, ..., 20,000, plus the final step 20,400;
 - the exact delayed/cosine/linear-down/linear-up norm schedule and its LR
   matching behavior;
 - AdamW for the tied embedding/head and RMSNorm gamma.

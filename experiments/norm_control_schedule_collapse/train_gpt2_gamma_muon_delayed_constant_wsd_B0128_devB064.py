@@ -385,12 +385,12 @@ class Hyperparameters:
     # evaluation and logging hyperparams
     val_loss_every : int = 500 # every how many steps to evaluate val loss? 0 for only at the end
     val_tokens : int = 10485760 # how many tokens of validation data? it's important to keep this fixed for consistent comparisons
-    save_every : int = 0 # every how many steps to save the checkpoint? 0 for only at the end
+    save_every : int = 1000 # save a checkpoint every 1000 optimizer steps
     compile_model : int = 1 # compile the model with torch.compile
     tensor_norm_every : int = 4 # every how many steps to log tensor norm history? 0 disables
     muon_update_norm_every : int = 4 # every how many optimizer steps to log Muon effective update norms? 0 disables
     activation_probe_every : int = 0 # every how many steps to log fixed-probe activation RMS ratios? 0 disables
-    spectral_norm_estimate_enabled : int = 1 # whether to estimate 2D spectral norms in tensor/update norm histories
+    spectral_norm_estimate_enabled : int = 0 # disable spectral-norm estimation for this experiment
     activation_probe_eps : float = 1e-12 # denominator epsilon for activation RMS ratios
     seed : int = 0
     norm_control_config : str = 'experiments/norm_control_schedule_collapse/delayed_constant_all_matrices_start1000.json' # optional JSON config for per-tensor RMS norm control
@@ -1267,7 +1267,7 @@ for step in range(args.num_iterations + 1):
         torch.cuda.synchronize()
         t0 = time.time()
 
-    if master_process and (last_step or (args.save_every > 0 and step % args.save_every == 0)):
+    if master_process and (last_step or (args.save_every > 0 and step > 0 and step % args.save_every == 0)):
         # stop the clock
         torch.cuda.synchronize()
         training_time_ms += 1000 * (time.time() - t0)
