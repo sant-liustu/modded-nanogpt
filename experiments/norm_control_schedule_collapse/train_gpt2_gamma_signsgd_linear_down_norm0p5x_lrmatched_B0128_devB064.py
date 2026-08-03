@@ -292,7 +292,7 @@ class Hyperparameters:
     sequence_length : int = 1024 # sequence length, in tokens
     num_iterations : int = 20400 # number of iterations to run
     embed_learning_rate : float = 0.0036
-    signsgd_learning_rate : float = 0.00036 # match the unit-RMS Muon block-update learning rate
+    signsgd_learning_rate : float = 0.0018 # SignSGD block baseline learning rate
     warmup_iters : int = 1000
     warmdown_iters : int = 5800 # number of iterations of linear warmup/warmdown for triangular or trapezoidal schedule
     weight_decay : float = 0 # transformer block weight decay; tied wte/lm_head is always excluded

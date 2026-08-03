@@ -11,8 +11,7 @@ Only optimizer 2 changes:
 
 - transformer-block matrices use state-free plain SignSGD;
 - the update is `parameter -= learning_rate * sign(gradient)`;
-- block learning rate remains `0.00036`, matching the unit-RMS Muon update
-  scale;
+- the SignSGD block baseline learning rate is `0.0018`;
 - momentum, Nesterov, shape scaling, and weight decay are absent;
 - no optimizer closure is exposed because the training loop computes loss and
   gradients before calling `step()`;
