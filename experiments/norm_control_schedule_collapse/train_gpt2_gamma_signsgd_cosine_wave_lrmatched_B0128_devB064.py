@@ -36,11 +36,7 @@ class PlainSignSGD(torch.optim.Optimizer):
         super().__init__(params, defaults=dict(lr=lr))
 
     @torch.no_grad()
-    def step(self, closure=None):
-        loss = None
-        if closure is not None:
-            with torch.enable_grad():
-                loss = closure()
+    def step(self):
         for group in self.param_groups:
             lr = group['lr']
             if lr < 0.0:
@@ -54,7 +50,6 @@ class PlainSignSGD(torch.optim.Optimizer):
                 if g.is_complex():
                     raise RuntimeError("PlainSignSGD does not support complex gradients")
                 p.add_(g.sign(), alpha=-lr)
-        return loss
 
 # -----------------------------------------------------------------------------
 # PyTorch nn.Module definitions for the GPT-2 model

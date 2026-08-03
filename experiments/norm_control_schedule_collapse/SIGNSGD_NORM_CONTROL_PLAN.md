@@ -14,6 +14,8 @@ Only optimizer 2 changes:
 - block learning rate remains `0.00036`, matching the unit-RMS Muon update
   scale;
 - momentum, Nesterov, shape scaling, and weight decay are absent;
+- no optimizer closure is exposed because the training loop computes loss and
+  gradients before calling `step()`;
 - tied embedding/head and RMSNorm gamma remain on AdamW.
 
 The optimizer is implemented directly in each self-contained training script.
@@ -26,3 +28,5 @@ No shared optimizer module is used.
 3. Check exact optimizer coverage and state-free signed updates.
 4. Run all four scripts with the local tiny-data smoke configuration.
 5. Verify common capture norms and LR/norm ratios after schedule divergence.
+6. Run a two-rank Gloo smoke test proving that DDP averages raw gradients
+   before the inline optimizer applies `sign()`.
