@@ -1,5 +1,5 @@
 # Copied from experiment/batch-size-norm-dynamics train_gpt2.py.
-# Purpose: WSD Muon Hyperball wd0 experiment with learnable RMSNorm gamma at B=128, T=1024, 20400 steps.
+# Purpose: WSD AdamH + MuonH wd0 experiment with learnable RMSNorm gamma at B=128, T=1024, 20400 steps.
 # Variant: initialize every 2D Muon block matrix with std=1/sqrt(d_in), then keep each matrix on its initial F-norm sphere.
 # Token budget matches the B=512, T=1024, 5100-step large-batch setup.
 # Config: batch_size=128, device_batch_size=64, sequence_length=1024, num_iterations=20400, lr=0.0036, warmup+stable+warmdown, block_weight_decay=0.0, seed=0
@@ -60,11 +60,137 @@ def zeropower_via_newtonschulz5(G, steps=10, eps=1e-7):
 
 zeropower_backends = dict(svd=zeropower_via_svd, newtonschulz5=zeropower_via_newtonschulz5)
 
+class Adam(torch.optim.Optimizer):
+    """Small reference Adam implementation used as the base for AdamH."""
+
+    def __init__(self, params, lr=1e-3, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.0):
+        if lr < 0:
+            raise ValueError(f"Invalid learning rate: {lr}")
+        if not 0 <= betas[0] < 1 or not 0 <= betas[1] < 1:
+            raise ValueError(f"Invalid beta values: {betas}")
+        if eps < 0:
+            raise ValueError(f"Invalid epsilon: {eps}")
+        if weight_decay < 0:
+            raise ValueError(f"Invalid weight decay: {weight_decay}")
+        defaults = dict(lr=lr, betas=betas, eps=eps, weight_decay=weight_decay)
+        super().__init__(params, defaults)
+
+    def _update_adam_state(self, p, grad, state, group, apply_weight_decay=True):
+        if grad.is_sparse:
+            raise RuntimeError("Adam does not support sparse gradients")
+        if apply_weight_decay and group['weight_decay'] != 0:
+            grad = grad.add(p, alpha=group['weight_decay'])
+        if 'exp_avg' not in state:
+            state['step'] = 0
+            state['exp_avg'] = torch.zeros_like(p)
+            state['exp_avg_sq'] = torch.zeros_like(p)
+
+        state['step'] += 1
+        beta1, beta2 = group['betas']
+        exp_avg = state['exp_avg']
+        exp_avg_sq = state['exp_avg_sq']
+        # torch.optim.Adam uses lerp_ for the first moment; keep the same
+        # operation order so this reference implementation matches it closely.
+        exp_avg.lerp_(grad, 1 - beta1)
+        exp_avg_sq.mul_(beta2).addcmul_(grad, grad, value=1 - beta2)
+
+        bias_correction1 = 1 - beta1 ** state['step']
+        bias_correction2_sqrt = math.sqrt(1 - beta2 ** state['step'])
+        # Match torch.optim.Adam exactly: bias-correct the second moment before
+        # adding epsilon, then leave the learning rate to the caller.
+        denom = exp_avg_sq.sqrt().div_(bias_correction2_sqrt).add_(group['eps'])
+        return exp_avg, denom, bias_correction1
+
+    def _adam_direction(self, p, grad, state, group, apply_weight_decay=True):
+        exp_avg, denom, bias_correction1 = self._update_adam_state(
+            p, grad, state, group, apply_weight_decay=apply_weight_decay
+        )
+        direction = exp_avg / denom
+        direction.div_(bias_correction1)
+        return direction
+
+    @torch.no_grad()
+    def step(self, closure=None):
+        loss = None
+        if closure is not None:
+            with torch.enable_grad():
+                loss = closure()
+        for group in self.param_groups:
+            for p in group['params']:
+                if p.grad is None:
+                    continue
+                exp_avg, denom, bias_correction1 = self._update_adam_state(
+                    p, p.grad, self.state[p], group
+                )
+                # Keep the same fused-in-place update form as torch.optim.Adam.
+                p.addcdiv_(exp_avg, denom, value=-group['lr'] / bias_correction1)
+        return loss
+
+class AdamH(Adam):
+    """Adam Hyperball for 2D matrices, following the MuonH projection pattern."""
+
+    def __init__(self, params, lr=1e-2, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.0):
+        super().__init__(params, lr=lr, betas=betas, eps=eps, weight_decay=weight_decay)
+        self.last_hyperball_records = {}
+
+    @torch.no_grad()
+    def step(self, closure=None):
+        loss = None
+        if closure is not None:
+            with torch.enable_grad():
+                loss = closure()
+        self.last_hyperball_records = {}
+
+        for group in self.param_groups:
+            lr = group['lr']
+            weight_decay = group['weight_decay']
+            for p in group['params']:
+                if p.grad is None:
+                    continue
+                if p.ndim != 2:
+                    raise RuntimeError(f"AdamH expects 2D parameters, got shape {tuple(p.shape)}")
+                state = self.state[p]
+                if 'hyperball_R' not in state:
+                    state['hyperball_R'] = torch.linalg.vector_norm(p.detach().float()).item()
+                radius = state['hyperball_R']
+
+                # Adam direction before Hyperball normalization; the decoupled decay,
+                # if enabled, is applied below just as in MuonW.
+                direction = self._adam_direction(
+                    p, p.grad, state, group, apply_weight_decay=False
+                )
+                weight_norm_before = torch.linalg.vector_norm(p.data.float()).item()
+                raw_update_fro_norm = torch.linalg.vector_norm(direction.float()).item()
+                direction_norm = max(raw_update_fro_norm, 1e-12)
+                direction.mul_(radius / direction_norm)
+                normalized_update_fro_norm = torch.linalg.vector_norm(direction.float()).item()
+
+                if weight_decay != 0:
+                    p.data.mul_(1 - lr * weight_decay)
+                p.data.add_(direction, alpha=-lr)
+                weight_norm_after_update = torch.linalg.vector_norm(p.data.float()).item()
+                weight_norm = max(weight_norm_after_update, 1e-12)
+                p.data.mul_(radius / weight_norm)
+                weight_norm_after_projection = torch.linalg.vector_norm(p.data.float()).item()
+
+                self.last_hyperball_records[id(p)] = dict(
+                    lr=float(lr),
+                    weight_decay=float(weight_decay),
+                    radius=float(radius),
+                    raw_update_fro_norm=float(raw_update_fro_norm),
+                    normalized_update_fro_norm=float(normalized_update_fro_norm),
+                    weight_norm_before=float(weight_norm_before),
+                    weight_norm_after_update=float(weight_norm_after_update),
+                    weight_norm_after_projection=float(weight_norm_after_projection),
+                    has_grad=True,
+                )
+        return loss
+
 class MuonW(torch.optim.Optimizer):
     """
     MuonW - Muon with decoupled weight decay for 2D transformer block weights.
 
-    Embedding/head and RMSNorm gamma parameters should stay on AdamW; this optimizer assumes that
+    Embedding/head and RMSNorm gamma parameters should stay on Adam or AdamH; this optimizer assumes that
     every parameter it receives is a 2D matrix.
     """
     def __init__(self, params, lr=3e-4, momentum=0.95, weight_decay=0.0, nesterov=True,
@@ -409,7 +535,7 @@ class Hyperparameters:
     sequence_length : int = 1024 # sequence length, in tokens
     num_iterations : int = 20400 # number of iterations to run
     embed_learning_rate : float = 0.0036
-    muon_learning_rate : float = 0.00036 # original Muon recipe: 0.1 * embed_learning_rate
+    hyperball_learning_rate : float = 0.01 # relative Hyperball step size eta
     warmup_iters : int = 1000
     warmdown_iters : int = 5800 # number of iterations of linear warmup/warmdown for trapezoidal WSD schedule
     weight_decay : float = 0.0 # weight decay for block weights and tied wte/lm_head; RMSNorm gamma is excluded
@@ -502,11 +628,12 @@ rmsnorm_gamma_parameters = [
     for name, p in raw_model.named_parameters()
     if is_rmsnorm_gamma_name(name)
 ]
-optimizer1 = torch.optim.AdamW(raw_model.lm_head.parameters(), lr=args.embed_learning_rate, betas=(0.9, 0.95),
-                               weight_decay=args.weight_decay, fused=True)
+# The tied wte/lm_head is one 2D parameter, so it receives one AdamH update.
+optimizer1 = AdamH(raw_model.lm_head.parameters(), lr=args.hyperball_learning_rate, betas=(0.9, 0.95),
+                   weight_decay=args.weight_decay)
 optimizer2 = MuonW([
     dict(params=block_weight_parameters, weight_decay=args.weight_decay, lrnorm_match_group=True)
-], lr=args.muon_learning_rate, momentum=0.95, weight_decay=args.weight_decay,
+], lr=args.hyperball_learning_rate, momentum=0.95, weight_decay=args.weight_decay,
    nesterov=True, rank=ddp_rank, world_size=ddp_world_size)
 optimizers = [optimizer1, optimizer2]
 if rmsnorm_gamma_parameters:
@@ -930,13 +1057,13 @@ for step in range(args.num_iterations + 1):
         p.grad /= train_accumulation_steps
     # step the optimizers and schedulers
     update_step = step + 1
-    hyperball_records = None
+    hyperball_records = {}
     for opt, sched in zip(optimizers, schedulers):
         opt.step()
-        if isinstance(opt, MuonW):
-            hyperball_records = opt.last_hyperball_records
+        if isinstance(opt, (MuonW, AdamH)):
+            hyperball_records.update(opt.last_hyperball_records)
         sched.step()
-    maybe_log_muonhyperball_norms(update_step, hyperball_records)
+    maybe_log_muonhyperball_norms(update_step, hyperball_records or None)
     # null the gradients
     model.zero_grad(set_to_none=True)
     # --------------- TRAINING SECTION END -------------------
