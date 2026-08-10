@@ -164,7 +164,7 @@ def apply_rotary_emb(x, cos, sin):
 
 class RMSNorm(nn.Module):
 
-    def __init__(self, dim, eps=None):
+    def __init__(self, dim, eps=1e-6):
         super().__init__()
         self.weight = nn.Parameter(torch.ones(dim))
         self.eps = eps
