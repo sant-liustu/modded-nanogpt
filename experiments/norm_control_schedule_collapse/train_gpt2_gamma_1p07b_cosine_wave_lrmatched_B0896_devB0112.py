@@ -372,12 +372,12 @@ class Hyperparameters:
     batch_size : int = 896 # 112 sequences/GPU * 8 GPUs, one micro-step per optimizer step
     device_batch_size : int = 112 # measured capacity target on 8x L20C
     sequence_length : int = 1024 # sequence length, in tokens
-    num_iterations : int = 15300 # exactly 3 * 5100 optimizer steps
+    num_iterations : int = 21800 # approximately 20.0B training tokens at global batch 896 and sequence length 1024
     embed_learning_rate : float = 0.0006
     block_learning_rate : float = 0.0003 # AdamW LR for block matrices and learnable gamma
     grad_clip : float = 1.0 # global L2 gradient-norm clipping; <= 0 disables clipping
-    warmup_iters : int = 750
-    warmdown_iters : int = 4350 # 3 * the 5100-step recipe's 1450-step warmdown
+    warmup_iters : int = 1070
+    warmdown_iters : int = 6200 # scaled from the 15300-step recipe
     weight_decay : float = 0 # transformer block weight decay; tied wte/lm_head is always excluded
     # evaluation and logging hyperparams
     val_loss_every : int = 500 # every how many steps to evaluate val loss? 0 for only at the end
@@ -390,7 +390,7 @@ class Hyperparameters:
     spectral_norm_estimate_enabled : int = 0 # full spectral estimates are prohibitively expensive at this width
     activation_probe_eps : float = 1e-12 # denominator epsilon for activation RMS ratios
     seed : int = 0
-    norm_control_config : str = 'experiments/norm_control_schedule_collapse/delayed_constant_all_matrices_start750.json' # optional JSON config for per-tensor RMS norm control
+    norm_control_config : str = 'experiments/norm_control_schedule_collapse/delayed_constant_all_matrices_start1070.json' # optional JSON config for per-tensor RMS norm control
 args = Hyperparameters()
 def parse_hparam_value(name, value):
     current = getattr(args, name)
@@ -472,7 +472,7 @@ else:
 ctx = torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16)
 
 DEFAULT_NORM_CONTROL_MODE = 'delayed_captured_constant'
-DEFAULT_NORM_CONTROL_START_STEP = 750
+DEFAULT_NORM_CONTROL_START_STEP = 1070
 
 def load_norm_control_config(path):
     if not path:
@@ -799,7 +799,7 @@ def schedule_ratio(it):
     start_step = norm_control_state['start_step']
     if start_step is None or it <= start_step:
         return 1.0
-    period_steps = 7_500
+    period_steps = 10_700
     phase = 2.0 * math.pi * (it - start_step) / period_steps
     return 1.0 + 0.5 * math.cos(phase - 0.5 * math.pi)
 
