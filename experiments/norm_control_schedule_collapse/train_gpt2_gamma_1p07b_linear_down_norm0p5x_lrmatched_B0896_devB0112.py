@@ -185,8 +185,9 @@ class CausalSelfAttention(nn.Module):
         self.c_v = nn.Linear(self.n_embd, self.n_embd, bias=False)
         # output projection
         self.c_proj = nn.Linear(self.n_embd, self.n_embd, bias=False)
-        c_proj_std = config.init_std / math.sqrt(2 * config.n_layer)
-        torch.nn.init.normal_(self.c_proj.weight, mean=0.0, std=c_proj_std)
+        # Keep nn.Linear's default Kaiming-uniform initialization, then scale this residual output once.
+        with torch.no_grad():
+            self.c_proj.weight.mul_((2 * config.n_layer) ** -0.5)
         self.rotary = Rotary(self.head_dim)
         self.q_norm = RMSNorm(self.head_dim)
         self.k_norm = RMSNorm(self.head_dim)
@@ -210,8 +211,9 @@ class MLP(nn.Module):
         super().__init__()
         self.c_fc    = nn.Linear(config.n_embd, 4 * config.n_embd, bias=False)
         self.c_proj  = nn.Linear(4 * config.n_embd, config.n_embd, bias=False)
-        c_proj_std = config.init_std / math.sqrt(2 * config.n_layer)
-        torch.nn.init.normal_(self.c_proj.weight, mean=0.0, std=c_proj_std)
+        # Keep nn.Linear's default Kaiming-uniform initialization, then scale this residual output once.
+        with torch.no_grad():
+            self.c_proj.weight.mul_((2 * config.n_layer) ** -0.5)
 
     def forward(self, x):
         x = self.c_fc(x)
