@@ -1,7 +1,7 @@
 # Copied from experiment/batch-size-norm-dynamics train_gpt2.py.
-# Purpose: linear-decay MuonW wd0 LR sweep with learnable RMSNorm gamma at B=128, T=1024, 20400 steps.
+# Purpose: linear-decay MuonW wd0.1 LR sweep with learnable RMSNorm gamma at B=128, T=1024, 20400 steps.
 # Token budget matches the B=512, T=1024, 5100-step large-batch setup.
-# Config: batch_size=128, device_batch_size=64, sequence_length=1024, num_iterations=20400, embed_lr=0.0036, muon_lr=0.00036, 1000-step warmup then linear decay, block_weight_decay=0.0, seed=0
+# Config: batch_size=128, device_batch_size=64, sequence_length=1024, num_iterations=20400, embed_lr=0.0036, muon_lr=0.00060, 1000-step warmup then linear decay, weight_decay=0.1, seed=0
 import os
 import random
 import sys
@@ -373,10 +373,10 @@ class Hyperparameters:
     sequence_length : int = 1024 # sequence length, in tokens
     num_iterations : int = 20400 # number of iterations to run
     embed_learning_rate : float = 0.0036
-    muon_learning_rate : float = 0.00036 # original Muon recipe: 0.1 * embed_learning_rate
+    muon_learning_rate : float = 0.00060
     warmup_iters : int = 1000
     linear_decay_iters : int = 19400 # iterations after warmup over which LR linearly decays to zero
-    weight_decay : float = 0.0 # weight decay for block weights and tied wte/lm_head; RMSNorm gamma is excluded
+    weight_decay : float = 0.1 # weight decay for block weights and tied wte/lm_head; RMSNorm gamma is excluded
     # evaluation and logging hyperparams
     val_loss_every : int = 500 # every how many steps to evaluate val loss? 0 for only at the end
     val_tokens : int = 10485760 # how many tokens of validation data? it's important to keep this fixed for consistent comparisons
