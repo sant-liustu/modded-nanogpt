@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import bisect
+import gzip
 import json
 import math
 from pathlib import Path
@@ -60,7 +61,7 @@ def load_expected_names(run_dir: Path) -> list[str] | None:
     )
 
 
-def load_tensor_norms(run_dir: Path) -> dict[str, list[tuple[int, float]]]:
+def load_tensor_norms(run_dir: Path) -> dict[str, tuple[list[int], list[float]]]:
     tensor_history = run_dir / "tensor_norm_history.jsonl"
     if not tensor_history.exists():
         raise FileNotFoundError(f"missing {tensor_history}")
@@ -76,20 +77,25 @@ def load_tensor_norms(run_dir: Path) -> dict[str, list[tuple[int, float]]]:
 
     if not by_name:
         raise ValueError(f"found no denominator parameter norms in {tensor_history}")
-    for name in by_name:
-        by_name[name].sort()
-    return by_name
+    prepared = {}
+    for name, series in by_name.items():
+        series.sort()
+        prepared[name] = (
+            [step for step, _ in series],
+            [value for _, value in series],
+        )
+    return prepared
 
 
-def interpolate(series: list[tuple[int, float]], step: int) -> tuple[float, str]:
-    steps = [x[0] for x in series]
+def interpolate(series: tuple[list[int], list[float]], step: int) -> tuple[float, str]:
+    steps, values = series
     pos = bisect.bisect_left(steps, step)
-    if pos < len(series) and series[pos][0] == step:
-        return series[pos][1], "direct"
-    if pos == 0 or pos == len(series):
+    if pos < len(steps) and steps[pos] == step:
+        return values[pos], "direct"
+    if pos == 0 or pos == len(steps):
         raise ValueError(f"cannot interpolate step={step}; available range {steps[0]}..{steps[-1]}")
-    left_step, left_value = series[pos - 1]
-    right_step, right_value = series[pos]
+    left_step, left_value = steps[pos - 1], values[pos - 1]
+    right_step, right_value = steps[pos], values[pos]
     alpha = (step - left_step) / (right_step - left_step)
     return left_value + alpha * (right_value - left_value), "linear"
 
@@ -149,7 +155,9 @@ def build_reference(args: argparse.Namespace) -> int:
 
     rows_written = 0
     interpolation_modes_seen: set[str] = set()
-    with output_path.open("w", encoding="utf-8", newline="\n") as f:
+    output_open = gzip.open if output_path.suffix == ".gz" else output_path.open
+    output_mode = "wt" if output_path.suffix == ".gz" else "w"
+    with output_open(output_path, output_mode, encoding="utf-8", newline="\n") as f:
         for update_step in sorted(lr_by_update_step):
             pre_update_step = update_step - 1
             reference_muon_lr = lr_by_update_step[update_step]
@@ -184,7 +192,7 @@ def build_reference(args: argparse.Namespace) -> int:
                 "reference_muon_lr": reference_muon_lr,
                 "reference_optimizer": "MuonW",
                 "reference_tensor_fro_norms": tensor_norm_by_name,
-                "source_run_dir": str(run_dir),
+                "source_run_dir": args.source_run_dir_label or str(run_dir),
                 "target_lr_over_tensor_norms": target_lr_over_norm_by_name,
                 "update_step": update_step,
             }
@@ -200,11 +208,20 @@ def build_reference(args: argparse.Namespace) -> int:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-dir", required=True, help="Completed base run log directory.")
-    parser.add_argument("--output", required=True, help="Output reference JSONL path.")
+    parser.add_argument(
+        "--output",
+        required=True,
+        help="Output reference path (.jsonl or transparently compressed .jsonl.gz).",
+    )
     parser.add_argument(
         "--reference-experiment",
         required=True,
         help="Reference experiment label to write into each JSONL row.",
+    )
+    parser.add_argument(
+        "--source-run-dir-label",
+        default=None,
+        help="Optional stable provenance label instead of the local staging directory.",
     )
     parser.add_argument("--embed-lr", type=float, default=0.0036)
     parser.add_argument("--muon-lr", type=float, default=0.00036)
