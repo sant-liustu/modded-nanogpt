@@ -375,6 +375,8 @@ class Hyperparameters:
     warmup_iters : int = 1000
     decay_iters : int = 19400 # post-warmup iterations over which base LR cosine-decays to zero
     weight_decay : float = 0 # transformer block weight decay; tied wte/lm_head is always excluded
+    grad_clip : float = 1.0 # global gradient-norm clipping threshold; <= 0 disables clipping
+    grad_clip_log_every : int = 1 # write pre-clip total gradient norm every N optimizer updates
     # evaluation and logging hyperparams
     val_loss_every : int = 500 # every how many steps to evaluate val loss? 0 for only at the end
     val_tokens : int = 10485760 # how many tokens of validation data? it's important to keep this fixed for consistent comparisons
@@ -1197,6 +1199,26 @@ def maybe_log_tensor_norms(step):
                 spectral_norm_estimate=spectral_estimates.get(name),
             )) + '\n')
 
+def maybe_apply_gradient_clipping(update_step):
+    if args.grad_clip <= 0:
+        return None
+    # clip_grad_norm_ returns the total norm before clipping, matching the 1B telemetry.
+    total_grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=args.grad_clip)
+    if master_process and (
+        update_step % args.grad_clip_log_every == 0
+        or update_step == args.num_iterations
+    ):
+        total_grad_norm_value = total_grad_norm.detach().float().item()
+        history_path = os.path.join(logdir, 'grad_clip_history.jsonl')
+        with open(history_path, 'a') as f:
+            f.write(json.dumps(dict(
+                step=update_step,
+                grad_clip=args.grad_clip,
+                total_grad_norm=total_grad_norm_value,
+                clipped=total_grad_norm_value > args.grad_clip,
+            )) + '\n')
+    return total_grad_norm
+
 activation_probe_x = build_activation_probe_batch()
 apply_rms_norm_control(norm_control_state, step=0, event='initial')
 write_norm_control_metadata(norm_control_state)
@@ -1287,6 +1309,7 @@ for step in range(args.num_iterations + 1):
         p.grad /= train_accumulation_steps
     # step the optimizers and schedulers
     update_step = step + 1
+    maybe_apply_gradient_clipping(update_step)
     adamw_update_state = maybe_capture_adamw_update_state(update_step)
     for opt in optimizers:
         opt.step()
