@@ -47,11 +47,13 @@ the same.
 
 | Experiment | A | B | Shared ELR target |
 | --- | --- | --- | --- |
-| 1: scalar degeneration | `train_gpt2_gamma_adam_hardnorm_singleelr_wsd005_assignmentA_muonhinit_B0128_devB064.py` (seed 20260901) | `train_gpt2_gamma_adam_hardnorm_singleelr_wsd005_assignmentB_muonhinit_B0128_devB064.py` (seed 20260902) | `rmselr_single_wsd_peak005_B0128_20400.jsonl.gz`: \(r_i^\star(t)=0.05u_{\rm WSD}(t)\) |
-| 2: heterogeneous profile | `train_gpt2_gamma_adam_hardnorm_pertensor_rmselr_assignmentA_muonhinit_B0128_devB064.py` (seed 20260903) | `train_gpt2_gamma_adam_hardnorm_pertensor_rmselr_assignmentB_muonhinit_B0128_devB064.py` (seed 20260904) | `rmselr_mixed_attncos_mlpwsd_peak005_007_B0128_20400.jsonl.gz` |
+| 1: scalar degeneration | `train_gpt2_gamma_adam_hardnorm_singleelr_wsd005_assignmentA_muonhinit_B0128_devB128.py` (seed 20260901) | `train_gpt2_gamma_adam_hardnorm_singleelr_wsd005_assignmentB_muonhinit_B0128_devB128.py` (seed 20260902) | `rmselr_single_wsd_peak005_B0128_20400.jsonl.gz`: \(r_i^\star(t)=0.05u_{\rm WSD}(t)\) |
+| 2: heterogeneous profile | `train_gpt2_gamma_adam_hardnorm_pertensor_rmselr_assignmentA_muonhinit_B0128_devB128.py` (seed 20260903) | `train_gpt2_gamma_adam_hardnorm_pertensor_rmselr_assignmentB_muonhinit_B0128_devB128.py` (seed 20260904) | `rmselr_mixed_attncos_mlpwsd_peak005_007_B0128_20400.jsonl.gz` |
 
-The default arguments of all four scripts point to their own assignment file
-and correct target file, so a normal launch needs no ELR/norm-control override.
+All four are dedicated single-GPU runners with `batch_size=128`,
+`device_batch_size=128`, `world_size=1`, and therefore exactly one gradient
+accumulation micro-step.  They reject a multi-rank launch.  Their default
+arguments also point to the correct assignment and ELR target files.
 To regenerate the checked-in target and assignment JSON files:
 
 ```powershell

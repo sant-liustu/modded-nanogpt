@@ -17,28 +17,28 @@ HERE = Path(__file__).resolve().parent
 VARIANTS = (
     (
         "experiment1_assignmentA",
-        "train_gpt2_gamma_adam_hardnorm_singleelr_wsd005_assignmentA_muonhinit_B0128_devB064.py",
+        "train_gpt2_gamma_adam_hardnorm_singleelr_wsd005_assignmentA_muonhinit_B0128_devB128.py",
         "hardnorm_assignment_singleelr_A_seed20260901.json",
         "rmselr_single_wsd_peak005_B0128_20400.jsonl.gz",
         20260901,
     ),
     (
         "experiment1_assignmentB",
-        "train_gpt2_gamma_adam_hardnorm_singleelr_wsd005_assignmentB_muonhinit_B0128_devB064.py",
+        "train_gpt2_gamma_adam_hardnorm_singleelr_wsd005_assignmentB_muonhinit_B0128_devB128.py",
         "hardnorm_assignment_singleelr_B_seed20260902.json",
         "rmselr_single_wsd_peak005_B0128_20400.jsonl.gz",
         20260902,
     ),
     (
         "experiment2_assignmentA",
-        "train_gpt2_gamma_adam_hardnorm_pertensor_rmselr_assignmentA_muonhinit_B0128_devB064.py",
+        "train_gpt2_gamma_adam_hardnorm_pertensor_rmselr_assignmentA_muonhinit_B0128_devB128.py",
         "hardnorm_assignment_pertensor_A_seed20260903.json",
         "rmselr_mixed_attncos_mlpwsd_peak005_007_B0128_20400.jsonl.gz",
         20260903,
     ),
     (
         "experiment2_assignmentB",
-        "train_gpt2_gamma_adam_hardnorm_pertensor_rmselr_assignmentB_muonhinit_B0128_devB064.py",
+        "train_gpt2_gamma_adam_hardnorm_pertensor_rmselr_assignmentB_muonhinit_B0128_devB128.py",
         "hardnorm_assignment_pertensor_B_seed20260904.json",
         "rmselr_mixed_attncos_mlpwsd_peak005_007_B0128_20400.jsonl.gz",
         20260904,
@@ -64,8 +64,12 @@ def replace_once(source: str, old: str, new: str, label: str) -> str:
 def make_tiny_source(source_path: Path, output_path: Path) -> None:
     source = source_path.read_text(encoding="utf-8")
     replacements = (
-        ("batch_size : int = 128", "batch_size : int = 2", "global batch"),
-        ("device_batch_size : int = 64", "device_batch_size : int = 2", "device batch"),
+        (
+            "    batch_size : int = 128 # batch size, in sequences, across all devices",
+            "    batch_size : int = 2 # batch size, in sequences, across all devices",
+            "global batch",
+        ),
+        ("device_batch_size : int = 128", "device_batch_size : int = 2", "device batch"),
         ("sequence_length : int = 1024", "sequence_length : int = 16", "sequence length"),
         ("num_iterations : int = 20400", "num_iterations : int = 4", "update count"),
         ("warmup_iters : int = 1000", "warmup_iters : int = 1", "warmup"),
@@ -174,6 +178,10 @@ def validate_static_inputs(
     expected_seed: int,
 ) -> None:
     source = source_path.read_text(encoding="utf-8")
+    if "device_batch_size : int = 128" not in source:
+        raise AssertionError(f"{source_path.name} is not a B0128_devB128 runner")
+    if "requested_world_size != 1" not in source or "train_accumulation_steps != 1" not in source:
+        raise AssertionError(f"{source_path.name} does not enforce one-GPU direct B128 execution")
     if f"norm_control_config : str = 'experiments/norm_control_schedule_collapse/{config_path.name}'" not in source:
         raise AssertionError(f"wrong default assignment config in {source_path.name}")
     if f"per_tensor_elr_file : str = 'experiments/norm_control_schedule_collapse/{target_name}'" not in source:
@@ -291,12 +299,46 @@ def main() -> None:
             ]
             environment = os.environ.copy()
             environment.setdefault("PYTHONUTF8", "1")
+            for distributed_variable in ("RANK", "WORLD_SIZE", "LOCAL_RANK", "MASTER_ADDR", "MASTER_PORT"):
+                environment.pop(distributed_variable, None)
             subprocess.run(command, cwd=run_dir, env=environment, check=True)
             log_dirs = [path for path in (run_dir / "logs").iterdir() if path.is_dir()]
             if len(log_dirs) != 1:
                 raise AssertionError(f"expected one smoke log directory for {label}, got {log_dirs}")
             validate_run(log_dirs[0], names, assignments)
             print(f"{label}: PASS")
+
+        rejection_dir = temp_dir / "must_reject_multirank"
+        rejection_dir.mkdir()
+        tiny_script = rejection_dir / "train_smoke.py"
+        make_tiny_source(HERE / VARIANTS[0][1], tiny_script)
+        write_tiny_config(rejection_dir / "hardnorm.json", names)
+        targets = rejection_dir / "targets.jsonl"
+        write_tiny_targets(targets, names)
+        rejection_command = [
+            sys.executable,
+            str(tiny_script),
+            f"--input_bin={data_dir / 'fineweb_train_*.bin'}",
+            f"--input_val_bin={data_dir / 'fineweb_val_*.bin'}",
+            f"--norm_control_config={rejection_dir / 'hardnorm.json'}",
+            f"--per_tensor_elr_file={targets}",
+        ]
+        rejection_environment = os.environ.copy()
+        rejection_environment.setdefault("PYTHONUTF8", "1")
+        rejection_environment.update({"WORLD_SIZE": "2", "RANK": "0", "LOCAL_RANK": "0"})
+        rejected = subprocess.run(
+            rejection_command,
+            cwd=rejection_dir,
+            env=rejection_environment,
+            capture_output=True,
+            text=True,
+        )
+        if rejected.returncode == 0 or "WORLD_SIZE=1" not in rejected.stderr:
+            raise AssertionError(
+                "B0128_devB128 runner did not reject a multi-rank launch: "
+                f"returncode={rejected.returncode}, stderr={rejected.stderr!r}"
+            )
+        print("multi-rank rejection: PASS")
 
     print("All four Adam hard-norm ELR-govern CUDA smokes: PASS")
 
