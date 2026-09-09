@@ -1,10 +1,12 @@
-"""Serial 4-GPU baseline -> checkpoint/reference -> matching pipeline.
+"""Two concurrent 2-GPU baselines -> parallel references -> two concurrent 2-GPU matching jobs.
 
 Run from any directory. --smoke uses one GPU, a tiny real model and aot_eager
 torch.compile (Windows-compatible). Production uses inductor by default.
 """
 import argparse, hashlib, json, math, os, signal, subprocess, sys, tempfile, time, uuid
 from pathlib import Path
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 HERE = Path(__file__).resolve().parent
 
@@ -41,31 +43,83 @@ def verify_stage(path, cfg):
         assert (path/'warmup_checkpoint/shared.pt').is_file()
     return rows
 
-def launch(cmd, path, cfg, env, events):
-    start=time.time()
-    events.append(dict(stage=path.name,event='start',time=start,command=cmd));atomic_json(path.parent/'events.json',events)
-    options=dict(env=env,cwd=HERE,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,encoding='utf-8',errors='replace',bufsize=1)
-    if os.name!='nt':options['start_new_session']=True
-    proc=subprocess.Popen(cmd,**options)
+EVENT_LOCK = threading.Lock()
+
+def event(path, events, **record):
+    with EVENT_LOCK:
+        events.append(dict(time=time.time(), **record))
+        atomic_json(path / 'events.json', events)
+
+def stop_process(proc):
+    if proc.poll() is not None: return
     try:
-        with (path/'console.log').open('w',encoding='utf-8') as log:
+        if os.name == 'nt':
+            subprocess.run(['taskkill', '/PID', str(proc.pid), '/T', '/F'], capture_output=True)
+        else:
+            os.killpg(proc.pid, signal.SIGTERM)
+        try: proc.wait(timeout=15)
+        except subprocess.TimeoutExpired:
+            if os.name != 'nt': os.killpg(proc.pid, signal.SIGKILL)
+            else: proc.kill()
+            proc.wait()
+    except ProcessLookupError:
+        pass
+
+def launch(cmd, path, cfg, env, events, control):
+    options = dict(env=env, cwd=HERE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                   text=True, encoding='utf-8', errors='replace', bufsize=1)
+    if os.name != 'nt': options['start_new_session'] = True
+    # Launch and registration are atomic with respect to group cancellation.
+    with control['lock']:
+        if control['cancelled']: raise RuntimeError('Peer job failed; launch cancelled')
+        proc = subprocess.Popen(cmd, **options)
+        control['processes'].append(proc)
+    event(path.parent, events, stage=path.name, event='start', command=cmd,
+          visible_gpus=env['CUDA_VISIBLE_DEVICES'])
+    try:
+        with (path/'console.log').open('w', encoding='utf-8') as log:
             for line in proc.stdout:
-                log.write(line);log.flush();print(f'[{path.name}] {line}',end='',flush=True)
-        rc=proc.wait()
-        if rc:raise subprocess.CalledProcessError(rc,cmd)
+                log.write(line); log.flush()
+                print(f'[{path.name}] {line}', end='', flush=True)
+        rc = proc.wait()
+        if rc: raise subprocess.CalledProcessError(rc, cmd)
+        verify_stage(path, cfg)
+        event(path.parent, events, stage=path.name, event='verified_complete')
     except BaseException:
-        if proc.poll() is None:
-            if os.name=='nt':subprocess.run(['taskkill','/PID',str(proc.pid),'/T','/F'],capture_output=True)
-            else:os.killpg(proc.pid,signal.SIGTERM)
-            try:proc.wait(timeout=30)
-            except subprocess.TimeoutExpired:
-                if os.name!='nt':os.killpg(proc.pid,signal.SIGKILL)
-                else:proc.kill()
-                proc.wait()
+        stop_process(proc)
         raise
-    verify_stage(path,cfg)
-    events.append(dict(stage=path.name,event='verified_complete',time=time.time()))
-    atomic_json(path.parent/'events.json',events)
+
+def run_pair(jobs):
+    control = dict(lock=threading.Lock(), cancelled=False, processes=[])
+    pool = ThreadPoolExecutor(max_workers=2)
+    futures = [pool.submit(launch, *job, control) for job in jobs]
+    try:
+        for future in as_completed(futures): future.result()
+    except BaseException:
+        with control['lock']:
+            control['cancelled'] = True
+            processes = list(control['processes'])
+        for proc in processes: stop_process(proc)
+        for future in futures: future.cancel()
+        raise
+    finally:
+        pool.shutdown(wait=True, cancel_futures=True)
+
+def build_reference(path, cfg, smoke, events):
+    event(path.parent, events, stage=path.name, event='reference_start')
+    rows = verify_stage(path, cfg)
+    tmp = path/'reference.jsonl.tmp'
+    with tmp.open('w', encoding='utf-8') as f:
+        for r in rows:
+            if smoke: r = dict(r, names=['module._orig_mod.'+n for n in r['names']])
+            f.write(json.dumps(r)+'\n')
+    # Re-read and validate the actual artifact before publishing it to matching.
+    with tmp.open(encoding='utf-8') as f:
+        checked = [json.loads(line) for line in f]
+    assert [r['update_step'] for r in checked] == list(range(1, cfg['num_iterations']+1))
+    assert all(math.isfinite(r['actual_mean_elr']) and r['actual_mean_elr'] > 0 for r in checked)
+    os.replace(tmp, path/'reference.jsonl')
+    event(path.parent, events, stage=path.name, event='reference_complete')
 
 def acquire_gpu_locks(ids):
     # Per-device OS locks prevent two pipeline instances sharing any selected GPU.
@@ -100,7 +154,8 @@ def main():
     # Do not initialize CUDA in the orchestrator; torchrun children own the devices.
     selected=os.environ.get('CUDA_VISIBLE_DEVICES',args.gpus).split(',')
     if args.smoke:selected=selected[:1]
-    if len(selected)!=(1 if args.smoke else 4):raise ValueError('Production requires exactly four visible GPUs')
+    if len(selected)!=(1 if args.smoke else 4) or len(set(selected))!=len(selected):
+        raise ValueError('Production requires four distinct GPUs; each job uses two')
     handles=acquire_gpu_locks(selected)
     out=args.output.resolve();out.mkdir(parents=True,exist_ok=False)
     env=os.environ.copy();env['CUDA_VISIBLE_DEVICES']=','.join(selected);env['PYTHONUNBUFFERED']='1'
@@ -108,7 +163,7 @@ def main():
     for k in ['RANK','LOCAL_RANK','WORLD_SIZE','GROUP_RANK','ROLE_RANK','LOCAL_WORLD_SIZE','MASTER_ADDR','MASTER_PORT','TORCHELASTIC_RUN_ID']:
         env.pop(k,None)
     common=dict(input_bin=str(Path(args.train_data).absolute()),input_val_bin=str(Path(args.val_data).absolute()),
-        batch_size=128,device_batch_size=32,sequence_length=1024,num_iterations=20400,
+        batch_size=128,device_batch_size=64,sequence_length=1024,num_iterations=20400,
         embed_learning_rate=.0036,warmup_iters=1000,warmdown_iters=5800,weight_decay=0.,
         val_loss_every=500,val_tokens=10485760,save_every=0,compile_model=1,tensor_norm_every=4,
         adamw_update_norm_every=4,activation_probe_every=0,spectral_norm_estimate_enabled=1,
@@ -128,35 +183,37 @@ def main():
             tensor_norm_every=1,adamw_update_norm_every=1,spectral_norm_estimate_enabled=0,vocab_size=128,n_layer=2,n_head=2,n_embd=32)
     events=[]
     try:
-        configs={}
-        for stage,wd,role,post in [('baseline_wd0',0.,'baseline',.1),('baseline_wd0p1',.1,'baseline',0.),
-                                  ('matching_wd0_to_wd0p1',0.,'matching',.1),('matching_wd0p1_to_wd0',.1,'matching',0.)]:
-            path=out/stage;path.mkdir()
-            cfg=dict(common,weight_decay=wd,role=role,post_weight_decay=post,output_dir=str(path))
-            if role=='matching':
-                base=out/('baseline_wd0' if wd==0 else 'baseline_wd0p1')
-                verify_stage(base,configs[base.name])
-                cfg.update(resume_dir=str(base/'warmup_checkpoint'),reference_file=str(base/'reference.jsonl'))
-            config=path/'config.json';atomic_json(config,cfg);configs[stage]=cfg
-            if args.smoke:cmd=[sys.executable,str(HERE/'train.py'),'--config',str(config)]
-            else:
-                # Port 0 is allocated atomically by the rendezvous store (no probe/rebind race).
-                cmd=[sys.executable,'-m','torch.distributed.run','--nnodes=1','--nproc-per-node=4',
-                     '--rdzv-backend=c10d','--rdzv-endpoint=localhost:0','--rdzv-id='+uuid.uuid4().hex,
-                     '--max-restarts=0',str(HERE/'train.py'),'--config',str(config)]
-            launch(cmd,path,cfg,env,events)
-            if role=='baseline':
-                rows=verify_stage(path,cfg)
-                # Exact per-update RMS-ELR from this run; no interpolation or old targets.
-                tmp=path/'reference.jsonl.tmp'
-                with tmp.open('w',encoding='utf-8') as f:
-                    for r in rows:
-                        if args.smoke:
-                            # Exercise compile/DDP prefix compatibility through the real loader.
-                            r=dict(r,names=['module._orig_mod.'+n for n in r['names']])
-                        f.write(json.dumps(r)+'\n')
-                os.replace(tmp,path/'reference.jsonl')
-        atomic_json(out/'pipeline_complete.json',dict(stages=list(configs),completed=True,world_size=len(selected),smoke=args.smoke))
+        configs = {}
+        assignments = [selected, selected] if args.smoke else [selected[:2], selected[2:]]
+        baseline_specs = [('baseline_wd0', 0., .1), ('baseline_wd0p1', .1, 0.)]
+        matching_specs = [('matching_wd0_to_wd0p1', 0., .1), ('matching_wd0p1_to_wd0', .1, 0.)]
+        for role, specs in [('baseline', baseline_specs), ('matching', matching_specs)]:
+            jobs = []
+            for index, (stage, wd, post) in enumerate(specs):
+                path = out/stage; path.mkdir()
+                cfg = dict(common, weight_decay=wd, role=role, post_weight_decay=post, output_dir=str(path))
+                if role == 'matching':
+                    base = out/baseline_specs[index][0]
+                    cfg.update(resume_dir=str(base/'warmup_checkpoint'), reference_file=str(base/'reference.jsonl'))
+                config = path/'config.json'; atomic_json(config, cfg); configs[stage] = cfg
+                job_env = dict(env, CUDA_VISIBLE_DEVICES=','.join(assignments[index]))
+                if args.smoke:
+                    cmd = [sys.executable, str(HERE/'train.py'), '--config', str(config)]
+                else:
+                    cmd = [sys.executable, '-m', 'torch.distributed.run', '--nnodes=1', '--nproc-per-node=2',
+                           '--rdzv-backend=c10d', '--rdzv-endpoint=localhost:0', '--rdzv-id='+uuid.uuid4().hex,
+                           '--max-restarts=0', str(HERE/'train.py'), '--config', str(config)]
+                jobs.append((cmd, path, cfg, job_env, events))
+            run_pair(jobs)  # Both jobs must exit and pass validation before the next phase.
+            if role == 'baseline':
+                with ThreadPoolExecutor(max_workers=2) as pool:
+                    refs = [pool.submit(build_reference, out/name, configs[name], args.smoke, events)
+                            for name, _, _ in baseline_specs]
+                    for future in as_completed(refs): future.result()
+                event(out, events, stage='barrier', event='both_baselines_and_references_ready')
+        atomic_json(out/'pipeline_complete.json', dict(stages=list(configs), completed=True,
+                    world_size=1 if args.smoke else 2, total_gpu_count=len(selected),
+                    jobs_per_phase=2, gpu_assignments=assignments, smoke=args.smoke))
         print('PIPELINE COMPLETE: '+str(out),flush=True)
     except BaseException as exc:
         atomic_json(out/'pipeline_failed.json',dict(error=repr(exc),completed=False))
