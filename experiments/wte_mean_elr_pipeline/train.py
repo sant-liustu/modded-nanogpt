@@ -18,7 +18,7 @@ import glob
 import time
 import math
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 
 import numpy as np
 import torch
@@ -530,6 +530,16 @@ if master_process:
         f.write('='*100 + '\n')
         f.write(code)
         f.write('='*100 + '\n')
+        runtime_record = dict(
+            experiment=Path(args.output_dir).name, effective_config=asdict(args),
+            config_file=str(Path(cli.config).resolve()), world_size=ddp_world_size,
+            visible_gpus=os.environ.get('CUDA_VISIBLE_DEVICES'),
+            planned_resume_step=args.warmup_iters if args.role == 'matching' else 0,
+            training_log_definition='rank0 final accumulation microbatch loss; validation averaged across ranks',
+        )
+        f.write('BEGIN_EFFECTIVE_RUN_CONFIG\n')
+        f.write(json.dumps(runtime_record, ensure_ascii=True, sort_keys=True, indent=2) + '\n')
+        f.write('END_EFFECTIVE_RUN_CONFIG\n')
         # log information about the hardware/software environment this is running on
         # and print the full `nvidia-smi` to file
         f.write(f"Running pytorch {torch.version.__version__} compiled for CUDA {torch.version.cuda}\nnvidia-smi:\n")
@@ -1004,6 +1014,13 @@ if args.role == 'matching':
     assert state_digest([o.state_dict() for o in optimizers]) == state_digest(common['optimizers'])
     assert state_digest([s.state_dict() for s in schedulers]) == state_digest(common['schedulers'])
     start_step = common['step']
+    if master_process:
+        with open(logfile, 'a') as f:
+            f.write('CHECKPOINT_RESTORE_VERIFIED ' + json.dumps(dict(
+                restored_step=start_step, checkpoint_dir=args.resume_dir,
+                checkpoint_digest=ready['shared_digest'], exact_state_restored=True,
+            ), sort_keys=True) + '\n')
+
     Path(args.output_dir).mkdir(parents=True, exist_ok=True)
     atomic_json(Path(args.output_dir) / f'restored_rank{ddp_rank}.json', dict(step=start_step, exact_state_restored=True, checkpoint_digest=ready['shared_digest']))
     with open(args.reference_file, encoding='utf-8') as f:
