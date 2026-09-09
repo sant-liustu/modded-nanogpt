@@ -1067,6 +1067,8 @@ class LCADiagnostic:
     This deliberately observes parameters before/after an interval rather than
     reconstructing an optimizer update.  Thus AdamW weight decay, Muon, and
     any future optimizer changes are all included in delta_theta exactly.
+    Endpoint reuse assumes immutable probes, a deterministic eval forward, and
+    no changing loss/model buffers outside the snapshotted parameters (as here).
     """
 
     def __init__(self, model, raw_model, probe_batches, logdir, writer):
@@ -1078,6 +1080,9 @@ class LCADiagnostic:
         # Retain the previous Simpson endpoint across its full interval.
         self.snapshots = {'simpson3': self._clone_current_state()}
         self.snapshot_steps = {method: 0 for method in self.snapshots}
+        # Local (not all-reduced) endpoint gradients on the immutable probe.
+        # Cache ownership is independent of p.grad, which training clears/reuses.
+        self.endpoint_cache = None
         self.cumulative = {
             method: dict(
                 exact_loss_change=0.0,
@@ -1097,6 +1102,8 @@ class LCADiagnostic:
             global_probe_batch_size=B * ddp_world_size,
             probe_tokens_per_interval=B * T * ddp_world_size * len(self.probe_batches),
             methods=dict(simpson3_every=args.simpson3_every),
+            endpoint_gradient_cache=True,
+            distributed_reduction='packed local Simpson attributions and endpoint losses',
             definition='fixed-probe endpoint attribution; theta_mid is the parameter-space chord midpoint',
             parameters=[dict(name=name, shape=list(p.shape), numel=p.numel()) for name, p in self.named_params],
         )
@@ -1124,39 +1131,37 @@ class LCADiagnostic:
         for name, p in self.named_params:
             p.copy_(end_state[name])
 
-    def _evaluate(self, end_state, alpha, need_grad):
+    @torch.no_grad()
+    def _local_attributions(self, gradients, end_state):
+        return torch.stack([
+            torch.sum(gradients[name].float() *
+                      (end_state[name].float() - self.snapshot[name].float()))
+            for name, _ in self.named_params
+        ])
+
+    def _evaluate(self, end_state, alpha, cache_endpoint=False):
         self._load_interpolation(end_state, alpha)
         self.model.zero_grad(set_to_none=True)
         loss_sum = torch.zeros((), device=device, dtype=torch.float32)
         for x_probe, y_probe in self.probe_batches:
-            # Use compiled execution, but leave probe gradient averaging to LCA.
+            # Use compiled execution; keep gradients local for scalar reduction.
             # DDP no_sync must cover both forward and backward.
             sync_context = self.model.no_sync() if use_ddp else contextlib.nullcontext()
             with sync_context:
                 with ctx:
                     _, loss = self.model(x_probe, y_probe, return_logits=False)
                 loss_sum.add_(loss.detach().float())
-                if need_grad:
-                    (loss / len(self.probe_batches)).backward()
+                (loss / len(self.probe_batches)).backward()
         mean_loss = loss_sum / len(self.probe_batches)
-        if use_ddp:
-            dist.all_reduce(mean_loss, op=dist.ReduceOp.SUM)
-            mean_loss /= ddp_world_size
-        mean_loss = mean_loss.item()
-        if not need_grad:
-            return mean_loss, None
-        attributions = {}
-        with torch.no_grad():
-            for name, p in self.named_params:
-                if p.grad is None:
-                    raise RuntimeError(f'LCA gradient missing for {name}')
-                if use_ddp:
-                    dist.all_reduce(p.grad, op=dist.ReduceOp.SUM)
-                    p.grad.div_(ddp_world_size)
-                delta = end_state[name].float() - self.snapshot[name].float()
-                attributions[name] = torch.sum(p.grad.detach().float() * delta).item()
+        gradients = {}
+        for name, p in self.named_params:
+            if p.grad is None:
+                raise RuntimeError(f'LCA gradient missing for {name}')
+            gradients[name] = p.grad.detach()
+        attributions = self._local_attributions(gradients, end_state)
+        cached_gradients = {name: g.clone() for name, g in gradients.items()} if cache_endpoint else None
         self.model.zero_grad(set_to_none=True)
-        return mean_loss, attributions
+        return mean_loss, attributions, cached_gradients
 
     def should_run(self, method, update_step):
         if method != 'simpson3':
@@ -1215,14 +1220,23 @@ class LCADiagnostic:
         was_training = self.model.training
         self.model.eval()
         try:
-            loss_start, grad_start = self._evaluate(end_state, 0.0, need_grad=True)
-            _, grad_mid = self._evaluate(end_state, 0.5, need_grad=True)
-            loss_end, grad_end = self._evaluate(end_state, 1.0, need_grad=True)
-            attributions = {
-                name: (grad_start[name] + 4.0 * grad_mid[name] + grad_end[name]) / 6.0
-                for name, _ in self.named_params
-            }
-            self._write_records(method, end_step, loss_start, loss_end, attributions, end_state)
+            if self.endpoint_cache is not None and self.endpoint_cache['step'] == self.snapshot_step:
+                loss_start = self.endpoint_cache['loss']
+                grad_start = self._local_attributions(self.endpoint_cache['gradients'], end_state)
+            else:
+                loss_start, grad_start, _ = self._evaluate(end_state, 0.0)
+            _, grad_mid, _ = self._evaluate(end_state, 0.5)
+            loss_end, grad_end, endpoint_gradients = self._evaluate(end_state, 1.0, cache_endpoint=True)
+            local_attributions = (grad_start + 4.0 * grad_mid + grad_end) / 6.0
+            # All ranks share endpoints; linearity lets us reduce scalar inner
+            # products instead of full gradients. Probe token counts are equal.
+            packed = torch.cat((loss_start.reshape(1), loss_end.reshape(1), local_attributions))
+            if use_ddp:
+                dist.all_reduce(packed, op=dist.ReduceOp.SUM)
+                packed.div_(ddp_world_size)
+            values = packed.tolist()
+            attributions = {name: value for (name, _), value in zip(self.named_params, values[2:])}
+            self._write_records(method, end_step, values[0], values[1], attributions, end_state)
         finally:
             self._restore_end_state(end_state)
             self.model.zero_grad(set_to_none=True)
@@ -1230,6 +1244,8 @@ class LCADiagnostic:
                 self.model.train()
         self.snapshots[method] = end_state
         self.snapshot_steps[method] = end_step
+        # Commit the cache only after successful evaluation/output/restoration.
+        self.endpoint_cache = dict(step=end_step, loss=loss_end.detach().clone(), gradients=endpoint_gradients)
 
     def maybe_run(self, update_step):
         if self.any_due(update_step):
@@ -1257,7 +1273,7 @@ lca_enabled = args.simpson3_every > 0
 if lca_enabled and args.lca_probe_batches <= 0:
     raise ValueError('lca_probe_batches must be positive when an LCA diagnostic is enabled')
 if lca_enabled:
-    # Every rank reads a disjoint local validation batch. LCA gradients and
+    # Every rank reads a disjoint local validation batch. LCA attributions and
     # losses are explicitly averaged across ranks, so the probe has the same
     # global batch size as training: 2 ranks x 256 sequences = 512.
     lca_probe_loader = DistributedDataLoader(args.input_val_bin, B, T, ddp_rank, ddp_world_size)
@@ -1373,7 +1389,7 @@ for step in range(args.num_iterations + 1):
     lca_due = lca_enabled and lca_diagnostic.any_due(update_step)
     if lca_due:
         lca_diagnostic.maybe_run(update_step)
-    # All ranks participate in the probe gradient all-reduces; this barrier
+    # All ranks participate in the packed attribution all-reduce; this barrier
     # only makes the boundary explicit before the next DDP training update.
     if use_ddp and lca_due:
         dist.barrier()
