@@ -416,8 +416,6 @@ class Hyperparameters:
     lrnorm_match_log_every : int = 1
     # Loss-change attribution diagnostics. All methods use one fixed validation
     # probe batch and an optimizer-agnostic endpoint difference theta_end-theta_start.
-    lca1_every : int = 1
-    trapezoid2_every : int = 1
     simpson3_every : int = 2
     lca_probe_batches : int = 1
     lca_include_vectors : int = 1
@@ -634,7 +632,7 @@ tensor_name_by_id = {id(p): name for name, p in raw_model.named_parameters() if 
 
 # begin logging
 if master_process:
-    run_id = f'w256_muonhinit_fixed_initial_rms_adamw_peakelr{args.peak_rms_elr:g}_wsd_wd0_lca1_trap1_simp2_s{args.seed}_' + str(uuid.uuid4())
+    run_id = f'w256_muonhinit_fixed_initial_rms_adamw_peakelr{args.peak_rms_elr:g}_wsd_wd0_simpson3every{args.simpson3_every}_s{args.seed}_' + str(uuid.uuid4())
     logdir = 'logs/%s/' % run_id
     os.makedirs(logdir, exist_ok=True)
     logfile = 'logs/%s.txt' % run_id
@@ -1077,11 +1075,8 @@ class LCADiagnostic:
         self.logdir = logdir
         self.writer = writer
         self.named_params = [(name, p) for name, p in raw_model.named_parameters() if p.requires_grad]
-        # Each rule has a separate interval.  For example, lca1 may advance
-        # every update while simpson3 must retain the endpoint from four
-        # updates earlier.
-        self.snapshots = {method: self._clone_current_state()
-                          for method in ('lca1', 'trapezoid2', 'simpson3')}
+        # Retain the previous Simpson endpoint across its full interval.
+        self.snapshots = {'simpson3': self._clone_current_state()}
         self.snapshot_steps = {method: 0 for method in self.snapshots}
         self.cumulative = {
             method: dict(
@@ -1101,8 +1096,7 @@ class LCADiagnostic:
             local_probe_batch_size=B,
             global_probe_batch_size=B * ddp_world_size,
             probe_tokens_per_interval=B * T * ddp_world_size * len(self.probe_batches),
-            methods=dict(lca1_every=args.lca1_every, trapezoid2_every=args.trapezoid2_every,
-                         simpson3_every=args.simpson3_every),
+            methods=dict(simpson3_every=args.simpson3_every),
             definition='fixed-probe endpoint attribution; theta_mid is the parameter-space chord midpoint',
             parameters=[dict(name=name, shape=list(p.shape), numel=p.numel()) for name, p in self.named_params],
         )
@@ -1165,8 +1159,9 @@ class LCADiagnostic:
         return mean_loss, attributions
 
     def should_run(self, method, update_step):
-        every = dict(lca1=args.lca1_every, trapezoid2=args.trapezoid2_every,
-                     simpson3=args.simpson3_every)[method]
+        if method != 'simpson3':
+            raise ValueError(f'unknown LCA method: {method}')
+        every = args.simpson3_every
         return every > 0 and update_step % every == 0
 
     def _write_records(self, method, end_step, loss_start, loss_end, attributions, end_state):
@@ -1221,21 +1216,12 @@ class LCADiagnostic:
         self.model.eval()
         try:
             loss_start, grad_start = self._evaluate(end_state, 0.0, need_grad=True)
-            if method == 'lca1':
-                loss_end, _ = self._evaluate(end_state, 1.0, need_grad=False)
-                attributions = grad_start
-            elif method == 'trapezoid2':
-                loss_end, grad_end = self._evaluate(end_state, 1.0, need_grad=True)
-                attributions = {name: 0.5 * (grad_start[name] + grad_end[name]) for name, _ in self.named_params}
-            elif method == 'simpson3':
-                _, grad_mid = self._evaluate(end_state, 0.5, need_grad=True)
-                loss_end, grad_end = self._evaluate(end_state, 1.0, need_grad=True)
-                attributions = {
-                    name: (grad_start[name] + 4.0 * grad_mid[name] + grad_end[name]) / 6.0
-                    for name, _ in self.named_params
-                }
-            else:
-                raise ValueError(f'unknown LCA method: {method}')
+            _, grad_mid = self._evaluate(end_state, 0.5, need_grad=True)
+            loss_end, grad_end = self._evaluate(end_state, 1.0, need_grad=True)
+            attributions = {
+                name: (grad_start[name] + 4.0 * grad_mid[name] + grad_end[name]) / 6.0
+                for name, _ in self.named_params
+            }
             self._write_records(method, end_step, loss_start, loss_end, attributions, end_state)
         finally:
             self._restore_end_state(end_state)
@@ -1246,12 +1232,11 @@ class LCADiagnostic:
         self.snapshot_steps[method] = end_step
 
     def maybe_run(self, update_step):
-        for method in ('lca1', 'trapezoid2', 'simpson3'):
-            if self.should_run(method, update_step):
-                self.run(method, update_step)
+        if self.any_due(update_step):
+            self.run('simpson3', update_step)
 
     def any_due(self, update_step):
-        return any(self.should_run(method, update_step) for method in ('lca1', 'trapezoid2', 'simpson3'))
+        return self.should_run('simpson3', update_step)
 
 fixed_norm_state = build_fixed_norm_state(raw_model)
 fixed_norm_history_path = os.path.join(logdir, 'norm_control_history.jsonl') if master_process else None
@@ -1268,7 +1253,7 @@ activation_probe_x = build_activation_probe_batch()
 write_tensor_metadata()
 write_activation_probe_metadata(activation_probe_x)
 
-lca_enabled = any(every > 0 for every in (args.lca1_every, args.trapezoid2_every, args.simpson3_every))
+lca_enabled = args.simpson3_every > 0
 if lca_enabled and args.lca_probe_batches <= 0:
     raise ValueError('lca_probe_batches must be positive when an LCA diagnostic is enabled')
 if lca_enabled:
@@ -1385,8 +1370,7 @@ for step in range(args.num_iterations + 1):
     model.zero_grad(set_to_none=True)
     # These diagnostics never inspect optimizer state: they compare the live
     # endpoint with their own prior parameter snapshot on fixed probe tokens.
-    lca_due = lca_enabled and any(update_step % every == 0 for every in (
-        args.lca1_every, args.trapezoid2_every, args.simpson3_every) if every > 0)
+    lca_due = lca_enabled and lca_diagnostic.any_due(update_step)
     if lca_due:
         lca_diagnostic.maybe_run(update_step)
     # All ranks participate in the probe gradient all-reduces; this barrier
