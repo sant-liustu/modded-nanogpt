@@ -392,7 +392,8 @@ class Hyperparameters:
     expected_world_size : int = 2
     sequence_length : int = 1024 # sequence length, in tokens
     num_iterations : int = 5100 # 20400 * 128 / 512: preserve total training tokens
-    embed_learning_rate : float = 0.0036
+    embed_learning_rate : float = 0.0036 # legacy placeholder; per-tensor ELR sets actual LR
+    peak_rms_elr : float = 0.03 # every trainable tensor, including RMSNorm gamma
     muon_learning_rate : float = 0.02
     warmup_iters : int = 250 # 1000 * 128 / 512
     warmdown_iters : int = 1450 # 5800 * 128 / 512
@@ -507,10 +508,10 @@ block_parameters = [
 optimizer1 = torch.optim.AdamW(raw_model.lm_head.parameters(), lr=args.embed_learning_rate, betas=(0.9, 0.95),
                                weight_decay=args.weight_decay, fused=True)
 optimizer2_groups = []
-if block_parameters:
-    optimizer2_groups.append(dict(params=block_parameters, weight_decay=args.weight_decay, lrnorm_match_group=True))
-if rmsnorm_gamma_parameters:
-    optimizer2_groups.append(dict(params=rmsnorm_gamma_parameters, weight_decay=0.0, lrnorm_match_group=False))
+for p in block_parameters:
+    optimizer2_groups.append(dict(params=[p], weight_decay=args.weight_decay, lrnorm_match_group=True))
+for p in rmsnorm_gamma_parameters:
+    optimizer2_groups.append(dict(params=[p], weight_decay=0.0, lrnorm_match_group=False))
 optimizer2 = torch.optim.AdamW(optimizer2_groups, lr=0.5 * args.embed_learning_rate / width_multiplier, betas=(0.9, 0.95),
                                fused=True)
 optimizers = [optimizer1, optimizer2]
@@ -606,9 +607,34 @@ def get_lr(it):
     return (args.num_iterations - it) / args.warmdown_iters
 schedulers = [torch.optim.lr_scheduler.LambdaLR(opt, get_lr) for opt in optimizers]
 
+@torch.no_grad()
+def apply_tensor_rms_elr(optimizers, update_step, history_path=None):
+    """Set LR from pre-update RMS; update 1 uses the first warmup value."""
+    target = args.peak_rms_elr * get_lr(update_step - 1)
+    records = []
+    for opt in optimizers:
+        for group in opt.param_groups:
+            if len(group['params']) != 1:
+                raise RuntimeError('per-tensor RMS-ELR requires one tensor per optimizer group')
+            p = group['params'][0]
+            rms = p.detach().float().square().mean().sqrt().item()
+            if not math.isfinite(rms) or rms <= 0:
+                raise RuntimeError('per-tensor RMS-ELR requires finite positive RMS')
+            group['lr'] = target * rms
+            if history_path is not None:
+                records.append(dict(step=update_step, name=tensor_name_by_id[id(p)],
+                                    target_rms_elr=target, pre_update_rms=rms,
+                                    lr=group['lr'], actual_rms_elr=group['lr']/rms))
+    if history_path is not None:
+        with open(history_path, 'a') as f:
+            for record in records:
+                f.write(json.dumps(record) + '\n')
+
+tensor_name_by_id = {id(p): name for name, p in raw_model.named_parameters() if p.requires_grad}
+
 # begin logging
 if master_process:
-    run_id = f'w256_muonhinit_fixed_initial_rms_adamw_lr0p0036_wsd_wd0_lca1_trap1_simp2_s{args.seed}_' + str(uuid.uuid4())
+    run_id = f'w256_muonhinit_fixed_initial_rms_adamw_peakelr{args.peak_rms_elr:g}_wsd_wd0_lca1_trap1_simp2_s{args.seed}_' + str(uuid.uuid4())
     logdir = 'logs/%s/' % run_id
     os.makedirs(logdir, exist_ok=True)
     logfile = 'logs/%s.txt' % run_id
@@ -1232,6 +1258,8 @@ fixed_norm_history_path = os.path.join(logdir, 'norm_control_history.jsonl') if 
 if master_process:
     with open(os.path.join(logdir, 'norm_control_metadata.json'), 'w') as f:
         json.dump(dict(mode='fixed_initial_rms', start_step=0, weight_decay=args.weight_decay,
+                       peak_rms_elr=args.peak_rms_elr, elr_scope='all trainable tensors including gamma',
+                       elr_schedule='WSD', warmup_iters=args.warmup_iters, warmdown_iters=args.warmdown_iters,
                        block_init='normal_std_1_over_sqrt_fan_in',
                        parameters=[dict(name=e['name'], target_rms=e['target_rms'].item())
                                    for e in fixed_norm_state]), f, indent=2)
@@ -1344,7 +1372,8 @@ for step in range(args.num_iterations + 1):
         p.grad /= train_accumulation_steps
     # step the optimizers and schedulers
     update_step = step + 1
-    maybe_apply_lrnorm_controller(update_step)
+    apply_tensor_rms_elr(optimizers, update_step,
+                         os.path.join(logdir, 'tensor_rms_elr_history.jsonl') if master_process else None)
     adamw_update_state = maybe_capture_adamw_update_state(update_step)
     for opt, sched in zip(optimizers, schedulers):
         opt.step()
