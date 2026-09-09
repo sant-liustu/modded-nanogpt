@@ -262,13 +262,12 @@ class GPT(nn.Module):
         self.transformer.wte.weight = self.lm_head.weight # https://paperswithcode.com/method/weight-tying
         self.final_norm = RMSNorm(config.n_embd)
         self.apply(self._init_mup_weights)
-        hidden_std = config.init_std / math.sqrt(self.width_multiplier)
-        c_proj_std = config.init_std / math.sqrt(2 * config.n_layer * self.width_multiplier)
+        # Match the existing MuonH-initialized fixed-norm runner:
+        # every block matrix has variance 1 / fan_in, including c_proj.
+        # Keep tied embedding initialization and RMSNorm gamma unchanged.
         for pn, p in self.named_parameters():
-            if pn.startswith("transformer.h.") and pn.endswith(".weight") and p.ndim == 2 and not pn.endswith("c_proj.weight"):
-                torch.nn.init.normal_(p, mean=0.0, std=hidden_std)
-            elif pn.endswith("c_proj.weight"):
-                torch.nn.init.normal_(p, mean=0.0, std=c_proj_std)
+            if pn.startswith("transformer.h.") and pn.endswith(".weight") and p.ndim == 2:
+                torch.nn.init.normal_(p, mean=0.0, std=1.0 / math.sqrt(p.shape[1]))
 
     def _init_mup_weights(self, module):
         if isinstance(module, nn.Linear):
@@ -397,7 +396,7 @@ class Hyperparameters:
     muon_learning_rate : float = 0.02
     warmup_iters : int = 250 # 1000 * 128 / 512
     warmdown_iters : int = 1450 # 5800 * 128 / 512
-    weight_decay : float = 0.03333333333333333 # AdamW weight decay applied to tied wte/lm_head and transformer blocks
+    weight_decay : float = 0.0 # fixed-initial-RMS arm: no weight decay
     seed : int = 0
     # evaluation and logging hyperparams
     val_loss_every : int = 0 # disabled; LCA uses its own fixed FineWeb validation probe
@@ -609,7 +608,7 @@ schedulers = [torch.optim.lr_scheduler.LambdaLR(opt, get_lr) for opt in optimize
 
 # begin logging
 if master_process:
-    run_id = f'eta_lam_w256_lr0p0036_wsd_wd0p033333_adamw_lca1_trap1_simp2_s{args.seed}_' + str(uuid.uuid4())
+    run_id = f'w256_muonhinit_fixed_initial_rms_adamw_lr0p0036_wsd_wd0_lca1_trap1_simp2_s{args.seed}_' + str(uuid.uuid4())
     logdir = 'logs/%s/' % run_id
     os.makedirs(logdir, exist_ok=True)
     logfile = 'logs/%s.txt' % run_id
@@ -997,6 +996,47 @@ def maybe_log_tensor_norms(step):
             )) + '\n')
 
 
+def build_fixed_norm_state(model):
+    """Capture each matrix's actual initial RMS after DDP parameter broadcast.
+
+    Matches fixed_initial_norm_all_matrices_start0: block matrices plus tied
+    embedding; RMSNorm gamma remains trainable and is not projected.
+    """
+    entries = []
+    for name, p in model.named_parameters():
+        if p.ndim == 2 and (name.startswith('transformer.h.') or name == 'transformer.wte.weight'):
+            target = p.detach().float().square().mean().sqrt()
+            if not torch.isfinite(target) or target <= 0:
+                raise RuntimeError(f'invalid initial RMS for {name}')
+            entries.append(dict(name=name, param=p, target_rms=target.clone()))
+    expected = 6 * model.config.n_layer + 1
+    if len(entries) != expected:
+        raise RuntimeError(f'expected {expected} fixed-norm matrices, got {len(entries)}')
+    return entries
+
+
+@torch.no_grad()
+def apply_fixed_norm_control(entries, update_step, history_path=None):
+    # Same hard-RMS projection as the existing constant-norm runner.
+    records = []
+    for entry in entries:
+        p, target = entry['param'], entry['target_rms']
+        before = p.float().square().mean().sqrt()
+        if not torch.isfinite(before) or before <= 0:
+            raise RuntimeError(f'invalid current RMS for {entry["name"]}')
+        p.mul_((target / before).to(dtype=p.dtype))
+        if history_path is not None:
+            after = p.float().square().mean().sqrt()
+            records.append(dict(step=update_step, name=entry['name'],
+                                target_rms=target.item(), rms_before=before.item(),
+                                rms_after=after.item(),
+                                relative_error=((after-target).abs()/target).item()))
+    if history_path is not None:
+        with open(history_path, 'a') as f:
+            for record in records:
+                f.write(json.dumps(record) + '\n')
+
+
 class LCADiagnostic:
     """Endpoint loss-change attribution on one fixed probe set.
 
@@ -1187,6 +1227,15 @@ class LCADiagnostic:
     def any_due(self, update_step):
         return any(self.should_run(method, update_step) for method in ('lca1', 'trapezoid2', 'simpson3'))
 
+fixed_norm_state = build_fixed_norm_state(raw_model)
+fixed_norm_history_path = os.path.join(logdir, 'norm_control_history.jsonl') if master_process else None
+if master_process:
+    with open(os.path.join(logdir, 'norm_control_metadata.json'), 'w') as f:
+        json.dump(dict(mode='fixed_initial_rms', start_step=0, weight_decay=args.weight_decay,
+                       block_init='normal_std_1_over_sqrt_fan_in',
+                       parameters=[dict(name=e['name'], target_rms=e['target_rms'].item())
+                                   for e in fixed_norm_state]), f, indent=2)
+
 activation_probe_x = build_activation_probe_batch()
 write_tensor_metadata()
 write_activation_probe_metadata(activation_probe_x)
@@ -1301,6 +1350,8 @@ for step in range(args.num_iterations + 1):
         opt.step()
         sched.step()
     maybe_log_adamw_update_norms(update_step, adamw_update_state)
+    # Record raw AdamW telemetry above, then project before the LCA endpoint.
+    apply_fixed_norm_control(fixed_norm_state, update_step, fixed_norm_history_path)
     # null the gradients
     model.zero_grad(set_to_none=True)
     # These diagnostics never inspect optimizer state: they compare the live
