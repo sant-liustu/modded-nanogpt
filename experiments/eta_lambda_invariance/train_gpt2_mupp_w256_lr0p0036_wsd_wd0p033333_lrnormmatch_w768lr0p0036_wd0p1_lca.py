@@ -1,4 +1,6 @@
 import os
+# Configure the allocator before importing torch or initializing CUDA.
+os.environ.setdefault('PYTORCH_CUDA_ALLOC_CONF', 'expandable_segments:True')
 import random
 import sys
 with open(sys.argv[0]) as f:
@@ -473,6 +475,8 @@ num_vocab = 50304
 model = GPT(GPTConfig(vocab_size=num_vocab, n_layer=12, n_head=2, n_embd=256))
 width_multiplier = model.width_multiplier
 model = model.cuda()
+# Keep clean parameter names while the execution model is compiled and wrapped.
+raw_model = model
 if hasattr(config, "coordinate_descent_tuning"):
     config.coordinate_descent_tuning = True # suggested by @Chillee
 if args.compile_model:
@@ -480,9 +484,6 @@ if args.compile_model:
 # here we wrap model into DDP container
 if use_ddp:
     model = DDP(model, device_ids=[ddp_local_rank])
-    raw_model = model.module # always contains the "raw" unwrapped model
-else:
-    raw_model = model
 ctx = torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16)
 
 # init the optimizer(s)
@@ -1004,12 +1005,12 @@ class LCADiagnostic:
     any future optimizer changes are all included in delta_theta exactly.
     """
 
-    def __init__(self, model, probe_batches, logdir, writer):
+    def __init__(self, model, raw_model, probe_batches, logdir, writer):
         self.model = model
         self.probe_batches = [(x.detach().clone(), y.detach().clone()) for x, y in probe_batches]
         self.logdir = logdir
         self.writer = writer
-        self.named_params = [(name, p) for name, p in model.named_parameters() if p.requires_grad]
+        self.named_params = [(name, p) for name, p in raw_model.named_parameters() if p.requires_grad]
         # Each rule has a separate interval.  For example, lca1 may advance
         # every update while simpson3 must retain the endpoint from four
         # updates earlier.
@@ -1068,11 +1069,15 @@ class LCADiagnostic:
         self.model.zero_grad(set_to_none=True)
         loss_sum = torch.zeros((), device=device, dtype=torch.float32)
         for x_probe, y_probe in self.probe_batches:
-            with ctx:
-                _, loss = self.model(x_probe, y_probe, return_logits=False)
-            loss_sum.add_(loss.detach().float())
-            if need_grad:
-                (loss / len(self.probe_batches)).backward()
+            # Use compiled execution, but leave probe gradient averaging to LCA.
+            # DDP no_sync must cover both forward and backward.
+            sync_context = self.model.no_sync() if use_ddp else contextlib.nullcontext()
+            with sync_context:
+                with ctx:
+                    _, loss = self.model(x_probe, y_probe, return_logits=False)
+                loss_sum.add_(loss.detach().float())
+                if need_grad:
+                    (loss / len(self.probe_batches)).backward()
         mean_loss = loss_sum / len(self.probe_batches)
         if use_ddp:
             dist.all_reduce(mean_loss, op=dist.ReduceOp.SUM)
@@ -1197,6 +1202,7 @@ if lca_enabled:
     lca_probe_loader.reset()
     lca_probe_batches = [lca_probe_loader.next_batch() for _ in range(args.lca_probe_batches)]
     lca_diagnostic = LCADiagnostic(
+        model,
         raw_model,
         lca_probe_batches,
         logdir if master_process else None,
