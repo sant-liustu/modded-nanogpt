@@ -1,0 +1,78 @@
+{
+  "start_mode": "fresh",
+  "seed": 0,
+  "warmup_completed_step": 250,
+  "total_updates": 5100,
+  "peak_rms_elr": 0.03,
+  "cosine_final_rms_elr": 0.0,
+  "norm_gamma": "constant after warmup",
+  "cases": [
+    {
+      "case": "C",
+      "schedule": "C.json",
+      "sha256": "e4a7ec3682c840e3ae5c916698e5d220d12b9b4478c563ca76bbcada2ebbcb47",
+      "cosine_groups": []
+    },
+    {
+      "case": "E",
+      "schedule": "E.json",
+      "sha256": "de51eecb36832f836faea389844abb000eaf65149ec31e0bf92c916d4a80741d",
+      "cosine_groups": [
+        "E"
+      ]
+    },
+    {
+      "case": "A",
+      "schedule": "A.json",
+      "sha256": "7474eef217ced9410b7c3b3689a66c8f10238f735501a8d0221b1beb7f9d4b9c",
+      "cosine_groups": [
+        "A"
+      ]
+    },
+    {
+      "case": "M",
+      "schedule": "M.json",
+      "sha256": "eb08c52d8c6f8d840436a4e1f08f1f070822fc233af84c3702001cb734e3be71",
+      "cosine_groups": [
+        "M"
+      ]
+    },
+    {
+      "case": "EA",
+      "schedule": "EA.json",
+      "sha256": "661d34efa3076146ca8e5a55d7b80a292a768f96000a915e4a9e669a3af08bfa",
+      "cosine_groups": [
+        "E",
+        "A"
+      ]
+    },
+    {
+      "case": "EM",
+      "schedule": "EM.json",
+      "sha256": "77576df08127b55b53fcd0ea1487d3ca35e0334d5d93753c815bec3eda3588c9",
+      "cosine_groups": [
+        "E",
+        "M"
+      ]
+    },
+    {
+      "case": "AM",
+      "schedule": "AM.json",
+      "sha256": "378d62179b57e72ee0d34d52eb7af8eeb55fe0016708894d24bf4c85b710ba70",
+      "cosine_groups": [
+        "A",
+        "M"
+      ]
+    },
+    {
+      "case": "EAM",
+      "schedule": "EAM.json",
+      "sha256": "ba90d54d072c859567090f18a65f8d2bd1ecf24a726651cac5d6ea23a184981f",
+      "cosine_groups": [
+        "E",
+        "A",
+        "M"
+      ]
+    }
+  ]
+}
