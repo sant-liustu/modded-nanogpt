@@ -800,11 +800,17 @@ def get_base_lr(it):
     decay_ratio = min(1.0, max(0.0, decay_step / args.decay_iters))
     return 0.5 * (1.0 + math.cos(math.pi * decay_ratio))
 
+def get_gamma_lr(it):
+    # Keep the original warmup, then hold gamma at its peak learning rate.
+    if it < args.warmup_iters:
+        return (it+1) / args.warmup_iters
+    return 1.0
+
 def get_lr(it):
     return get_base_lr(it) * schedule_ratio(it)
 optimizer2_lr_lambdas = [get_lr for _ in optimizer2.param_groups]
 if rmsnorm_gamma_parameters:
-    optimizer2_lr_lambdas[-1] = get_base_lr
+    optimizer2_lr_lambdas[-1] = get_gamma_lr
 schedulers = [
     torch.optim.lr_scheduler.LambdaLR(optimizer1, get_lr),
     torch.optim.lr_scheduler.LambdaLR(optimizer2, optimizer2_lr_lambdas),
