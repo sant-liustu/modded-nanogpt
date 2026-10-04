@@ -6,7 +6,7 @@ CASE=${1:?Usage: bash run_case.sh C|E|A|M|EA|EM|AM|EAM [runner arguments]}
 case "$CASE" in C|E|A|M|EA|EM|AM|EAM) ;; *) echo "Unknown case: $CASE" >&2; exit 2 ;; esac
 shift
 cd -- "$REPO"
-CKPT=${ELR_FORK_CHECKPOINT:-checkpoints/json_w768_train_warmup250}
+CKPT=${ELR_FORK_CHECKPOINT:-checkpoints/json_w768_B128_warmup1000}
 RESUME_ARGS=(--resume "$CKPT")
 for ARG in "$@"; do
   if [[ "$ARG" == --resume || "$ARG" == --resume=* ]]; then
@@ -26,8 +26,8 @@ if ast.literal_eval(seed) != 0:
 if sys.argv[1]:
     checkpoint = pathlib.Path(sys.argv[1])
     manifest = json.loads((checkpoint/'complete.json').read_text())
-    if manifest.get('version') != 1 or manifest.get('step') != 250 or manifest.get('world_size') != 2:
-        raise SystemExit('Shared fork requires a complete step250 / two-rank checkpoint.')
+    if manifest.get('version') != 1 or manifest.get('step') != 1000 or manifest.get('world_size') != 2:
+        raise SystemExit('Shared fork requires a complete step1000 / two-rank checkpoint.')
     files = ['rank00000.pt', 'rank00001.pt']
     if manifest.get('files') != files or not all((checkpoint/f).is_file() for f in files):
         raise SystemExit('Shared warmup checkpoint rank files are incomplete.')

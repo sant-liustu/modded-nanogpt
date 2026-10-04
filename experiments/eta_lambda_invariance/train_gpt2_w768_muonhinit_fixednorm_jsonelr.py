@@ -279,14 +279,14 @@ class Hyperparameters:
     input_bin : str = 'data/fineweb10B/fineweb_train_*.bin' # input .bin to train on
     input_val_bin : str = 'data/fineweb10B/fineweb_val_*.bin' # input .bin to eval validation loss on
     # optimization hyperparams
-    batch_size : int = 512 # global batch size: 2 ranks x 256 sequences
-    device_batch_size : int = 256 # sequences per GPU; launch with exactly 2 ranks
+    batch_size : int = 128 # global batch: 2 ranks x 64 sequences
+    device_batch_size : int = 64 # sequences per GPU; 65536 tokens at sequence_length=1024
     expected_world_size : int = 2
     sequence_length : int = 1024 # sequence length, in tokens
-    num_iterations : int = 5100 # 20400 * 128 / 512: preserve total training tokens
+    num_iterations : int = 20400 # same total training tokens as 5100 updates at global batch512
     embed_learning_rate : float = 0.0036 # legacy placeholder; per-tensor ELR sets actual LR
-    warmup_iters : int = 250 # 1000 * 128 / 512
-    warmdown_iters : int = 1450 # 5800 * 128 / 512
+    warmup_iters : int = 1000 # same warmup token budget as 250 updates at batch512
+    warmdown_iters : int = 5800 # legacy scheduler setting; actual tensor ELR comes from JSON
     weight_decay : float = 0.0 # fixed-initial-RMS arm: no weight decay
     seed : int = 0
     # evaluation and logging hyperparams
