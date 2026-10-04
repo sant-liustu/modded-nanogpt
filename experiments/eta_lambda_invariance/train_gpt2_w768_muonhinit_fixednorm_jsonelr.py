@@ -12,7 +12,6 @@ import uuid
 import glob
 import math
 import time
-from collections import defaultdict
 from dataclasses import dataclass
 
 import numpy as np
@@ -22,113 +21,6 @@ import torch.nn.functional as F
 import torch.distributed as dist
 import torch._inductor.config as config
 from torch.nn.parallel import DistributedDataParallel as DDP
-
-# -----------------------------------------------------------------------------
-# Muon optimizer
-
-def zeropower_via_svd(G, steps=None):
-    U, S, V = G.svd()
-    return U @ V.T
-
-@torch.compile
-def zeropower_via_newtonschulz5(G, steps=10, eps=1e-7):
-    """
-    Newton-Schulz iteration to compute the zeroth power / orthogonalization of G. We opt to use a
-    quintic iteration whose coefficients are selected to maximize the slope at zero. For the purpose
-    of minimizing steps, it turns out to be empirically effective to keep increasing the slope at
-    zero even beyond the point where the iteration no longer converges all the way to one everywhere
-    on the interval. This iteration therefore does not produce UV^T but rather something like US'V^T
-    where S' is diagonal with S_{ii}' ~ Uniform(0.5, 1.5), which turns out not to hurt model
-    performance at all relative to UV^T, where USV^T = G is the SVD.
-    """
-    assert len(G.shape) == 2
-    a, b, c = (3.4445, -4.7750,  2.0315)
-    X = G.bfloat16()
-    X /= (X.norm() + eps) # ensure top singular value <= 1
-    if G.size(0) > G.size(1):
-        X = X.T
-    for _ in range(steps):
-        A = X @ X.T
-        B = A @ X
-        X = a * X + b * B + c * A @ B
-    if G.size(0) > G.size(1):
-        X = X.T
-    return X
-
-zeropower_backends = dict(svd=zeropower_via_svd, newtonschulz5=zeropower_via_newtonschulz5)
-
-class Muon(torch.optim.Optimizer):
-    """
-    Muon - MomentUm Orthogonalized by Newton-schulz
-
-    Muon internally runs standard SGD-momentum, and then performs an orthogonalization post-
-    processing step, in which each 2D parameter's update is replaced with the nearest orthogonal
-    matrix. To efficiently orthogonalize each update, we use a Newton-Schulz iteration, which has
-    the advantage that it can be stably run in bfloat16 on the GPU.
-
-    Some warnings:
-    - This optimizer assumes that all parameters passed in are 2D.
-    - It should not be used for the embedding layer, the final fully connected layer, or any {0,1}-D
-    parameters; those should all be optimized by a standard method (e.g., AdamW).
-    - To use it with 4D convolutional filters, it works well to just flatten their last 3 dimensions.
-    - We believe it is unlikely to work well for training with small batch size.
-    - We believe it may not work well for finetuning pretrained models, but we haven't tested this.
-    - We have not yet tried this optimizer for training scenarios larger than NanoGPT (124M).
-
-    Arguments:
-        lr: The learning rate used by the internal SGD.
-        momentum: The momentum used by the internal SGD.
-        nesterov: Whether to use Nesterov-style momentum in the internal SGD. (recommended)
-        backend: The chosen backend for the orthogonalization step. (recommended: 'newtonschulz5')
-        backend_steps: The number of iteration steps to use in the backend, if it is iterative.
-    """
-    def __init__(self, params, lr=3e-4, momentum=0.95, nesterov=True,
-                 backend='newtonschulz5', backend_steps=5,
-                 rank=0, world_size=1):
-        defaults = dict(lr=lr, momentum=momentum, nesterov=nesterov, backend=backend, backend_steps=backend_steps)
-        super().__init__(params, defaults)
-        self.rank = rank
-        self.world_size = world_size
-
-    def step(self):
-
-        for group in self.param_groups:
-
-            lr = group['lr']
-            momentum = group['momentum']
-            zeropower_backend = zeropower_backends[group['backend']]
-
-            # generate weight updates in distributed fashion
-            total_params = sum(p.numel() for p in group['params'])
-            updates_flat = torch.zeros(total_params, device='cuda', dtype=torch.bfloat16)
-            curr_idx = 0
-            for i, p in enumerate(group['params']):
-                # luckily this will perfectly distribute a transformer with multiple of 4 layers to 8 GPUs
-                if i % self.world_size == self.rank:
-                    g = p.grad
-                    if g is None:
-                        continue
-                    state = self.state[p]
-                    if 'momentum_buffer' not in state:
-                        state['momentum_buffer'] = torch.zeros_like(g)
-                    buf = state['momentum_buffer']
-                    buf.mul_(momentum).add_(g)
-                    if group['nesterov']:
-                        g = g.add(buf, alpha=momentum)
-                    g = zeropower_backend(g, steps=group['backend_steps'])
-                    g *= max(1, g.size(0)/g.size(1))**0.5
-                    updates_flat[curr_idx:curr_idx+p.numel()] = g.flatten()
-                curr_idx += p.numel()
-
-            # sync updates across devices. we are not memory-constrained so can do this simple deserialization
-            dist.all_reduce(updates_flat, op=dist.ReduceOp.SUM)
-
-            # deserialize and apply updates
-            curr_idx = 0
-            for p in group['params']:
-                g = updates_flat[curr_idx:curr_idx+p.numel()].view_as(p.data).type_as(p.data)
-                p.data.add_(g, alpha=-lr)
-                curr_idx += p.numel()
 
 # -----------------------------------------------------------------------------
 # PyTorch nn.Module definitions for the GPT-2 model
@@ -393,40 +285,23 @@ class Hyperparameters:
     sequence_length : int = 1024 # sequence length, in tokens
     num_iterations : int = 5100 # 20400 * 128 / 512: preserve total training tokens
     embed_learning_rate : float = 0.0036 # legacy placeholder; per-tensor ELR sets actual LR
-    peak_rms_elr : float = 0.03 # every trainable tensor, including RMSNorm gamma
-    muon_learning_rate : float = 0.02
     warmup_iters : int = 250 # 1000 * 128 / 512
     warmdown_iters : int = 1450 # 5800 * 128 / 512
     weight_decay : float = 0.0 # fixed-initial-RMS arm: no weight decay
     seed : int = 0
     # evaluation and logging hyperparams
-    val_loss_every : int = 0 # disabled; LCA uses its own fixed FineWeb validation probe
+    val_loss_every : int = 0 # periodic validation disabled; set positive to enable
     val_tokens : int = 10485760 # how many tokens of validation data? it's important to keep this fixed for consistent comparisons
-    save_every : int = 0 # disabled; this diagnostic run does not write checkpoints
     compile_model : int = 1 # compile the model with torch.compile
     tensor_norm_every : int = 1 # every how many steps to log tensor norm history? 0 disables
     adamw_update_norm_every : int = 1 # every how many optimizer steps to log AdamW effective update norms? 0 disables
-    activation_probe_every : int = 0 # every how many steps to log fixed-probe activation RMS ratios? 0 disables
-    spectral_norm_estimate_enabled : int = 0 # whether to estimate 2D spectral norms in tensor/update norm histories
-    activation_probe_eps : float = 1e-12 # denominator epsilon for activation RMS ratios
-    lrnorm_match_enabled : int = 0 # normal AdamW: do not dynamically align LR / norm to a reference run
-    lrnorm_reference_json : str = 'experiments/eta_lambda_invariance/reference_w768_lr0p0036_wsd_wd0p1_embedding_plus_block_rms_lr_over_norm.jsonl'
-    lrnorm_reference_global_batch_size : int = 128 # batch size used to generate the reference JSON
-    lrnorm_match_start_update : int = 1 # match block LR / (wte + block RMS norm) from the first update
-    lrnorm_match_log_every : int = 1
-    # Loss-change attribution diagnostics. All methods use one fixed validation
-    # probe batch and an optimizer-agnostic endpoint difference theta_end-theta_start.
-    simpson3_every : int = 2
-    lca_probe_batches : int = 1
-    lca_include_vectors : int = 1
-    lca_fraction_eps : float = 1e-12
 args = Hyperparameters()
 
 import argparse
 from fnmatch import fnmatchcase
 from pathlib import Path
-LEGACY_CONSTANT_SOURCE_SHA256 = 'a7536f90740381c5859caf8d35d7f4dfbd86f35f09de359c0c7cb9b912dc15f7'
-LEGACY_JSON_SOURCE_SHA256 = '096b93fcce471acd88cf5f847044aed541e792da14bbc698b0db1e33b8bbc75d'
+PREVIOUS_RUNNER_SOURCE_SHA256 = 'b470ac1a787072e7015a6d9f8b8540b02900b79ef515ea469730ef00bd585339'
+RETIRED_CONFIG_FIELDS = ('activation_probe_every', 'spectral_norm_estimate_enabled', 'activation_probe_eps', 'lrnorm_match_enabled', 'lrnorm_reference_json', 'lrnorm_reference_global_batch_size', 'lrnorm_match_start_update', 'lrnorm_match_log_every', 'simpson3_every', 'lca_probe_batches', 'lca_include_vectors', 'lca_fraction_eps', 'save_every', 'muon_learning_rate', 'peak_rms_elr')
 parser = argparse.ArgumentParser(description='Per-update tensor RMS-ELR JSON with complete-state resume')
 parser.add_argument('--schedule-json', type=Path, required=True)
 parser.add_argument('--resume', type=Path)
@@ -530,7 +405,7 @@ print(f"using device: {device}")
 master_process = (ddp_rank == 0) # this process will do logging, checkpointing etc.
 if ddp_world_size != args.expected_world_size:
     raise RuntimeError(
-        f'this LCA runner requires {args.expected_world_size} GPUs, got {ddp_world_size}; '
+        f'this training runner requires {args.expected_world_size} GPUs, got {ddp_world_size}; '
         'launch with: torchrun --standalone --nproc_per_node=2 <script>'
     )
 
@@ -593,90 +468,12 @@ optimizer1 = torch.optim.AdamW(raw_model.lm_head.parameters(), lr=args.embed_lea
                                weight_decay=args.weight_decay, fused=True)
 optimizer2_groups = []
 for p in block_parameters:
-    optimizer2_groups.append(dict(params=[p], weight_decay=args.weight_decay, lrnorm_match_group=True))
+    optimizer2_groups.append(dict(params=[p], weight_decay=args.weight_decay))
 for p in rmsnorm_gamma_parameters:
-    optimizer2_groups.append(dict(params=[p], weight_decay=0.0, lrnorm_match_group=False))
+    optimizer2_groups.append(dict(params=[p], weight_decay=0.0))
 optimizer2 = torch.optim.AdamW(optimizer2_groups, lr=0.5 * args.embed_learning_rate / width_multiplier, betas=(0.9, 0.95),
                                fused=True)
 optimizers = [optimizer1, optimizer2]
-
-lrnorm_denominator_params = block_parameters + [raw_model.transformer.wte.weight]
-lrnorm_denominator_numel = sum(p.numel() for p in lrnorm_denominator_params)
-if len(lrnorm_denominator_params) != 73:
-    raise RuntimeError(f"expected 73 lrnorm denominator tensors, got {len(lrnorm_denominator_params)}")
-
-def load_lrnorm_targets(path):
-    targets = {}
-    with open(path, 'r', encoding='utf-8-sig') as f:
-        for line in f:
-            rec = json.loads(line)
-            targets[int(rec['update_step'])] = rec
-    return targets
-
-lrnorm_targets = load_lrnorm_targets(args.lrnorm_reference_json) if args.lrnorm_match_enabled else {}
-
-@torch.no_grad()
-def current_lrnorm_denominator_rms_norm():
-    total_sq = torch.zeros((), device=device, dtype=torch.float32)
-    for p in lrnorm_denominator_params:
-        total_sq.add_(p.detach().float().square().sum())
-    return torch.sqrt(total_sq / lrnorm_denominator_numel).item()
-
-def should_log_lrnorm_match(update_step):
-    if not args.lrnorm_match_enabled or not master_process or args.lrnorm_match_log_every <= 0:
-        return False
-    return (
-        update_step % args.lrnorm_match_log_every == 0
-        or update_step == args.lrnorm_match_start_update
-        or update_step == args.num_iterations
-    )
-
-def maybe_apply_lrnorm_controller(update_step):
-    if not args.lrnorm_match_enabled:
-        return
-    reference_update_step = update_step * args.batch_size // args.lrnorm_reference_global_batch_size
-    if args.batch_size % args.lrnorm_reference_global_batch_size != 0:
-        raise ValueError('batch_size must be an integer multiple of lrnorm_reference_global_batch_size')
-    if reference_update_step < args.lrnorm_match_start_update:
-        return
-    if reference_update_step not in lrnorm_targets:
-        raise RuntimeError(f"missing LR/norm target for reference_update_step={reference_update_step}")
-    target = lrnorm_targets[reference_update_step]
-    current_norm = current_lrnorm_denominator_rms_norm()
-    target_lr_over_norm = float(target['target_lr_over_norm'])
-    adjusted_block_lr = target_lr_over_norm * current_norm
-    reference_block_lr = float(target['reference_block_lr'])
-    embed_to_block_lr_ratio = 2.0
-    reference_embed_lr = embed_to_block_lr_ratio * reference_block_lr
-    adjusted_embed_lr = adjusted_block_lr * embed_to_block_lr_ratio
-    for group in optimizer1.param_groups:
-        group['lr'] = adjusted_embed_lr
-    for group in optimizer2.param_groups:
-        if group.get('lrnorm_match_group', False):
-            group['lr'] = adjusted_block_lr
-    if should_log_lrnorm_match(update_step):
-        record = dict(
-            update_step=update_step,
-            pre_update_step=update_step - 1,
-            reference_update_step=reference_update_step,
-            reference_pre_update_step=reference_update_step - args.batch_size // args.lrnorm_reference_global_batch_size,
-            reference_lrnorm_denominator_rms_norm=float(target['reference_lrnorm_denominator_rms_norm']),
-            current_lrnorm_denominator_rms_norm=current_norm,
-            reference_block_lr=reference_block_lr,
-            reference_embed_lr=reference_embed_lr,
-            adjusted_block_lr=adjusted_block_lr,
-            adjusted_embed_lr=adjusted_embed_lr,
-            block_lr_scale=adjusted_block_lr / reference_block_lr if reference_block_lr != 0.0 else None,
-            embed_lr_scale=adjusted_embed_lr / reference_embed_lr if reference_embed_lr != 0.0 else None,
-            target_lr_over_norm=target_lr_over_norm,
-            actual_block_lr_over_norm=adjusted_block_lr / current_norm,
-            embed_to_block_lr_ratio=embed_to_block_lr_ratio,
-            denominator_parameter_count=len(lrnorm_denominator_params),
-            denominator_total_numel=lrnorm_denominator_numel,
-            norm_scope=target.get('norm_scope', 'transformer.wte.weight + transformer.h.* 2D non-gamma weights, global RMS'),
-        )
-        with open(os.path.join(logdir, 'lrnorm_match_history.jsonl'), 'a') as f:
-            f.write(json.dumps(record) + '\n')
 
 # learning rate decay scheduler (linear warmup, constant plateau, linear warmdown)
 def get_lr(it):
@@ -711,7 +508,7 @@ tensor_name_by_id = {id(p): name for name, p in raw_model.named_parameters() if 
 
 # begin logging
 if master_process:
-    run_id = f'w768_muonhinit_fixed_initial_rms_adamw_jsonelr_{schedule_sha256[:12]}_wd0_simpson3every{args.simpson3_every}_s{args.seed}_' + str(uuid.uuid4())
+    run_id = f'w768_muonhinit_fixed_initial_rms_adamw_jsonelr_{schedule_sha256[:12]}_wd0_s{args.seed}_' + str(uuid.uuid4())
     logdir = 'logs/%s/' % run_id
     os.makedirs(logdir, exist_ok=True)
     logfile = 'logs/%s.txt' % run_id
@@ -749,232 +546,16 @@ def write_tensor_metadata():
     with open(metadata_path, 'w') as f:
         json.dump(tensor_metadata_records(raw_model), f, indent=2)
 
-ACTIVATION_PROBE_FIELDS = (
-    'rms_h_pre',
-    'attn_residual_ratio',
-    'attn_branch_ratio',
-    'mlp_residual_ratio',
-    'mlp_branch_ratio',
-)
-
-def token_rms(x):
-    return torch.sqrt(x.detach().float().square().mean(dim=-1))
-
-def summarize_activation_values(step, layer, field, values):
-    x = values.detach().float()
-    flat = x.reshape(-1)
-    finite = torch.isfinite(flat)
-    finite_values = flat[finite]
-    if finite_values.numel() == 0:
-        stats = dict(mean=float('nan'), std=float('nan'), p05=float('nan'), p50=float('nan'), p95=float('nan'), min=float('nan'), max=float('nan'))
-    else:
-        quantiles = torch.quantile(finite_values, torch.tensor([0.05, 0.5, 0.95], device=finite_values.device))
-        stats = dict(
-            mean=finite_values.mean().item(),
-            std=finite_values.std(unbiased=False).item(),
-            p05=quantiles[0].item(),
-            p50=quantiles[1].item(),
-            p95=quantiles[2].item(),
-            min=finite_values.min().item(),
-            max=finite_values.max().item(),
-        )
-    return dict(
-        step=step,
-        layer=layer,
-        field=field,
-        shape=list(values.shape),
-        nan_count=torch.isnan(flat).sum().item(),
-        inf_count=torch.isinf(flat).sum().item(),
-        **stats,
-    )
-
-class ActivationProbeCapture:
-    def __init__(self, model, eps):
-        self.blocks = list(model.transformer.h)
-        self.eps = eps
-        self.handles = []
-        self.h_pre = [None] * len(self.blocks)
-        self.h_mid = [None] * len(self.blocks)
-        self.records = {field: [None] * len(self.blocks) for field in ACTIVATION_PROBE_FIELDS}
-
-    def __enter__(self):
-        for layer, block in enumerate(self.blocks):
-            self.handles.append(block.register_forward_pre_hook(self._block_pre_hook(layer)))
-            self.handles.append(block.attn.register_forward_hook(self._attn_hook(layer)))
-            self.handles.append(block.mlp.register_forward_hook(self._mlp_hook(layer)))
-        return self
-
-    def __exit__(self, exc_type, exc, tb):
-        for handle in self.handles:
-            handle.remove()
-        self.handles.clear()
-
-    def _block_pre_hook(self, layer):
-        def hook(module, inputs):
-            h_pre = inputs[0].detach()
-            self.h_pre[layer] = h_pre
-            self.records['rms_h_pre'][layer] = token_rms(h_pre)
-        return hook
-
-    def _attn_hook(self, layer):
-        def hook(module, inputs, output):
-            h_pre = self.h_pre[layer]
-            if h_pre is None:
-                raise RuntimeError(f"missing h_l for activation probe layer {layer}")
-            attn_out = output.detach()
-            h_mid = h_pre + attn_out
-            rms_h_pre = self.records['rms_h_pre'][layer]
-            rms_h_mid = token_rms(h_mid)
-            self.h_mid[layer] = h_mid
-            self.records['attn_residual_ratio'][layer] = rms_h_mid / (rms_h_pre + self.eps)
-            self.records['attn_branch_ratio'][layer] = token_rms(attn_out) / (rms_h_pre + self.eps)
-        return hook
-
-    def _mlp_hook(self, layer):
-        def hook(module, inputs, output):
-            h_mid = self.h_mid[layer]
-            if h_mid is None:
-                raise RuntimeError(f"missing h_l+0.5 for activation probe layer {layer}")
-            mlp_out = output.detach()
-            rms_h_mid = token_rms(h_mid)
-            rms_h_post = token_rms(h_mid + mlp_out)
-            self.records['mlp_residual_ratio'][layer] = rms_h_post / (rms_h_mid + self.eps)
-            self.records['mlp_branch_ratio'][layer] = token_rms(mlp_out) / (rms_h_mid + self.eps)
-        return hook
-
-    def stacked_records(self):
-        stacked = {}
-        for field, values_by_layer in self.records.items():
-            missing = [layer for layer, value in enumerate(values_by_layer) if value is None]
-            if missing:
-                raise RuntimeError(f"missing activation probe field {field} for layers {missing}")
-            stacked[field] = torch.stack(values_by_layer, dim=0).detach().cpu()
-        return stacked
-
-def should_log_activation_probe(step):
-    if not master_process or args.activation_probe_every <= 0:
-        return False
-    return step % args.activation_probe_every == 0 or step == args.num_iterations
-
-def build_activation_probe_batch():
-    if not master_process or args.activation_probe_every <= 0:
-        return None
-    val_loader.reset()
-    x_probe, _ = val_loader.next_batch()
-    val_loader.reset()
-    return x_probe.detach().clone()
-
-def activation_probe_token_hash(x_probe):
-    token_bytes = x_probe.detach().cpu().numpy().astype(np.int64).tobytes()
-    return hashlib.sha256(token_bytes).hexdigest()
-
-def write_activation_probe_metadata(x_probe):
-    if x_probe is None:
-        return
-    metadata = dict(
-        probe_source='first validation batch after val_loader.reset()',
-        probe_input_val_bin=args.input_val_bin,
-        probe_batch_shape=list(x_probe.shape),
-        probe_token_sha256=activation_probe_token_hash(x_probe),
-        eps=args.activation_probe_eps,
-        layer_count=len(raw_model.transformer.h),
-        recorded_fields=list(ACTIVATION_PROBE_FIELDS),
-        array_layout='[layer, batch, seq]',
-        logging_cadence=args.activation_probe_every,
-        model_config=dict(
-            n_layer=raw_model.config.n_layer,
-            n_head=raw_model.config.n_head,
-            n_embd=raw_model.config.n_embd,
-            vocab_size=raw_model.config.vocab_size,
-        ),
-    )
-    metadata_path = os.path.join(logdir, 'activation_probe_metadata.json')
-    with open(metadata_path, 'w') as f:
-        json.dump(metadata, f, indent=2)
-
-def maybe_log_activation_probe(step, x_probe):
-    if x_probe is None or not should_log_activation_probe(step):
-        return
-    was_training = raw_model.training
-    raw_model.eval()
-    with torch.no_grad(), ctx, ActivationProbeCapture(raw_model, args.activation_probe_eps) as capture:
-        raw_model(x_probe, targets=None, return_logits=False)
-        arrays = capture.stacked_records()
-    if was_training:
-        raw_model.train()
-    arrays_dir = os.path.join(logdir, 'activation_probe_arrays')
-    os.makedirs(arrays_dir, exist_ok=True)
-    array_path = os.path.join(arrays_dir, f'step_{step:06d}.pt')
-    torch.save(dict(step=step, **arrays), array_path)
-    summary_path = os.path.join(logdir, 'activation_probe_summary.jsonl')
-    with open(summary_path, 'a') as f:
-        for field, values in arrays.items():
-            for layer in range(values.shape[0]):
-                f.write(json.dumps(summarize_activation_values(step, layer, field, values[layer])) + '\n')
-
-SPECTRAL_NORM_ESTIMATE_BLOCK_SIZE = 48
-SPECTRAL_NORM_ESTIMATE_ITERS = 10
-SPECTRAL_NORM_ESTIMATE_METHOD = "batched_power_q48_i10"
-spectral_norm_generator = torch.Generator(device=device)
-spectral_norm_generator.manual_seed(20260525)
-
-def batched_spectral_norm_estimate(matrices):
-    batch, _, cols = matrices.shape
-    vectors = torch.randn(
-        (batch, cols, SPECTRAL_NORM_ESTIMATE_BLOCK_SIZE),
-        device=matrices.device,
-        dtype=matrices.dtype,
-        generator=spectral_norm_generator,
-    )
-    vectors = vectors / torch.linalg.vector_norm(vectors, dim=1, keepdim=True).clamp_min(1e-12)
-    for _ in range(SPECTRAL_NORM_ESTIMATE_ITERS):
-        left_vectors = torch.bmm(matrices, vectors)
-        left_vectors = left_vectors / torch.linalg.vector_norm(left_vectors, dim=1, keepdim=True).clamp_min(1e-12)
-        vectors = torch.bmm(matrices.transpose(1, 2), left_vectors)
-        vectors = vectors / torch.linalg.vector_norm(vectors, dim=1, keepdim=True).clamp_min(1e-12)
-    projections = torch.bmm(matrices, vectors)
-    return torch.linalg.vector_norm(projections, dim=1).max(dim=1).values
-
-def spectral_norm_estimates_by_name(named_tensors):
-    grouped = defaultdict(list)
-    for name, tensor in named_tensors:
-        x = tensor.detach().float()
-        if x.ndim == 2:
-            grouped[tuple(x.shape)].append((name, x))
-    estimates = {}
-    for items in grouped.values():
-        names = [name for name, _ in items]
-        matrices = torch.stack([x for _, x in items], dim=0).contiguous()
-        values = batched_spectral_norm_estimate(matrices)
-        for name, value in zip(names, values):
-            estimates[name] = value.item()
-    return estimates
-
-def tensor_norm_fields(tensor, prefix='', spectral_norm_estimate=None):
+def tensor_norm_fields(tensor, prefix=''):
     x = tensor.detach().float()
-    if x.ndim == 0:
-        return {
-            f'{prefix}abs_value': x.abs().item(),
-            f'{prefix}rms_norm': x.abs().item(),
-        }
-    sq = x.square()
-    fields = {
-        f'{prefix}fro_norm': torch.sqrt(sq.sum()).item(),
-        f'{prefix}rms_norm': torch.sqrt(sq.mean()).item(),
-    }
-    if x.ndim == 2 and args.spectral_norm_estimate_enabled > 0:
-        if spectral_norm_estimate is None:
-            spectral_norm_estimate = batched_spectral_norm_estimate(x.unsqueeze(0).contiguous())[0].item()
-        fields[f'{prefix}spectral_norm_estimate'] = spectral_norm_estimate
-        fields[f'{prefix}spectral_norm_estimate_method'] = SPECTRAL_NORM_ESTIMATE_METHOD
-        fields[f'{prefix}spectral_norm_estimate_block_size'] = SPECTRAL_NORM_ESTIMATE_BLOCK_SIZE
-        fields[f'{prefix}spectral_norm_estimate_iters'] = SPECTRAL_NORM_ESTIMATE_ITERS
-    return fields
+    return {f'{prefix}fro_norm': x.square().sum().sqrt().item(),
+            f'{prefix}rms_norm': x.square().mean().sqrt().item()}
 
-def tensor_norm_record(step, name, tensor, spectral_norm_estimate=None):
-    record = dict(step=step, name=name, shape=list(tensor.shape), ndim=tensor.ndim)
-    record.update(tensor_norm_fields(tensor, spectral_norm_estimate=spectral_norm_estimate))
-    return record
+
+def tensor_norm_record(step, name, tensor):
+    return dict(step=step, name=name, shape=list(tensor.shape), ndim=tensor.ndim,
+                **tensor_norm_fields(tensor))
+
 
 def optimizer_parameter_hparams():
     hparams = {}
@@ -1017,7 +598,7 @@ def adamw_update_tensor(tensor, tensor_before, param_hparams, step, name):
     delta = after - before
     return -(delta + lr * weight_decay * before) / lr
 
-def adamw_update_norm_record(step, name, tensor, adamw_update, param_hparams, spectral_norm_estimate=None):
+def adamw_update_norm_record(step, name, tensor, adamw_update, param_hparams):
     lr = param_hparams['lr']
     weight_decay = param_hparams['weight_decay']
     record = dict(
@@ -1037,72 +618,34 @@ def adamw_update_norm_record(step, name, tensor, adamw_update, param_hparams, sp
     record.update(tensor_norm_fields(
         adamw_update,
         prefix='adamw_update_',
-        spectral_norm_estimate=spectral_norm_estimate,
     ))
     return record
 
 def maybe_log_adamw_update_norms(update_step, update_state):
     if update_state is None:
         return
-    history_path = os.path.join(logdir, 'adamw_update_norm_history.jsonl')
-    hparams = update_state['hparams']
     snapshots = update_state['snapshots']
-    pending_records = []
-    pending_2d_updates = []
-    with torch.no_grad(), open(history_path, 'a') as f:
+    with torch.no_grad(), open(os.path.join(logdir, 'adamw_update_norm_history.jsonl'), 'a') as f:
         for name, tensor in raw_model.named_parameters():
             if not tensor.requires_grad:
                 continue
             param_id = id(tensor)
-            if param_id not in hparams:
-                raise RuntimeError(f"missing optimizer param group mapping for {name}")
-            if param_id not in snapshots:
-                raise RuntimeError(f"missing parameter snapshot for {name}")
             tensor_before = snapshots.pop(param_id)
-            adamw_update = adamw_update_tensor(tensor, tensor_before, hparams[param_id], update_step, name)
-            if args.spectral_norm_estimate_enabled > 0 and adamw_update is not None and adamw_update.ndim == 2:
-                pending_2d_updates.append((name, adamw_update))
-                pending_records.append((name, tensor, adamw_update, hparams[param_id]))
-            else:
-                record = adamw_update_norm_record(update_step, name, tensor, adamw_update, hparams[param_id])
-                f.write(json.dumps(record) + '\n')
-                del record
-            del tensor_before
-        spectral_estimates = spectral_norm_estimates_by_name(pending_2d_updates)
-        for name, tensor, adamw_update, param_hparams in pending_records:
-            record = adamw_update_norm_record(
-                update_step,
-                name,
-                tensor,
-                adamw_update,
-                param_hparams,
-                spectral_norm_estimate=spectral_estimates[name],
-            )
-            f.write(json.dumps(record) + '\n')
-            del record
+            hparams = update_state['hparams'][param_id]
+            update = adamw_update_tensor(tensor, tensor_before, hparams, update_step, name)
+            f.write(json.dumps(adamw_update_norm_record(update_step, name, tensor, update, hparams)) + '\n')
     if snapshots:
-        raise RuntimeError(f"unused AdamW update snapshots: {len(snapshots)}")
+        raise RuntimeError(f'unused AdamW update snapshots: {len(snapshots)}')
+
 
 def maybe_log_tensor_norms(step):
     if not master_process or args.tensor_norm_every <= 0:
         return
     if step % args.tensor_norm_every != 0 and step != args.num_iterations:
         return
-    history_path = os.path.join(logdir, 'tensor_norm_history.jsonl')
-    named_parameters = list(raw_model.named_parameters())
-    spectral_estimates = (
-        spectral_norm_estimates_by_name(named_parameters)
-        if args.spectral_norm_estimate_enabled > 0
-        else {}
-    )
-    with torch.no_grad(), open(history_path, 'a') as f:
-        for name, tensor in named_parameters:
-            f.write(json.dumps(tensor_norm_record(
-                step,
-                name,
-                tensor,
-                spectral_norm_estimate=spectral_estimates.get(name),
-            )) + '\n')
+    with torch.no_grad(), open(os.path.join(logdir, 'tensor_norm_history.jsonl'), 'a') as f:
+        for name, tensor in raw_model.named_parameters():
+            f.write(json.dumps(tensor_norm_record(step, name, tensor)) + '\n')
 
 
 def build_fixed_norm_state(model):
@@ -1146,234 +689,9 @@ def apply_fixed_norm_control(entries, update_step, history_path=None):
                 f.write(json.dumps(record) + '\n')
 
 
-class LCADiagnostic:
-    """Endpoint loss-change attribution on one fixed probe set.
-
-    This deliberately observes parameters before/after an interval rather than
-    reconstructing an optimizer update.  Thus AdamW weight decay, Muon, and
-    any future optimizer changes are all included in delta_theta exactly.
-    Endpoint reuse assumes immutable probes, a deterministic eval forward, and
-    no changing loss/model buffers outside the snapshotted parameters (as here).
-    """
-
-    def __init__(self, model, raw_model, probe_batches, logdir, writer):
-        self.model = model
-        self.probe_batches = [(x.detach().clone(), y.detach().clone()) for x, y in probe_batches]
-        self.logdir = logdir
-        self.writer = writer
-        self.named_params = [(name, p) for name, p in raw_model.named_parameters() if p.requires_grad]
-        # Retain the previous Simpson endpoint across its full interval.
-        self.snapshots = {'simpson3': self._clone_current_state()}
-        self.snapshot_steps = {method: 0 for method in self.snapshots}
-        # Local (not all-reduced) endpoint gradients on the immutable probe.
-        # Cache ownership is independent of p.grad, which training clears/reuses.
-        self.endpoint_cache = None
-        self.cumulative = {
-            method: dict(
-                exact_loss_change=0.0,
-                sum_attribution=0.0,
-                residual=0.0,
-                absolute_loss_change=0.0,
-                absolute_residual=0.0,
-            )
-            for method in self.snapshots
-        }
-        self.snapshot = None
-        self.snapshot_step = None
-        self.history_path = os.path.join(logdir, 'lca_decomposition.jsonl') if writer else None
-        metadata = dict(
-            probe_batches=len(self.probe_batches),
-            local_probe_batch_size=B,
-            global_probe_batch_size=B * ddp_world_size,
-            probe_tokens_per_interval=B * T * ddp_world_size * len(self.probe_batches),
-            methods=dict(simpson3_every=args.simpson3_every),
-            endpoint_gradient_cache=True,
-            distributed_reduction='packed local Simpson attributions and endpoint losses',
-            definition='fixed-probe endpoint attribution; theta_mid is the parameter-space chord midpoint',
-            parameters=[dict(name=name, shape=list(p.shape), numel=p.numel()) for name, p in self.named_params],
-        )
-        if writer:
-            with open(os.path.join(logdir, 'lca_metadata.json'), 'w') as f:
-                json.dump(metadata, f, indent=2)
-
-    def _clone_current_state(self):
-        return {name: p.detach().clone() for name, p in self.named_params}
-
-    @torch.no_grad()
-    def _load_interpolation(self, end_state, alpha):
-        for name, p in self.named_params:
-            start = self.snapshot[name]
-            end = end_state[name]
-            if alpha == 0.0:
-                p.copy_(start)
-            elif alpha == 1.0:
-                p.copy_(end)
-            else:
-                p.copy_(torch.lerp(start, end, alpha))
-
-    @torch.no_grad()
-    def _restore_end_state(self, end_state):
-        for name, p in self.named_params:
-            p.copy_(end_state[name])
-
-    @torch.no_grad()
-    def _local_attributions(self, gradients, end_state):
-        return torch.stack([
-            torch.sum(gradients[name].float() *
-                      (end_state[name].float() - self.snapshot[name].float()))
-            for name, _ in self.named_params
-        ])
-
-    def _evaluate(self, end_state, alpha, cache_endpoint=False):
-        self._load_interpolation(end_state, alpha)
-        self.model.zero_grad(set_to_none=True)
-        loss_sum = torch.zeros((), device=device, dtype=torch.float32)
-        for x_probe, y_probe in self.probe_batches:
-            # Use compiled execution; keep gradients local for scalar reduction.
-            # DDP no_sync must cover both forward and backward.
-            sync_context = self.model.no_sync() if use_ddp else contextlib.nullcontext()
-            with sync_context:
-                with ctx:
-                    _, loss = self.model(x_probe, y_probe, return_logits=False)
-                loss_sum.add_(loss.detach().float())
-                (loss / len(self.probe_batches)).backward()
-        mean_loss = loss_sum / len(self.probe_batches)
-        gradients = {}
-        for name, p in self.named_params:
-            if p.grad is None:
-                raise RuntimeError(f'LCA gradient missing for {name}')
-            gradients[name] = p.grad.detach()
-        attributions = self._local_attributions(gradients, end_state)
-        cached_gradients = {name: g.clone() for name, g in gradients.items()} if cache_endpoint else None
-        self.model.zero_grad(set_to_none=True)
-        return mean_loss, attributions, cached_gradients
-
-    def should_run(self, method, update_step):
-        if method != 'simpson3':
-            raise ValueError(f'unknown LCA method: {method}')
-        every = args.simpson3_every
-        return every > 0 and update_step % every == 0
-
-    def _write_records(self, method, end_step, loss_start, loss_end, attributions, end_state):
-        exact_change = loss_end - loss_start
-        total = sum(attributions.values())
-        residual = exact_change - total
-        denominator = exact_change if abs(exact_change) > args.lca_fraction_eps else None
-        cumulative = self.cumulative[method]
-        cumulative['exact_loss_change'] += exact_change
-        cumulative['sum_attribution'] += total
-        cumulative['residual'] += residual
-        cumulative['absolute_loss_change'] += abs(exact_change)
-        cumulative['absolute_residual'] += abs(residual)
-        if not self.writer:
-            return
-        common = dict(method=method, step_start=self.snapshot_step, step_end=end_step,
-                      interval_updates=end_step - self.snapshot_step, probe_loss_start=loss_start,
-                      probe_loss_end=loss_end, exact_loss_change=exact_change,
-                      sum_attribution=total, residual=residual)
-        with open(self.history_path, 'a') as f:
-            for name, p in self.named_params:
-                if not args.lca_include_vectors and p.ndim < 2:
-                    continue
-                delta_norm = torch.linalg.vector_norm(
-                    end_state[name].float() - self.snapshot[name].float()).item()
-                attribution = attributions[name]
-                f.write(json.dumps(dict(
-                    **common, record_type='parameter', parameter_name=name,
-                    parameter_kind='matrix' if p.ndim == 2 else 'vector',
-                    shape=list(p.shape), numel=p.numel(), attribution=attribution,
-                    attribution_fraction=(attribution / denominator) if denominator is not None else None,
-                    delta_param_norm=delta_norm,
-                )) + '\n')
-            f.write(json.dumps(dict(**common, record_type='global', parameter_name='__global__',
-                                    attribution=total,
-                                    attribution_fraction=(total / denominator) if denominator is not None else None,
-                                    cumulative_exact_loss_change=cumulative['exact_loss_change'],
-                                    cumulative_sum_attribution=cumulative['sum_attribution'],
-                                    cumulative_residual=cumulative['residual'],
-                                    cumulative_absolute_loss_change=cumulative['absolute_loss_change'],
-                                    cumulative_absolute_residual=cumulative['absolute_residual'],
-                                    cumulative_relative_residual=(
-                                        abs(cumulative['residual']) / cumulative['absolute_loss_change']
-                                        if cumulative['absolute_loss_change'] > args.lca_fraction_eps else None
-                                    ))) + '\n')
-
-    def run(self, method, end_step):
-        self.snapshot = self.snapshots[method]
-        self.snapshot_step = self.snapshot_steps[method]
-        end_state = self._clone_current_state()
-        was_training = self.model.training
-        self.model.eval()
-        try:
-            if self.endpoint_cache is not None and self.endpoint_cache['step'] == self.snapshot_step:
-                loss_start = self.endpoint_cache['loss']
-                grad_start = self._local_attributions(self.endpoint_cache['gradients'], end_state)
-            else:
-                loss_start, grad_start, _ = self._evaluate(end_state, 0.0)
-            _, grad_mid, _ = self._evaluate(end_state, 0.5)
-            loss_end, grad_end, endpoint_gradients = self._evaluate(end_state, 1.0, cache_endpoint=True)
-            local_attributions = (grad_start + 4.0 * grad_mid + grad_end) / 6.0
-            # All ranks share endpoints; linearity lets us reduce scalar inner
-            # products instead of full gradients. Probe token counts are equal.
-            packed = torch.cat((loss_start.reshape(1), loss_end.reshape(1), local_attributions))
-            if use_ddp:
-                dist.all_reduce(packed, op=dist.ReduceOp.SUM)
-                packed.div_(ddp_world_size)
-            values = packed.tolist()
-            attributions = {name: value for (name, _), value in zip(self.named_params, values[2:])}
-            self._write_records(method, end_step, values[0], values[1], attributions, end_state)
-        finally:
-            self._restore_end_state(end_state)
-            self.model.zero_grad(set_to_none=True)
-            if was_training:
-                self.model.train()
-        self.snapshots[method] = end_state
-        self.snapshot_steps[method] = end_step
-        # Commit the cache only after successful evaluation/output/restoration.
-        self.endpoint_cache = dict(step=end_step, loss=loss_end.detach().clone(), gradients=endpoint_gradients)
-
-    def maybe_run(self, update_step):
-        if self.any_due(update_step):
-            self.run('simpson3', update_step)
-
-    def any_due(self, update_step):
-        return self.should_run('simpson3', update_step)
-
 fixed_norm_state = build_fixed_norm_state(raw_model)
 fixed_norm_history_path = os.path.join(logdir, 'norm_control_history.jsonl') if master_process else None
-if master_process:
-    with open(os.path.join(logdir, 'norm_control_metadata.json'), 'w') as f:
-        json.dump(dict(mode='fixed_initial_rms', start_step=0, weight_decay=args.weight_decay,
-                       elr_scope='all trainable tensors including gamma',
-                       elr_schedule='explicit_per_update_json', schedule_sha256=schedule_sha256, branch=cli.branch,
-                       checkpoint_step=cli.fork_step, schedule_units='absolute RMS-ELR values; no implicit warmup',
-                       block_init='normal_std_1_over_sqrt_fan_in',
-                       parameters=[dict(name=e['name'], target_rms=e['target_rms'].item())
-                                   for e in fixed_norm_state]), f, indent=2)
-
-activation_probe_x = build_activation_probe_batch()
 write_tensor_metadata()
-write_activation_probe_metadata(activation_probe_x)
-
-lca_enabled = args.simpson3_every > 0
-if lca_enabled and args.lca_probe_batches <= 0:
-    raise ValueError('lca_probe_batches must be positive when an LCA diagnostic is enabled')
-if lca_enabled:
-    # Every rank reads a disjoint local validation batch. LCA attributions and
-    # losses are explicitly averaged across ranks, so the probe has the same
-    # global batch size as training: 2 ranks x 256 sequences = 512.
-    lca_probe_loader = DistributedDataLoader(args.input_val_bin, B, T, ddp_rank, ddp_world_size)
-    lca_probe_loader.reset()
-    lca_probe_batches = [lca_probe_loader.next_batch() for _ in range(args.lca_probe_batches)]
-    lca_diagnostic = LCADiagnostic(
-        model,
-        raw_model,
-        lca_probe_batches,
-        logdir if master_process else None,
-        writer=master_process,
-    )
-else:
-    lca_diagnostic = None
 
 def checkpoint_tree(value, target_device='cpu'):
     if isinstance(value, torch.Tensor):
@@ -1405,10 +723,6 @@ def restore_loader(loader, state):
 def capture_training_state(step, x, y):
     if any(p.grad is not None for p in raw_model.parameters()):
         raise RuntimeError('checkpoint must be between complete optimizer updates')
-    lca_state = None
-    if lca_diagnostic is not None:
-        lca_state = {key: getattr(lca_diagnostic, key) for key in
-                     ('probe_batches', 'snapshots', 'snapshot_steps', 'endpoint_cache', 'cumulative')}
     return checkpoint_tree(dict(
         version=1, step=step, branch=cli.branch, fork_step=cli.fork_step, schedule_sha256=schedule_sha256,
         config=vars(args), model_config=vars(raw_model.config),
@@ -1417,17 +731,21 @@ def capture_training_state(step, x, y):
         schedulers=[s.state_dict() for s in schedulers],
         targets={e['name']: e['target_rms'] for e in fixed_norm_state},
         train_loader=loader_state(train_loader), val_loader=loader_state(val_loader),
-        next_batch=(x, y), lca=lca_state,
+        next_batch=(x, y),
         rng=dict(python=random.getstate(), numpy=np.random.get_state(),
                  torch=torch.get_rng_state(), cuda=torch.cuda.get_rng_state_all()),
         torch_version=str(torch.__version__), cuda_version=torch.version.cuda,
         source_sha256=hashlib.sha256(code.encode()).hexdigest()))
 
 def restore_training_state(state):
-    if state['version'] != 1 or state['config'] != vars(args) or state['model_config'] != vars(raw_model.config):
+    previous_source = state['source_sha256'] == PREVIOUS_RUNNER_SOURCE_SHA256
+    saved_config = state['config']
+    if previous_source:
+        saved_config = {k: v for k, v in saved_config.items() if k not in RETIRED_CONFIG_FIELDS}
+    if state['version'] != 1 or saved_config != vars(args) or state['model_config'] != vars(raw_model.config):
         raise RuntimeError('checkpoint configuration mismatch')
-    if state['source_sha256'] not in {LEGACY_CONSTANT_SOURCE_SHA256, LEGACY_JSON_SOURCE_SHA256, hashlib.sha256(code.encode()).hexdigest()}:
-        raise RuntimeError('unsupported checkpoint source; expected audited constant/JSON predecessor or this exact JSON runner')
+    if not previous_source and state['source_sha256'] != hashlib.sha256(code.encode()).hexdigest():
+        raise RuntimeError('unsupported checkpoint source')
     if state['torch_version'] != str(torch.__version__) or state['cuda_version'] != torch.version.cuda:
         raise RuntimeError('checkpoint PyTorch/CUDA version mismatch')
     if state['step'] != cli.fork_step:
@@ -1445,12 +763,7 @@ def restore_training_state(state):
         entry['target_rms'] = state['targets'][entry['name']].to(device)
     restore_loader(train_loader, state['train_loader'])
     restore_loader(val_loader, state['val_loader'])
-    if (state['lca'] is None) != (lca_diagnostic is None):
-        raise RuntimeError('checkpoint LCA configuration mismatch')
-    if lca_diagnostic is not None:
-        for key, value in state['lca'].items():
-            setattr(lca_diagnostic, key, checkpoint_tree(value, device))
-    # Restore RNG last, after constructing and loading model, optimizers and probes.
+    # Restore RNG after model, optimizers and loaders.
     random.setstate(state['rng']['python'])
     np.random.set_state(state['rng']['numpy'])
     torch.set_rng_state(state['rng']['torch'])
@@ -1489,7 +802,7 @@ if cli.resume:
     if master_process:
         (Path(logdir) / 'resume_metadata.json').write_text(json.dumps(dict(
             checkpoint=str(cli.resume.resolve()), next_update=start_step+1,
-            branch=cli.branch, schedule_sha256=schedule_sha256, cumulative_lca_includes_prefix=True), indent=2))
+            branch=cli.branch, schedule_sha256=schedule_sha256), indent=2))
 
 if master_process:
     (Path(logdir) / 'schedule.json').write_text(schedule_text, encoding='utf-8')
@@ -1545,19 +858,7 @@ for step in range(start_step, args.num_iterations + 1):
         torch.cuda.synchronize()
         t0 = time.time()
 
-    if master_process and args.save_every > 0 and (last_step or step % args.save_every == 0):
-        # stop the clock
-        torch.cuda.synchronize()
-        training_time_ms += 1000 * (time.time() - t0)
-        # save the state of the training process
-        log = dict(step=step, code=code, model=raw_model.state_dict(), optimizers=[opt.state_dict() for opt in optimizers])
-        torch.save(log, 'logs/%s/state_step%06d.pt' % (run_id, step))
-        # start the clock again
-        torch.cuda.synchronize()
-        t0 = time.time()
-
     maybe_log_tensor_norms(step)
-    maybe_log_activation_probe(step, activation_probe_x)
 
     # bit confusing: we want to make sure to eval on 0th iteration
     # but also after the very last iteration. so we loop for step <= num_iterations
@@ -1593,19 +894,10 @@ for step in range(start_step, args.num_iterations + 1):
         opt.step()
         sched.step()
     maybe_log_adamw_update_norms(update_step, adamw_update_state)
-    # Record raw AdamW telemetry above, then project before the LCA endpoint.
+    # Log raw AdamW update norms before fixed-RMS projection.
     apply_fixed_norm_control(fixed_norm_state, update_step, fixed_norm_history_path)
     # null the gradients
     model.zero_grad(set_to_none=True)
-    # These diagnostics never inspect optimizer state: they compare the live
-    # endpoint with their own prior parameter snapshot on fixed probe tokens.
-    lca_due = lca_enabled and lca_diagnostic.any_due(update_step)
-    if lca_due:
-        lca_diagnostic.maybe_run(update_step)
-    # All ranks participate in the packed attribution all-reduce; this barrier
-    # only makes the boundary explicit before the next DDP training update.
-    if use_ddp and lca_due:
-        dist.barrier()
     # --------------- TRAINING SECTION END -------------------
     # everything that follows now is just diagnostics, prints, logging, etc.
 

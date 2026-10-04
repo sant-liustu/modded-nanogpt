@@ -6,7 +6,7 @@ CASE=${1:?Usage: bash run_case.sh C|E|A|M|EA|EM|AM|EAM [runner arguments]}
 case "$CASE" in C|E|A|M|EA|EM|AM|EAM) ;; *) echo "Unknown case: $CASE" >&2; exit 2 ;; esac
 shift
 cd -- "$REPO"
-CKPT=${ELR_FORK_CHECKPOINT:-checkpoints/json_w768_warmup250}
+CKPT=${ELR_FORK_CHECKPOINT:-checkpoints/json_w768_train_warmup250}
 RESUME_ARGS=(--resume "$CKPT")
 for ARG in "$@"; do
   if [[ "$ARG" == --resume || "$ARG" == --resume=* ]]; then
@@ -17,7 +17,7 @@ for ARG in "$@"; do
 done
 python3 - "$CKPT" <<'PY'
 import ast, json, pathlib, sys
-p = pathlib.Path('experiments/eta_lambda_invariance/train_gpt2_w768_muonhinit_fixednorm_jsonelr_chord_lca.py')
+p = pathlib.Path('experiments/eta_lambda_invariance/train_gpt2_w768_muonhinit_fixednorm_jsonelr.py')
 tree = ast.parse(p.read_text(encoding='utf-8'))
 config = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == 'Hyperparameters')
 seed = next(n.value for n in config.body if isinstance(n, ast.AnnAssign) and isinstance(n.target, ast.Name) and n.target.id == 'seed')
@@ -34,5 +34,5 @@ if sys.argv[1]:
 PY
 printf 'Starting %s, seed=0, using %s (checkpoint options forwarded to runner)\n' "$CASE" "$HERE/$CASE.json"
 exec torchrun --standalone --nproc_per_node=2 \
-  experiments/eta_lambda_invariance/train_gpt2_w768_muonhinit_fixednorm_jsonelr_chord_lca.py \
+  experiments/eta_lambda_invariance/train_gpt2_w768_muonhinit_fixednorm_jsonelr.py \
   --schedule-json "$HERE/$CASE.json" "${RESUME_ARGS[@]}" "$@"
