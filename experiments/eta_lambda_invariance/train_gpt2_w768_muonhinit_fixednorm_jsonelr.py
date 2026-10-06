@@ -284,7 +284,8 @@ class Hyperparameters:
     expected_world_size : int = 2
     sequence_length : int = 1024 # sequence length, in tokens
     num_iterations : int = 20400 # same total training tokens as 5100 updates at global batch512
-    embed_learning_rate : float = 0.0036 # legacy placeholder; per-tensor ELR sets actual LR
+    embed_learning_rate : float = 0.0036 # matrix LR is overwritten by JSON ELR
+    gamma_learning_rate : float = 0.0018 # original absolute LR; warmup then constant
     warmup_iters : int = 1000 # same warmup token budget as 250 updates at batch512
     warmdown_iters : int = 5800 # legacy scheduler setting; actual tensor ELR comes from JSON
     weight_decay : float = 0.0 # fixed-initial-RMS arm: no weight decay
@@ -435,7 +436,7 @@ model = model.cuda()
 # Keep clean parameter names while the execution model is compiled and wrapped.
 raw_model = model
 tensor_elr_schedule = load_tensor_elr_schedule(schedule_document,
-    [n for n, p in raw_model.named_parameters() if p.requires_grad], cli.fork_step, args.num_iterations)
+    [n for n, p in raw_model.named_parameters() if p.requires_grad and p.ndim >= 2], cli.fork_step, args.num_iterations)
 if hasattr(config, "coordinate_descent_tuning"):
     config.coordinate_descent_tuning = True # suggested by @Chillee
 if args.compile_model:
@@ -470,7 +471,7 @@ optimizer2_groups = []
 for p in block_parameters:
     optimizer2_groups.append(dict(params=[p], weight_decay=args.weight_decay))
 for p in rmsnorm_gamma_parameters:
-    optimizer2_groups.append(dict(params=[p], weight_decay=0.0))
+    optimizer2_groups.append(dict(params=[p], lr=args.gamma_learning_rate, weight_decay=0.0))
 optimizer2 = torch.optim.AdamW(optimizer2_groups, lr=0.5 * args.embed_learning_rate / width_multiplier, betas=(0.9, 0.95),
                                fused=True)
 optimizers = [optimizer1, optimizer2]
@@ -483,7 +484,7 @@ schedulers = [torch.optim.lr_scheduler.LambdaLR(opt, get_lr) for opt in optimize
 
 @torch.no_grad()
 def apply_tensor_rms_elr(optimizers, update_step, history_path=None):
-    """Set LR from pre-update RMS; update 1 uses the first warmup value."""
+    """Matrices use JSON ELR; gamma uses absolute LR, independent of its RMS."""
     records = []
     for opt in optimizers:
         for group in opt.param_groups:
@@ -493,11 +494,15 @@ def apply_tensor_rms_elr(optimizers, update_step, history_path=None):
             rms = p.detach().float().square().mean().sqrt().item()
             if not math.isfinite(rms) or rms <= 0:
                 raise RuntimeError('per-tensor RMS-ELR requires finite positive RMS')
-            target = tensor_elr_schedule[update_step][tensor_name_by_id[id(p)]]
-            group['lr'] = target * rms
+            is_gamma = id(p) in rmsnorm_gamma_param_ids
+            target = None if is_gamma else tensor_elr_schedule[update_step][tensor_name_by_id[id(p)]]
+            # Use the global update index so resume starts at the correct LR.
+            group['lr'] = (args.gamma_learning_rate * get_lr(update_step - 1)
+                           if is_gamma else target * rms)
             if history_path is not None:
                 records.append(dict(step=update_step, name=tensor_name_by_id[id(p)],
                                     target_rms_elr=target, pre_update_rms=rms,
+                                    lr_policy='absolute_gamma_lr' if is_gamma else 'json_rms_elr',
                                     lr=group['lr'], actual_rms_elr=group['lr']/rms))
     if history_path is not None:
         with open(history_path, 'a') as f:
@@ -738,6 +743,8 @@ def capture_training_state(step, x, y):
         source_sha256=hashlib.sha256(code.encode()).hexdigest()))
 
 def restore_training_state(state):
+    if state['config'].get('gamma_learning_rate') != args.gamma_learning_rate:
+        raise RuntimeError('checkpoint uses the old gamma ELR policy; regenerate the shared warmup with absolute gamma LR')
     previous_source = state['source_sha256'] == PREVIOUS_RUNNER_SOURCE_SHA256
     saved_config = state['config']
     if previous_source:

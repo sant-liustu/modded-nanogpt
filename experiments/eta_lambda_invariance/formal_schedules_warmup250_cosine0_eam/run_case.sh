@@ -6,7 +6,7 @@ CASE=${1:?Usage: bash run_case.sh C|E|A|M|EA|EM|AM|EAM [runner arguments]}
 case "$CASE" in C|E|A|M|EA|EM|AM|EAM) ;; *) echo "Unknown case: $CASE" >&2; exit 2 ;; esac
 shift
 cd -- "$REPO"
-CKPT=${ELR_FORK_CHECKPOINT:-checkpoints/json_w768_B128_warmup1000}
+CKPT=${ELR_FORK_CHECKPOINT:-checkpoints/json_w768_B128_warmup1000_gamma_lr}
 RESUME_ARGS=(--resume "$CKPT")
 for ARG in "$@"; do
   if [[ "$ARG" == --resume || "$ARG" == --resume=* ]]; then
@@ -33,6 +33,12 @@ if sys.argv[1]:
         raise SystemExit('Shared warmup checkpoint rank files are incomplete.')
 PY
 printf 'Starting %s, seed=0, using %s (checkpoint options forwarded to runner)\n' "$CASE" "$HERE/$CASE.json"
-exec torchrun --standalone --nproc_per_node=2 \
+# Always expose exactly two devices, even on an eight-GPU host.
+IFS=',' read -r -a VISIBLE_GPUS <<< "${CUDA_VISIBLE_DEVICES:-0,1}"
+if (( ${#VISIBLE_GPUS[@]} < 2 )); then
+  echo 'This experiment requires two visible GPUs.' >&2; exit 2
+fi
+export CUDA_VISIBLE_DEVICES="${VISIBLE_GPUS[0]},${VISIBLE_GPUS[1]}"
+exec torchrun --standalone --nnodes=1 --nproc_per_node=2 \
   experiments/eta_lambda_invariance/train_gpt2_w768_muonhinit_fixednorm_jsonelr.py \
   --schedule-json "$HERE/$CASE.json" "${RESUME_ARGS[@]}" "$@"
