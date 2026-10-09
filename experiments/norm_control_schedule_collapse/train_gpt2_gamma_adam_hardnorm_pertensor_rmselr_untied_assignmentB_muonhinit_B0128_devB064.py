@@ -1,8 +1,8 @@
-# Untied experiment 2A: Adam hard-norm stress-test arm with the heterogeneous RMS-ELR profile.
+# Untied experiment 2B: Adam hard-norm stress-test arm with the heterogeneous RMS-ELR profile.
 # MuonH-compatible initialization; RMS ELR targets drive the per-tensor LR.
 # Every controlled tensor is projected after each update to its assigned,
 # deterministic hard RMS trajectory captured from its step-0 RMS.
-# Dedicated single-GPU B128 runner: no DDP and no gradient accumulation.
+# Two-GPU DDP runner: global B128, per-device B64, no gradient accumulation.
 import os
 import random
 import sys
@@ -375,7 +375,7 @@ class Hyperparameters:
     input_val_bin : str = 'data/fineweb10B/fineweb_val_*.bin' # input .bin to eval validation loss on
     # optimization hyperparams
     batch_size : int = 128 # batch size, in sequences, across all devices
-    device_batch_size : int = 128 # single-GPU per-device batch; must equal batch_size
+    device_batch_size : int = 64 # per-device batch; two GPUs give global batch 128
     sequence_length : int = 1024 # sequence length, in tokens
     num_iterations : int = 20400 # number of iterations to run
     embed_learning_rate : float = 0.0036
@@ -393,7 +393,7 @@ class Hyperparameters:
     spectral_norm_estimate_enabled : int = 1 # whether to estimate 2D spectral norms in tensor/update norm histories
     activation_probe_eps : float = 1e-12 # denominator epsilon for activation RMS ratios
     seed : int = 0
-    norm_control_config : str = 'experiments/norm_control_schedule_collapse/hardnorm_assignment_pertensor_untied_A.json'
+    norm_control_config : str = 'experiments/norm_control_schedule_collapse/hardnorm_assignment_pertensor_untied_B.json'
     per_tensor_elr_file : str = 'experiments/norm_control_schedule_collapse/rmselr_mixed_attncos_mlpwsd_peak005_007_untied_B0128_20400.jsonl.gz'
     per_tensor_elr_log_every : int = 1
 args = Hyperparameters()
@@ -487,22 +487,23 @@ np.random.seed(args.seed)
 torch.manual_seed(args.seed)
 torch.cuda.manual_seed_all(args.seed)
 
-# fixed single-GPU setup. A multi-rank launch would change the experiment.
+# Require the intended two-GPU topology before initializing the process group.
 assert torch.cuda.is_available()
 requested_world_size = int(os.environ.get('WORLD_SIZE', '1'))
 requested_rank = int(os.environ.get('RANK', '0'))
 requested_local_rank = int(os.environ.get('LOCAL_RANK', '0'))
-if requested_world_size != 1 or requested_rank != 0 or requested_local_rank != 0:
+if requested_world_size != 2 or requested_rank not in (0, 1) or requested_local_rank not in (0, 1):
     raise RuntimeError(
-        'B0128_devB128 scripts require exactly one process on one GPU: '
-        'WORLD_SIZE=1, RANK=0, LOCAL_RANK=0. Do not launch with --nproc_per_node=2.'
+        'B0128_devB064 scripts require WORLD_SIZE=2; '
+        'launch with torchrun --standalone --nproc_per_node=2.'
     )
-use_ddp = False
-ddp_rank = 0
-ddp_local_rank = 0
-ddp_world_size = 1
+use_ddp = True
+ddp_rank = requested_rank
+ddp_local_rank = requested_local_rank
+ddp_world_size = requested_world_size
 device = f'cuda:{ddp_local_rank}'
 torch.cuda.set_device(device)
+dist.init_process_group(backend='nccl')
 print(f"using device: {device}")
 master_process = (ddp_rank == 0) # this process will do logging, checkpointing etc.
 
@@ -516,8 +517,8 @@ assert args.batch_size % (B * ddp_world_size) == 0
 train_accumulation_steps = args.batch_size // (B * ddp_world_size)
 if train_accumulation_steps != 1:
     raise RuntimeError(
-        'B0128_devB128 scripts require batch_size=128 and device_batch_size=128 '
-        'on one GPU, so gradient accumulation must equal 1.'
+        'B0128_devB064 scripts require global batch = 2 * per-device batch '
+        'so gradient accumulation must equal 1.'
     )
 
 # load tokens

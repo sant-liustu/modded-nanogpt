@@ -1,7 +1,9 @@
-"""CUDA smoke test for both untied hard-norm ELR-govern stress-test runners."""
+"""Two-rank smoke; --cpu-ddp uses Gloo when two CUDA/NCCL devices are unavailable."""
 
 from __future__ import annotations
 
+import argparse
+import socket
 import json
 import gzip
 import math
@@ -17,11 +19,11 @@ import numpy as np
 HERE = Path(__file__).resolve().parent
 VARIANTS = (
     ("untied_A",
-     "train_gpt2_gamma_adam_hardnorm_pertensor_rmselr_untied_assignmentA_muonhinit_B0128_devB128.py",
+     "train_gpt2_gamma_adam_hardnorm_pertensor_rmselr_untied_assignmentA_muonhinit_B0128_devB064.py",
      "hardnorm_assignment_pertensor_untied_A.json",
      "rmselr_mixed_attncos_mlpwsd_peak005_007_untied_B0128_20400.jsonl.gz", 20260903),
     ("untied_B",
-     "train_gpt2_gamma_adam_hardnorm_pertensor_rmselr_untied_assignmentB_muonhinit_B0128_devB128.py",
+     "train_gpt2_gamma_adam_hardnorm_pertensor_rmselr_untied_assignmentB_muonhinit_B0128_devB064.py",
      "hardnorm_assignment_pertensor_untied_B.json",
      "rmselr_mixed_attncos_mlpwsd_peak005_007_untied_B0128_20400.jsonl.gz", 20260904),
 )
@@ -42,7 +44,7 @@ def replace_once(source: str, old: str, new: str, label: str) -> str:
     return source.replace(old, new, 1)
 
 
-def make_tiny_source(source_path: Path, output_path: Path) -> None:
+def make_tiny_source(source_path: Path, output_path: Path, cpu_ddp: bool = False) -> None:
     source = source_path.read_text(encoding="utf-8")
     replacements = (
         (
@@ -50,7 +52,7 @@ def make_tiny_source(source_path: Path, output_path: Path) -> None:
             "    batch_size : int = 2 # batch size, in sequences, across all devices",
             "global batch",
         ),
-        ("device_batch_size : int = 128", "device_batch_size : int = 2", "device batch"),
+        ("device_batch_size : int = 64", "device_batch_size : int = 1", "device batch"),
         ("sequence_length : int = 1024", "sequence_length : int = 16", "sequence length"),
         ("num_iterations : int = 20400", "num_iterations : int = 4", "update count"),
         ("warmup_iters : int = 1000", "warmup_iters : int = 1", "warmup"),
@@ -90,6 +92,30 @@ def make_tiny_source(source_path: Path, output_path: Path) -> None:
         "assert torch.equal(raw_model.transformer.wte.weight, raw_model.lm_head.weight)\n"
         "ctx = torch.amp.autocast",
     )
+    source = source.replace(
+        "if use_ddp:\n    dist.destroy_process_group()",
+        "if use_ddp:\n"
+        "    flat = torch.cat([p.detach().flatten() for p in raw_model.parameters()])\n"
+        "    gathered = [torch.empty_like(flat) for _ in range(ddp_world_size)]\n"
+        "    dist.all_gather(gathered, flat)\n"
+        "    assert torch.equal(gathered[0], gathered[1]), 'rank parameters diverged'\n"
+        "    dist.destroy_process_group()",
+    )
+    if cpu_ddp:
+        source = source.replace("assert torch.cuda.is_available()", "assert dist.is_gloo_available()")
+        source = source.replace("device = f'cuda:{ddp_local_rank}'", "device = 'cpu'")
+        source = source.replace("torch.cuda.set_device(device)", "torch.set_num_threads(1)")
+        source = source.replace("backend='nccl'", "backend='gloo'")
+        source = source.replace("return x.cuda(), y.cuda()", "return x, y")
+        source = source.replace("model = model.cuda()", "model = model.cpu()")
+        source = source.replace("device_ids=[ddp_local_rank]", "device_ids=None")
+        source = source.replace("ctx = torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16)",
+                                "ctx = contextlib.nullcontext()")
+        source = source.replace("fused=True", "fused=False")
+        source = source.replace("torch.cuda.synchronize()", "pass")
+        source = source.replace("torch.cuda.max_memory_allocated()", "0")
+        source = source.replace("dist.all_reduce(val_loss, op=dist.ReduceOp.AVG)",
+                                "dist.all_reduce(val_loss, op=dist.ReduceOp.SUM); val_loss /= ddp_world_size")
     output_path.write_text(source, encoding="utf-8")
 
 
@@ -165,10 +191,10 @@ def validate_static_inputs(
     expected_seed: int,
 ) -> None:
     source = source_path.read_text(encoding="utf-8")
-    if "device_batch_size : int = 128" not in source:
-        raise AssertionError(f"{source_path.name} is not a B0128_devB128 runner")
-    if "requested_world_size != 1" not in source or "train_accumulation_steps != 1" not in source:
-        raise AssertionError(f"{source_path.name} does not enforce one-GPU direct B128 execution")
+    if "device_batch_size : int = 64" not in source:
+        raise AssertionError(f"{source_path.name} is not a B0128_devB064 runner")
+    if "requested_world_size != 2" not in source or "train_accumulation_steps != 1" not in source:
+        raise AssertionError(f"{source_path.name} does not enforce two-GPU direct B128 execution")
     if f"norm_control_config : str = 'experiments/norm_control_schedule_collapse/{config_path.name}'" not in source:
         raise AssertionError(f"wrong default assignment config in {source_path.name}")
     if f"per_tensor_elr_file : str = 'experiments/norm_control_schedule_collapse/{target_name}'" not in source:
@@ -250,6 +276,9 @@ def validate_run(run_dir: Path, names: list[str], assignments: dict[str, str]) -
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--cpu-ddp", action="store_true")
+    options = parser.parse_args()
     arm_a = (HERE / VARIANTS[0][1]).read_text(encoding="utf-8")
     arm_b = (HERE / VARIANTS[1][1]).read_text(encoding="utf-8")
     assert arm_a.replace("experiment 2A", "experiment 2B").replace(
@@ -293,7 +322,7 @@ def main() -> None:
             run_dir = temp_dir / label
             run_dir.mkdir()
             tiny_script = run_dir / "train_smoke.py"
-            make_tiny_source(HERE / script_name, tiny_script)
+            make_tiny_source(HERE / script_name, tiny_script, options.cpu_ddp)
             assignments = write_tiny_config(run_dir / "hardnorm.json", names)
             payload = json.loads((run_dir / "hardnorm.json").read_text())
             formal = json.loads((HERE / config_name).read_text())
@@ -314,17 +343,37 @@ def main() -> None:
             environment.setdefault("PYTHONUTF8", "1")
             for distributed_variable in ("RANK", "WORLD_SIZE", "LOCAL_RANK", "MASTER_ADDR", "MASTER_PORT"):
                 environment.pop(distributed_variable, None)
-            subprocess.run(command, cwd=run_dir, env=environment, check=True)
+            with socket.socket() as listener:
+                listener.bind(("127.0.0.1", 0))
+                port = listener.getsockname()[1]
+            processes = []
+            for rank in range(2):
+                rank_env = environment | {
+                    "WORLD_SIZE": "2", "RANK": str(rank), "LOCAL_RANK": str(rank),
+                    "MASTER_ADDR": "127.0.0.1", "MASTER_PORT": str(port),
+                    "USE_LIBUV": "0", "OMP_NUM_THREADS": "1",
+                }
+                processes.append(subprocess.Popen(command, cwd=run_dir, env=rank_env))
+            try:
+                for process in processes:
+                    if process.wait(timeout=120) != 0:
+                        raise RuntimeError("DDP smoke rank failed")
+            finally:
+                for process in processes:
+                    if process.poll() is None:
+                        process.kill()
+                        process.wait()
+
             log_dirs = [path for path in (run_dir / "logs").iterdir() if path.is_dir()]
             if len(log_dirs) != 1:
                 raise AssertionError(f"expected one smoke log directory for {label}, got {log_dirs}")
             validate_run(log_dirs[0], names, assignments)
             print(f"{label}: PASS")
 
-        rejection_dir = temp_dir / "must_reject_multirank"
+        rejection_dir = temp_dir / "must_reject_single_rank"
         rejection_dir.mkdir()
         tiny_script = rejection_dir / "train_smoke.py"
-        make_tiny_source(HERE / VARIANTS[0][1], tiny_script)
+        make_tiny_source(HERE / VARIANTS[0][1], tiny_script, options.cpu_ddp)
         write_tiny_config(rejection_dir / "hardnorm.json", names)
         targets = rejection_dir / "targets.jsonl"
         write_tiny_targets(targets, names)
@@ -338,7 +387,7 @@ def main() -> None:
         ]
         rejection_environment = os.environ.copy()
         rejection_environment.setdefault("PYTHONUTF8", "1")
-        rejection_environment.update({"WORLD_SIZE": "2", "RANK": "0", "LOCAL_RANK": "0"})
+        rejection_environment.update({"WORLD_SIZE": "1", "RANK": "0", "LOCAL_RANK": "0"})
         rejected = subprocess.run(
             rejection_command,
             cwd=rejection_dir,
@@ -346,14 +395,14 @@ def main() -> None:
             capture_output=True,
             text=True,
         )
-        if rejected.returncode == 0 or "WORLD_SIZE=1" not in rejected.stderr:
+        if rejected.returncode == 0 or "WORLD_SIZE=2" not in rejected.stderr:
             raise AssertionError(
-                "B0128_devB128 runner did not reject a multi-rank launch: "
+                "B0128_devB064 runner did not reject a single-rank launch: "
                 f"returncode={rejected.returncode}, stderr={rejected.stderr!r}"
             )
-        print("multi-rank rejection: PASS")
+        print("single-rank rejection: PASS")
 
-    print("Both untied Adam hard-norm ELR-govern CUDA smokes: PASS")
+    print("Both untied two-rank DDP smokes: PASS")
 
 
 if __name__ == "__main__":
