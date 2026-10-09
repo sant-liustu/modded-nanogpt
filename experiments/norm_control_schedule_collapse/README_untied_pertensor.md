@@ -59,3 +59,29 @@ two-GPU CUDA/NCCL or full-size memory usage.
 
 The earlier devB128 untied entry points were replaced by devB064; update old
 launch commands after pulling this correction.
+
+## Compile compatibility correction
+
+Both formal runners keep compile_model=1 and the default torch.compile
+Inductor backend. raw_model now retains the original module before compile
+and DDP wrapping. Parameter control, optimizer groups, telemetry, and saved
+state dictionaries therefore use canonical names without _orig_mod. prefixes,
+while training forwards and backwards use the compiled model through DDP.
+All wrappers share the original parameter objects.
+
+Validated on this host with two CPU/Gloo ranks and torch.compile backend
+aot_eager: both arms completed four training updates and validation, preserved
+rank equality, and passed ELR/norm checks. The smoke also checks canonical
+checkpoint names and parameter identity across wrappers:
+
+```powershell
+python experiments/norm_control_schedule_collapse/smoke_untied_pertensor_hardnorm.py --cpu-ddp --compile-backend aot_eager
+```
+
+CPU Inductor was attempted but failed because the local C++ compiler cl was
+not available. Actual CUDA/NCCL/Inductor validation remains outstanding.
+On the two-GPU training host, run this tiny compiled check before full training:
+
+```bash
+python experiments/norm_control_schedule_collapse/smoke_untied_pertensor_hardnorm.py --compile-backend inductor
+```

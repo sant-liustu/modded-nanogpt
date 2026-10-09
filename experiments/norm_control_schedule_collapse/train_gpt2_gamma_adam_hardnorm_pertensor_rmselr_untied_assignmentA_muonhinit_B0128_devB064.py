@@ -534,6 +534,8 @@ x, y = train_loader.next_batch()
 num_vocab = 50304
 model = GPT(GPTConfig(vocab_size=num_vocab, n_layer=12, n_head=6, n_embd=768))
 model = model.cuda()
+# Keep stable parameter/checkpoint names; compile and DDP share these parameters.
+raw_model = model
 if hasattr(config, "coordinate_descent_tuning"):
     config.coordinate_descent_tuning = True # suggested by @Chillee
 if args.compile_model:
@@ -541,9 +543,6 @@ if args.compile_model:
 # here we wrap model into DDP container
 if use_ddp:
     model = DDP(model, device_ids=[ddp_local_rank])
-    raw_model = model.module # always contains the "raw" unwrapped model
-else:
-    raw_model = model
 ctx = torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16)
 
 def load_norm_control_config(path):

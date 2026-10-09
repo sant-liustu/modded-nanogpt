@@ -44,7 +44,8 @@ def replace_once(source: str, old: str, new: str, label: str) -> str:
     return source.replace(old, new, 1)
 
 
-def make_tiny_source(source_path: Path, output_path: Path, cpu_ddp: bool = False) -> None:
+def make_tiny_source(source_path: Path, output_path: Path, cpu_ddp: bool = False,
+                     compile_backend: str | None = None) -> None:
     source = source_path.read_text(encoding="utf-8")
     replacements = (
         (
@@ -86,10 +87,18 @@ def make_tiny_source(source_path: Path, output_path: Path, cpu_ddp: bool = False
     )
     for old, new, label in replacements:
         source = replace_once(source, old, new, label)
+    if compile_backend:
+        source = replace_once(source, "compile_model : int = 0",
+                              "compile_model : int = 1", "enable compilation")
+        source = replace_once(
+            source, "model = torch.compile(model)",
+            f"model = torch.compile(model, backend={compile_backend!r})", "compile backend")
     source = source.replace(
         "ctx = torch.amp.autocast",
         "assert raw_model.transformer.wte.weight.data_ptr() != raw_model.lm_head.weight.data_ptr()\n"
         "assert torch.equal(raw_model.transformer.wte.weight, raw_model.lm_head.weight)\n"
+        "assert all(not name.startswith('_orig_mod.') for name in raw_model.state_dict())\n"
+        "assert {id(p) for p in model.parameters()} == {id(p) for p in raw_model.parameters()}\n"
         "ctx = torch.amp.autocast",
     )
     source = source.replace(
@@ -278,6 +287,7 @@ def validate_run(run_dir: Path, names: list[str], assignments: dict[str, str]) -
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--cpu-ddp", action="store_true")
+    parser.add_argument("--compile-backend", choices=("eager", "aot_eager", "inductor"))
     options = parser.parse_args()
     arm_a = (HERE / VARIANTS[0][1]).read_text(encoding="utf-8")
     arm_b = (HERE / VARIANTS[1][1]).read_text(encoding="utf-8")
@@ -322,7 +332,7 @@ def main() -> None:
             run_dir = temp_dir / label
             run_dir.mkdir()
             tiny_script = run_dir / "train_smoke.py"
-            make_tiny_source(HERE / script_name, tiny_script, options.cpu_ddp)
+            make_tiny_source(HERE / script_name, tiny_script, options.cpu_ddp, options.compile_backend)
             assignments = write_tiny_config(run_dir / "hardnorm.json", names)
             payload = json.loads((run_dir / "hardnorm.json").read_text())
             formal = json.loads((HERE / config_name).read_text())
@@ -373,7 +383,7 @@ def main() -> None:
         rejection_dir = temp_dir / "must_reject_single_rank"
         rejection_dir.mkdir()
         tiny_script = rejection_dir / "train_smoke.py"
-        make_tiny_source(HERE / VARIANTS[0][1], tiny_script, options.cpu_ddp)
+        make_tiny_source(HERE / VARIANTS[0][1], tiny_script, options.cpu_ddp, options.compile_backend)
         write_tiny_config(rejection_dir / "hardnorm.json", names)
         targets = rejection_dir / "targets.jsonl"
         write_tiny_targets(targets, names)
