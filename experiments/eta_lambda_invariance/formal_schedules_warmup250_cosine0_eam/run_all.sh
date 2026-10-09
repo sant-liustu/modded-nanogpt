@@ -4,7 +4,7 @@ HERE=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 REPO=$(cd -- "$HERE/../../.." && pwd)
 if (( $# > 1 )); then echo 'Usage: bash run_all.sh [shared_warmup_checkpoint_dir]' >&2; exit 2; fi
 cd -- "$REPO"
-CKPT=${1:-checkpoints/json_w768_B128_warmup1000_gamma_lr}
+CKPT=${1:-checkpoints/json_w384_B128_warmup1000_gamma_lr}
 # Preserve the host's device ordering; ELR_GPU_IDS can explicitly select eight GPUs.
 IFS=',' read -r -a GPUS <<< "${ELR_GPU_IDS:-${CUDA_VISIBLE_DEVICES:-0,1,2,3,4,5,6,7}}"
 if (( ${#GPUS[@]} != 8 )); then
@@ -17,16 +17,16 @@ for (( i=0; i<8; i++ )); do
   done
 done
 if [[ ! -e "$CKPT" ]]; then
-  CUDA_VISIBLE_DEVICES="${GPUS[0]},${GPUS[1]}" bash "$HERE/run_prefix.sh" "$CKPT"
+  CUDA_VISIBLE_DEVICES="${GPUS[0]}" bash "$HERE/run_prefix.sh" "$CKPT"
 fi
-# Refuse an eight-rank warmup before launching any branches.
+# Refuse a multi-rank warmup before launching any branches.
 python3 - "$CKPT" <<'PY'
 import json, pathlib, sys
 p = pathlib.Path(sys.argv[1])
 m = json.loads((p/'complete.json').read_text())
-files = ['rank00000.pt', 'rank00001.pt']
-if (m.get('version'), m.get('step'), m.get('world_size')) != (1, 1000, 2):
-    raise SystemExit('Warmup must be a complete step1000 / two-rank checkpoint; regenerate old eight-rank warmup.')
+files = ['rank00000.pt']
+if (m.get('version'), m.get('step'), m.get('world_size')) != (1, 1000, 1):
+    raise SystemExit('Warmup must be a complete step1000 / single-rank checkpoint; regenerate old multi-rank warmup.')
 if m.get('files') != files or not all((p/f).is_file() for f in files):
     raise SystemExit('Shared warmup rank files are incomplete.')
 PY
@@ -39,19 +39,16 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 CASES=(C E A M EA EM AM EAM)
-for ROUND in 0 1; do
-  PIDS=()
-  for SLOT in 0 1 2 3; do
-    CASE=${CASES[ROUND*4+SLOT]}
-    PAIR="${GPUS[SLOT*2]},${GPUS[SLOT*2+1]}"
-    printf 'Round %s: %s on GPUs %s\n' "$((ROUND+1))" "$CASE" "$PAIR"
-    CUDA_VISIBLE_DEVICES="$PAIR" ELR_FORK_CHECKPOINT="$CKPT" bash "$HERE/run_case.sh" "$CASE" &
-    PIDS+=("$!")
-  done
-  FAILED=0
-  for PID in "${PIDS[@]}"; do
-    if ! wait "$PID"; then FAILED=1; fi
-  done
-  PIDS=()
-  if (( FAILED )); then echo 'A branch failed; stopping before the next round.' >&2; exit 1; fi
+for SLOT in 0 1 2 3 4 5 6 7; do
+  CASE=${CASES[SLOT]}
+  GPU=${GPUS[SLOT]}
+  printf 'Starting %s on GPU %s\n' "$CASE" "$GPU"
+  CUDA_VISIBLE_DEVICES="$GPU" ELR_FORK_CHECKPOINT="$CKPT" bash "$HERE/run_case.sh" "$CASE" &
+  PIDS+=("$!")
 done
+FAILED=0
+for PID in "${PIDS[@]}"; do
+  if ! wait "$PID"; then FAILED=1; fi
+done
+PIDS=()
+if (( FAILED )); then echo 'A branch failed.' >&2; exit 1; fi

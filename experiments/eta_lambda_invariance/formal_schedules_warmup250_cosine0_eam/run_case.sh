@@ -6,7 +6,7 @@ CASE=${1:?Usage: bash run_case.sh C|E|A|M|EA|EM|AM|EAM [runner arguments]}
 case "$CASE" in C|E|A|M|EA|EM|AM|EAM) ;; *) echo "Unknown case: $CASE" >&2; exit 2 ;; esac
 shift
 cd -- "$REPO"
-CKPT=${ELR_FORK_CHECKPOINT:-checkpoints/json_w768_B128_warmup1000_gamma_lr}
+CKPT=${ELR_FORK_CHECKPOINT:-checkpoints/json_w384_B128_warmup1000_gamma_lr}
 RESUME_ARGS=(--resume "$CKPT")
 for ARG in "$@"; do
   if [[ "$ARG" == --resume || "$ARG" == --resume=* ]]; then
@@ -17,7 +17,7 @@ for ARG in "$@"; do
 done
 python3 - "$CKPT" <<'PY'
 import ast, json, pathlib, sys
-p = pathlib.Path('experiments/eta_lambda_invariance/train_gpt2_w768_muonhinit_fixednorm_jsonelr.py')
+p = pathlib.Path('experiments/eta_lambda_invariance/train_gpt2_w384_muonhinit_fixednorm_jsonelr.py')
 tree = ast.parse(p.read_text(encoding='utf-8'))
 config = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == 'Hyperparameters')
 seed = next(n.value for n in config.body if isinstance(n, ast.AnnAssign) and isinstance(n.target, ast.Name) and n.target.id == 'seed')
@@ -26,19 +26,19 @@ if ast.literal_eval(seed) != 0:
 if sys.argv[1]:
     checkpoint = pathlib.Path(sys.argv[1])
     manifest = json.loads((checkpoint/'complete.json').read_text())
-    if manifest.get('version') != 1 or manifest.get('step') != 1000 or manifest.get('world_size') != 2:
-        raise SystemExit('Shared fork requires a complete step1000 / two-rank checkpoint.')
-    files = ['rank00000.pt', 'rank00001.pt']
+    if manifest.get('version') != 1 or manifest.get('step') != 1000 or manifest.get('world_size') != 1:
+        raise SystemExit('Shared fork requires a complete step1000 / single-rank checkpoint.')
+    files = ['rank00000.pt']
     if manifest.get('files') != files or not all((checkpoint/f).is_file() for f in files):
         raise SystemExit('Shared warmup checkpoint rank files are incomplete.')
 PY
 printf 'Starting %s, seed=0, using %s (checkpoint options forwarded to runner)\n' "$CASE" "$HERE/$CASE.json"
-# Always expose exactly two devices, even on an eight-GPU host.
-IFS=',' read -r -a VISIBLE_GPUS <<< "${CUDA_VISIBLE_DEVICES:-0,1}"
-if (( ${#VISIBLE_GPUS[@]} < 2 )); then
-  echo 'This experiment requires two visible GPUs.' >&2; exit 2
+# Always expose exactly one device, even on an eight-GPU host.
+IFS=',' read -r -a VISIBLE_GPUS <<< "${CUDA_VISIBLE_DEVICES:-0}"
+if (( ${#VISIBLE_GPUS[@]} < 1 )) || [[ -z "${VISIBLE_GPUS[0]}" ]]; then
+  echo 'This experiment requires one visible GPU.' >&2; exit 2
 fi
-export CUDA_VISIBLE_DEVICES="${VISIBLE_GPUS[0]},${VISIBLE_GPUS[1]}"
-exec torchrun --standalone --nnodes=1 --nproc_per_node=2 \
-  experiments/eta_lambda_invariance/train_gpt2_w768_muonhinit_fixednorm_jsonelr.py \
+export CUDA_VISIBLE_DEVICES="${VISIBLE_GPUS[0]}"
+exec torchrun --standalone --nnodes=1 --nproc_per_node=1 \
+  experiments/eta_lambda_invariance/train_gpt2_w384_muonhinit_fixednorm_jsonelr.py \
   --schedule-json "$HERE/$CASE.json" "${RESUME_ARGS[@]}" "$@"
