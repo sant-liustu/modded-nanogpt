@@ -18,8 +18,7 @@ def build_jobs(here, output, gpu_ids, args):
             command += ['-m', 'torch.distributed.run', '--standalone',
                         '--rdzv_backend=c10d', '--rdzv_endpoint=localhost:0',
                         f'--nproc_per_node={len(devices)}']
-        entry = 'train_w1536.py' if width == 1536 else 'train.py'
-        command += [str(here / entry), f'--model_width={width}', '--batch_size=128',
+        command += [str(here / 'train.py'), f'--model_width={width}', '--batch_size=128',
                     f'--device_batch_size={batch}', '--sequence_length=1024',
                     '--num_iterations=10200', f'--train_shards={args.shards}',
                     f'--data_seed={args.data_seed}', '--seed=0', '--shuffle_each_epoch=1',
