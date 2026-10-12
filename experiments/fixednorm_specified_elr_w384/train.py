@@ -397,7 +397,9 @@ class Hyperparameters:
     elr : float = 0.03 # peak shared WSD LR/RMS(W) for every matrix
     elr_warmup_iters : int = 500
     elr_warmdown_iters : int = 2900
-    gamma_lr : float = 0.0018 # previous WSD peak LR; constant after gamma warmup
+    gamma_lr : float = -1.0 # -1: auto width scaling; otherwise an absolute peak LR override
+    gamma_lr_base : float = 0.0018 # reference peak gamma LR at width 768
+    gamma_lr_base_width : int = 768
     gamma_warmup_iters : int = 500 # linear warmup; 0 disables it
 args = Hyperparameters()
 def parse_hparam_value(name, value):
@@ -420,6 +422,10 @@ for arg in sys.argv[1:]:
 
 if args.model_width <= 0 or args.model_width % 128:
     raise ValueError('model_width must be a positive multiple of 128')
+if args.gamma_lr_base_width <= 0 or not math.isfinite(args.gamma_lr_base) or args.gamma_lr_base < 0:
+    raise ValueError('gamma reference width must be positive and base LR finite/nonnegative')
+if args.gamma_lr == -1.0:
+    args.gamma_lr = args.gamma_lr_base * args.gamma_lr_base_width / args.model_width
 if not math.isfinite(args.elr) or args.elr <= 0:
     raise ValueError("pass finite positive --elr=<LR/RMS(W)>")
 if not math.isfinite(args.gamma_lr) or args.gamma_lr < 0:
