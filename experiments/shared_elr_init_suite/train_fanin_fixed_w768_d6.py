@@ -1,0 +1,16 @@
+"""Half-depth variant of the w768 fan-in, fixed-initial-RMS experiment."""
+from pathlib import Path
+import runpy
+import sys
+
+# Keep the experimental treatment fixed; other trainer options remain available.
+for option in ('--arm', '--model-width', '--model-depth'):
+    if any(arg == option or arg.startswith(option + '=') for arg in sys.argv[1:]):
+        raise SystemExit(f'{option} is fixed by this depth-6 entry point')
+sys.argv[1:1] = [
+    '--arm', 'fanin_fixed', '--model-width', '768', '--model-depth', '6',
+    '--expected-world-size', '2', '--device-batch-size', '64',
+    '--run-name', 'fanin_fixed_w768_d6',
+    '--log-root', 'logs/fanin_fixed_w768_d6',
+]
+runpy.run_path(str(Path(__file__).with_name('train.py')), run_name='__main__')
