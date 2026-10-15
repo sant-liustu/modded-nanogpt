@@ -1,0 +1,26 @@
+{
+  "local_source_commit": "a87b9f4",
+  "files": [
+    {
+      "file": "train_fixednorm_w384.py",
+      "sha256": "a631fbd84e1ef208601e0a5dc86a1c43f21aec4d3ea44f7c514aaf6ba1735d09"
+    },
+    {
+      "file": "train_fixednorm_w768.py",
+      "sha256": "47b56b423aac8ba6548eb555837c541ee357b2418f0b709be6ba5c6fc73a1f65"
+    },
+    {
+      "file": "train_fixednorm_w1536.py",
+      "sha256": "8b71655dac357a1968641376084b1523efdccab74169ce2cd5a18f6562530682"
+    },
+    {
+      "file": "train_fixednorm_w768_d6.py",
+      "sha256": "5399b90b34f68275e76abda5fe67eaa235f4e0a9378de85c2dc7f95aad67c29b"
+    },
+    {
+      "file": "train_fixednorm_w768_d24.py",
+      "sha256": "cde0b302a98d4278cd79d8d38fe2635f91e9130cc22053be7a561a08557c9996"
+    }
+  ],
+  "training_launched": false
+}
