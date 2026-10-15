@@ -1,5 +1,5 @@
 {
-  "local_source_commit": "a87b9f4",
+  "local_source_commit": "6086b6c50901730431301d983849a312fbf98fc7",
   "files": [
     {
       "file": "train_fixednorm_w384.py",
@@ -15,11 +15,27 @@
     },
     {
       "file": "train_fixednorm_w768_d6.py",
-      "sha256": "5399b90b34f68275e76abda5fe67eaa235f4e0a9378de85c2dc7f95aad67c29b"
+      "sha256": "e4bc82e385b099a348c75518ecdab6967e40dfc5418f51261d79081d95234c47"
     },
     {
       "file": "train_fixednorm_w768_d24.py",
-      "sha256": "cde0b302a98d4278cd79d8d38fe2635f91e9130cc22053be7a561a08557c9996"
+      "sha256": "c6bd792c7c38d6e0e19ad854fa8d14d719251fc6f5b5aacf5f23b24200939b4b"
+    },
+    {
+      "file": "launch.py",
+      "sha256": "8ec3d6c12118c335d0e593484d8c2e7bad6d0aea6189d1443637833385a223ef"
+    },
+    {
+      "file": "verify_launcher.py",
+      "sha256": "f0995178d95a12ad49c27b59b27cf326277670a82c9efe5133c4a0de9acefd1c"
+    },
+    {
+      "file": "run_large.sh",
+      "sha256": "8e88a0982473fae500605671458093d0877177d96f34bd82f4aeb2f0d05eb11d"
+    },
+    {
+      "file": "run_remaining.sh",
+      "sha256": "3e34c6e3f170d9aff124d295f045f6bd30f9de21cfa64c9cb2b9b0ff7a8a5ffc"
     }
   ],
   "training_launched": false

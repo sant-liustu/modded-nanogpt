@@ -283,8 +283,8 @@ class Hyperparameters:
     input_val_bin : str = 'data/fineweb10B/fineweb_val_*.bin' # input .bin to eval validation loss on
     # optimization hyperparams
     batch_size : int = 128 # global batch: 1 rank x 128 sequences
-    device_batch_size : int = 64 # global B128 across 2 ranks
-    expected_world_size : int = 2
+    device_batch_size : int = 32 # global B128 across 4 ranks
+    expected_world_size : int = 4
     model_width : int = 768
     model_depth : int = 24
     vocab_size : int = 50304

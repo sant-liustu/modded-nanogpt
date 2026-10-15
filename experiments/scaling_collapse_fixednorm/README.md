@@ -45,11 +45,11 @@ Choose fresh checkpoint directories. Inherited complete-state checkpoint/resume 
 
 ## Verification
 
-Local pre-publication verification checked actual meta-device model parameter counts at all full widths; source AST equality for model, initialization and fixed-RMS functions; all-step two-segment ELR values and separate gamma warmup policy; tied weights; CPU optimizer/projection execution on a tiny model; full-budget arithmetic and schedule endpoints. All five copied trainer files were byte-compared against the locally verified versions and syntax-compiled before publication. This is not full GPU/DDP/Inductor/data/checkpoint validation. No formal training is launched by this task.
+Local pre-publication verification checked actual meta-device model parameter counts at all full widths; source AST equality for model, initialization and fixed-RMS functions; all-step two-segment ELR values and separate gamma warmup policy; tied weights; CPU optimizer/projection execution on a tiny model; full-budget arithmetic and schedule endpoints. All five trainer copies were byte-compared against locally verified versions before publication. This is not full GPU/DDP/Inductor/data/checkpoint validation. No formal training is launched by this task.
 
 ## Depth variants (width768)
 
-Two standalone entries preserve the same fan-in fixed-RMS model construction as yesterday. Only depth and the resulting parameter budget/ELR/schedule durations change; no 3/depth residual multiplier or depth-dependent initialization is added. Both default to 2 ranks/device batch64, global batch128. Use gradient accumulation with a smaller --device-batch-size if memory requires it.
+Two standalone entries preserve the same fan-in fixed-RMS model construction as yesterday. Only depth and the resulting parameter budget/ELR/schedule durations change; no 3/depth residual multiplier or depth-dependent initialization is added. Depth6 defaults to 1 rank/device batch128; depth24 defaults to 4 ranks/device batch32; global batch128. Use gradient accumulation with a smaller --device-batch-size if memory requires it.
 
 | Script | Depth | Parameters | Updates | Tokens | Actual TPP | Peak ELR | Warmup / decay |
 |---|---:|---:|---:|---:|---:|---:|---|
@@ -61,8 +61,32 @@ Both use peak ELR squared times updates=67.8888, the same width768/depth12 ancho
 ```bash
 python train_fixednorm_w768_d6.py --describe-only
 python train_fixednorm_w768_d24.py --describe-only
-torchrun --standalone --nproc_per_node=2 train_fixednorm_w768_d6.py --input-bin '/data/fineweb_train_*.bin' --input-val-bin '/data/fineweb_val_*.bin' --checkpoint-dir outputs/w768_d6
-torchrun --standalone --nproc_per_node=2 train_fixednorm_w768_d24.py --input-bin '/data/fineweb_train_*.bin' --input-val-bin '/data/fineweb_val_*.bin' --checkpoint-dir outputs/w768_d24
+torchrun --standalone --nproc_per_node=1 train_fixednorm_w768_d6.py --input-bin '/data/fineweb_train_*.bin' --input-val-bin '/data/fineweb_val_*.bin' --checkpoint-dir outputs/w768_d6
+torchrun --standalone --nproc_per_node=4 train_fixednorm_w768_d24.py --input-bin '/data/fineweb_train_*.bin' --input-val-bin '/data/fineweb_val_*.bin' --checkpoint-dir outputs/w768_d24
 ```
 
 Verification covers all five entries; formal multi-GPU runs have not been launched.
+
+## Eight-GPU execution plan
+
+Two independent lanes run concurrently:
+
+- large: GPUs0-3 run w1536, 4 ranks/device B32.
+- remaining stage1: GPUs4-7 run w768/depth24, 4 ranks/device B32.
+- remaining stage2 (only after stage1 succeeds): GPUs4-5 w768/depth12 (2 ranks/device B64), GPU6 w768/depth6 (1 rank/device B128), GPU7 w384/depth12 (1 rank/device B128), concurrently.
+
+One command starts both lanes:
+
+```bash
+python launch.py --train-glob '/data/fineweb_train_*.bin' --val-glob '/data/fineweb_val_*.bin' --output outputs/formal01 --dry-run
+python launch.py --train-glob '/data/fineweb_train_*.bin' --val-glob '/data/fineweb_val_*.bin' --output outputs/formal01
+```
+
+Or two terminals, with DIFFERENT fresh output roots:
+
+```bash
+bash run_large.sh --train-glob '/data/fineweb_train_*.bin' --val-glob '/data/fineweb_val_*.bin' --output outputs/large01
+bash run_remaining.sh --train-glob '/data/fineweb_train_*.bin' --val-glob '/data/fineweb_val_*.bin' --output outputs/remaining01
+```
+
+Do not combine the all-lanes command with separate lane commands on the same GPUs. --gpu-ids accepts eight unique indices into the outer CUDA-visible inventory; default0..7. Each torchrun job has its own standalone rendezvous. Console logs, allocation manifest, checkpoints and result summary are under the fresh output root. A failed stage blocks its next stage and stops peers within that stage; the other lane remains independent. Formal GPU training has not been launched. `python verify_launcher.py` tests CPU subprocess sequencing, failure barriers, remapping and allocations.
