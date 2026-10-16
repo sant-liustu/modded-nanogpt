@@ -90,3 +90,34 @@ bash run_remaining.sh --train-glob '/data/fineweb_train_*.bin' --val-glob '/data
 ```
 
 Do not combine the all-lanes command with separate lane commands on the same GPUs. --gpu-ids accepts eight unique indices into the outer CUDA-visible inventory; default0..7. Each torchrun job has its own standalone rendezvous. Console logs, allocation manifest, checkpoints and result summary are under the fresh output root. A failed stage blocks its next stage and stops peers within that stage; the other lane remains independent. Formal GPU training has not been launched. `python verify_launcher.py` tests CPU subprocess sequencing, failure barriers, remapping and allocations.
+
+
+## Optimized training scripts (2026-10-16)
+
+All five trainers now sample diagnostics every 1000 updates by default, including
+parameter norms, inferred Adam updates, LR/RMS records, and projection records.
+Non-sampled updates skip diagnostic parameter snapshots and file writes. Loss,
+validation, and checkpoint policies are unchanged. Existing tensor/Adam diagnostic
+interval flags remain configurable; LR/projection diagnostics use interval 1000.
+
+Matrix LR uses scheduled ELR multiplied by the saved fixed target RMS. Targets are
+cached on CPU after checkpoint restoration; ordinary updates do not rescan weights
+for LR. Gamma retains its absolute LR schedule. Projection still runs every update,
+compiled with fullgraph=True when compile_model=1; compile_model=0 uses eager mode.
+Compilation happens on first use. One aggregate validity check remains per update.
+Sampled diagnostics check actual RMS. Diagnostic writes use buffered files.
+
+The mathematical fixed-norm policy is preserved, but replacing measured RMS with
+target RMS and compiled reductions can change floating-point training trajectories.
+Local 1001-step synthetic CPU/CUDA checks passed at RMS about 0.02; maximum CUDA
+parameter difference was 5.29e-5 and RMS relative error 2.38e-7. A stress test at RMS
+about 1 exceeded the 1e-4 parameter comparison threshold. This does not establish
+full-run equivalence. Full-size cloud DDP and throughput remain unverified.
+
+A 1.31M-parameter local laptop-GPU benchmark measured 83.2 to 36.5 ms per ordinary
+step, with eager model forward/backward; this is not a cloud speedup prediction.
+
+The five scripts match the source hashes in publication_manifest.json. GPU lane
+allocation, global batch, TPP budgets, and schedules remain unchanged. Source-hash
+checkpoint validation is still strict: old-source checkpoints cannot directly
+resume with these optimized scripts. No running training processes were changed.

@@ -307,8 +307,8 @@ class Hyperparameters:
     val_loss_every : int = 0 # periodic validation disabled; set positive to enable
     val_tokens : int = 10485760 # how many tokens of validation data? it's important to keep this fixed for consistent comparisons
     compile_model : int = 1 # compile the model with torch.compile
-    tensor_norm_every : int = 1 # every how many steps to log tensor norm history? 0 disables
-    adamw_update_norm_every : int = 1 # every how many optimizer steps to log AdamW effective update norms? 0 disables
+    tensor_norm_every : int = 1000 # every how many steps to log tensor norm history? 0 disables
+    adamw_update_norm_every : int = 1000 # every how many optimizer steps to log AdamW effective update norms? 0 disables
 args = Hyperparameters()
 
 import argparse
@@ -578,30 +578,36 @@ schedulers = [torch.optim.lr_scheduler.LambdaLR(opt, get_lr) for opt in optimize
 
 @torch.no_grad()
 def apply_tensor_rms_elr(optimizers, update_step, history_path=None):
-    """Matrices use JSON ELR; gamma uses absolute LR, independent of its RMS."""
+    """Measure actual matrix RMS every update; copy all scalars to CPU together."""
+    history_path = history_path if update_step % 1000 == 0 else None
+    groups = [g for opt in optimizers for g in opt.param_groups]
+    if any(len(g['params']) != 1 for g in groups):
+        raise RuntimeError('per-tensor RMS-ELR requires one tensor per optimizer group')
+    # Capture after checkpoint restoration on the first update; no per-step GPU read.
+    if not fixed_rms_by_id:
+        fixed_rms_by_id.update({id(e['param']): e['target_rms'].item() for e in fixed_norm_state})
+    measured = [g['params'][0] for g in groups] if history_path is not None else []
+    values = torch.stack([p.detach().float().square().mean().sqrt() for p in measured]).cpu().tolist() if measured else []
+    if any(not math.isfinite(v) or v <= 0 for v in values):
+        raise RuntimeError('per-tensor RMS-ELR requires finite positive RMS')
+    rms_by_id = {id(p): v for p, v in zip(measured, values)}
     records = []
-    for opt in optimizers:
-        for group in opt.param_groups:
-            if len(group['params']) != 1:
-                raise RuntimeError('per-tensor RMS-ELR requires one tensor per optimizer group')
-            p = group['params'][0]
-            rms = p.detach().float().square().mean().sqrt().item()
-            if not math.isfinite(rms) or rms <= 0:
-                raise RuntimeError('per-tensor RMS-ELR requires finite positive RMS')
-            is_gamma = id(p) in rmsnorm_gamma_param_ids
-            target = None if is_gamma else tensor_elr_schedule[update_step][tensor_name_by_id[id(p)]]
-            # Use the global update index so resume starts at the correct LR.
-            group['lr'] = (args.gamma_learning_rate * get_lr(update_step - 1)
-                           if is_gamma else target * rms)
-            if history_path is not None:
-                records.append(dict(step=update_step, name=tensor_name_by_id[id(p)],
-                                    target_rms_elr=target, pre_update_rms=rms,
-                                    lr_policy='absolute_gamma_lr' if is_gamma else 'json_rms_elr',
-                                    lr=group['lr'], actual_rms_elr=group['lr']/rms))
+    for group in groups:
+        p = group['params'][0]
+        is_gamma = id(p) in rmsnorm_gamma_param_ids
+        target = None if is_gamma else tensor_elr_schedule[update_step][tensor_name_by_id[id(p)]]
+        group['lr'] = (args.gamma_learning_rate * get_lr(update_step - 1)
+                       if is_gamma else target * fixed_rms_by_id[id(p)])
+        if history_path is not None:
+            rms = rms_by_id[id(p)]
+            records.append(dict(step=update_step, name=tensor_name_by_id[id(p)],
+                                target_rms_elr=target, pre_update_rms=rms,
+                                lr_policy='absolute_gamma_lr' if is_gamma else 'fixed_target_rms_elr',
+                                lr=group['lr'], actual_rms_elr=group['lr']/rms))
     if history_path is not None:
-        with open(history_path, 'a') as f:
-            for record in records:
-                f.write(json.dumps(record) + '\n')
+        with open(history_path, 'a', buffering=1024*1024) as f:
+            f.write(''.join(json.dumps(record) + '\n' for record in records))
+
 
 tensor_name_by_id = {id(p): name for name, p in raw_model.named_parameters() if p.requires_grad}
 
@@ -647,8 +653,9 @@ def write_tensor_metadata():
 
 def tensor_norm_fields(tensor, prefix=''):
     x = tensor.detach().float()
-    return {f'{prefix}fro_norm': x.square().sum().sqrt().item(),
-            f'{prefix}rms_norm': x.square().mean().sqrt().item()}
+    squared_sum = x.square().sum().item()
+    return {f'{prefix}fro_norm': math.sqrt(squared_sum),
+            f'{prefix}rms_norm': math.sqrt(squared_sum / x.numel())}
 
 
 def tensor_norm_record(step, name, tensor):
@@ -672,7 +679,7 @@ def optimizer_parameter_hparams():
 def should_log_adamw_update_norms(update_step):
     if not master_process or args.adamw_update_norm_every <= 0:
         return False
-    return update_step % args.adamw_update_norm_every == 0 or update_step == args.num_iterations
+    return update_step > 0 and update_step % args.adamw_update_norm_every == 0
 
 def maybe_capture_adamw_update_state(update_step):
     if not should_log_adamw_update_norms(update_step):
@@ -724,7 +731,7 @@ def maybe_log_adamw_update_norms(update_step, update_state):
     if update_state is None:
         return
     snapshots = update_state['snapshots']
-    with torch.no_grad(), open(os.path.join(logdir, 'adamw_update_norm_history.jsonl'), 'a') as f:
+    with torch.no_grad(), open(os.path.join(logdir, 'adamw_update_norm_history.jsonl'), 'a', buffering=1024*1024) as f:
         for name, tensor in raw_model.named_parameters():
             if not tensor.requires_grad:
                 continue
@@ -740,9 +747,9 @@ def maybe_log_adamw_update_norms(update_step, update_state):
 def maybe_log_tensor_norms(step, force=False):
     if not master_process or args.tensor_norm_every <= 0:
         return
-    if not force and step % args.tensor_norm_every != 0 and step != args.num_iterations:
+    if step <= 0 or step % args.tensor_norm_every != 0:
         return
-    with torch.no_grad(), open(os.path.join(logdir, 'tensor_norm_history.jsonl'), 'a') as f:
+    with torch.no_grad(), open(os.path.join(logdir, 'tensor_norm_history.jsonl'), 'a', buffering=1024*1024) as f:
         for name, tensor in raw_model.named_parameters():
             f.write(json.dumps(tensor_norm_record(step, name, tensor)) + '\n')
 
@@ -770,26 +777,36 @@ def build_fixed_norm_state(model):
 def apply_fixed_norm_control(entries, update_step, history_path=None):
     if args.arm != 'fanin_fixed':
         return
-    # Same hard-RMS projection as the existing constant-norm runner.
-    records = []
-    for entry in entries:
-        p, target = entry['param'], entry['target_rms']
-        before = p.float().square().mean().sqrt()
-        if not torch.isfinite(before) or before <= 0:
-            raise RuntimeError(f'invalid current RMS for {entry["name"]}')
-        p.mul_((target / before).to(dtype=p.dtype))
-        if history_path is not None:
-            after = p.float().square().mean().sqrt()
-            records.append(dict(step=update_step, name=entry['name'],
-                                target_rms=target.item(), rms_before=before.item(),
-                                rms_after=after.item(),
-                                relative_error=((after-target).abs()/target).item()))
+    history_path = history_path if update_step % 1000 == 0 else None
+    before, valid = project_fixed_rms(
+        [e['param'] for e in entries], [e['target_rms'] for e in entries])
+    if not valid.item():
+        raise RuntimeError('invalid current RMS in fixed-norm matrices')
     if history_path is not None:
-        with open(history_path, 'a') as f:
-            for record in records:
-                f.write(json.dumps(record) + '\n')
+        targets = torch.stack([e['target_rms'] for e in entries])
+        after = torch.stack([e['param'].float().square().mean().sqrt() for e in entries])
+        stats = torch.stack([targets, before, after, (after-targets).abs()/targets], dim=1).cpu().tolist()
+        records = [dict(step=update_step, name=e['name'], target_rms=t,
+                        rms_before=b, rms_after=a, relative_error=r)
+                   for e, (t, b, a, r) in zip(entries, stats)]
+        with open(history_path, 'a', buffering=1024*1024) as f:
+            f.write(''.join(json.dumps(record) + '\n' for record in records))
 
 
+@torch.no_grad()
+def project_fixed_rms_eager(params, targets):
+    # Keep GPU operations together so Inductor can fuse reductions/pointwise work.
+    before = torch.stack([p.float().square().mean().sqrt() for p in params])
+    valid = (torch.isfinite(before) & (before > 0)).all()
+    for p, target, rms in zip(params, targets, before.unbind()):
+        # On invalid input leave parameters untouched; the caller raises.
+        scale = torch.where(valid, target / rms, torch.ones_like(rms))
+        p.mul_(scale.to(dtype=p.dtype))
+    return before, valid
+
+project_fixed_rms = (torch.compile(project_fixed_rms_eager, fullgraph=True)
+                     if args.compile_model else project_fixed_rms_eager)
+fixed_rms_by_id = {}
 fixed_norm_state = build_fixed_norm_state(raw_model)
 fixed_norm_history_path = os.path.join(logdir, 'norm_control_history.jsonl') if master_process else None
 write_tensor_metadata()

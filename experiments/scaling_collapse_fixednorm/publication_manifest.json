@@ -1,25 +1,25 @@
 {
-  "local_source_commit": "6086b6c50901730431301d983849a312fbf98fc7",
+  "local_source_commit": "6ad6ba3972f7057c5982cbf426ee5a5809d51434",
   "files": [
     {
       "file": "train_fixednorm_w384.py",
-      "sha256": "a631fbd84e1ef208601e0a5dc86a1c43f21aec4d3ea44f7c514aaf6ba1735d09"
+      "sha256": "f8031e89cf8603a680233871d99f596aceab21d2bb8793bb5334f93843514819"
     },
     {
       "file": "train_fixednorm_w768.py",
-      "sha256": "47b56b423aac8ba6548eb555837c541ee357b2418f0b709be6ba5c6fc73a1f65"
+      "sha256": "8d4e02c4549201f6abe0b217b407cc585c446b41ce8d363cddbe68e802e05a1a"
     },
     {
       "file": "train_fixednorm_w1536.py",
-      "sha256": "8b71655dac357a1968641376084b1523efdccab74169ce2cd5a18f6562530682"
+      "sha256": "815a75b227de0f9957f770f506a2077899550ddef83810ec81ec76b75682c650"
     },
     {
       "file": "train_fixednorm_w768_d6.py",
-      "sha256": "e4bc82e385b099a348c75518ecdab6967e40dfc5418f51261d79081d95234c47"
+      "sha256": "cadfdf4098fcf83974b89aa07a4182d315c2d4c75a327598ae9ee4babe187deb"
     },
     {
       "file": "train_fixednorm_w768_d24.py",
-      "sha256": "c6bd792c7c38d6e0e19ad854fa8d14d719251fc6f5b5aacf5f23b24200939b4b"
+      "sha256": "b326dab2d2483188517ddebdbaa000611d9d10af0af353c2ef50f2caf517626c"
     },
     {
       "file": "launch.py",
@@ -38,5 +38,6 @@
       "sha256": "3e34c6e3f170d9aff124d295f045f6bd30f9de21cfa64c9cb2b9b0ff7a8a5ffc"
     }
   ],
-  "training_launched": false
+  "training_launched": false,
+  "optimization": "1000-step diagnostics, fixed-target RMS LR, compiled per-update projection"
 }
