@@ -1,0 +1,72 @@
+{
+  "source": "experiments/scaling_collapse_fixednorm/train_fixednorm_w768.py (local source snapshot SHA256 below)",
+  "source_sha256": "8d4e02c4549201f6abe0b217b407cc585c446b41ce8d363cddbe68e802e05a1a",
+  "entries": [
+    {
+      "script": "train_fixednorm_w384.py",
+      "width": 384,
+      "depth": 12,
+      "parameters": 40563072,
+      "total_updates": 18858,
+      "consumed_tokens": 2471755776,
+      "actual_tpp": 60.936108981094925,
+      "peak_elr": 0.06,
+      "sha256": "9e22510ecfea69125a7ad95455ab6b9435ff4e11f3b0efa5e66cd8326edddb12",
+      "expected_world_size": 1,
+      "device_batch_size": 128
+    },
+    {
+      "script": "train_fixednorm_w768.py",
+      "width": 768,
+      "depth": 12,
+      "parameters": 123590400,
+      "total_updates": 18858,
+      "consumed_tokens": 2471755776,
+      "actual_tpp": 19.999577442908187,
+      "peak_elr": 0.06,
+      "sha256": "87ff706e1b40bbbcce6edc3e4bbdb8053987eb9536300f519ca5a4c009a65462",
+      "expected_world_size": 2,
+      "device_batch_size": 64
+    },
+    {
+      "script": "train_fixednorm_w1536.py",
+      "width": 1536,
+      "depth": 12,
+      "parameters": 417047040,
+      "total_updates": 18858,
+      "consumed_tokens": 2471755776,
+      "actual_tpp": 5.926803307367917,
+      "peak_elr": 0.06,
+      "sha256": "df2f0de7ef618ae56ece638da5431b4dd5d34951834f7d487507aa4230d07c3e",
+      "expected_world_size": 4,
+      "device_batch_size": 32
+    },
+    {
+      "script": "train_fixednorm_w768_d6.py",
+      "width": 768,
+      "depth": 6,
+      "parameters": 81112320,
+      "total_updates": 18858,
+      "consumed_tokens": 2471755776,
+      "actual_tpp": 30.47324717132983,
+      "peak_elr": 0.06,
+      "sha256": "efe2c6f61d01bcbdd190905ca16cca949e2776b99f8569f0743c0e174d6d743d",
+      "expected_world_size": 1,
+      "device_batch_size": 128
+    },
+    {
+      "script": "train_fixednorm_w768_d24.py",
+      "width": 768,
+      "depth": 24,
+      "parameters": 208546560,
+      "total_updates": 18858,
+      "consumed_tokens": 2471755776,
+      "actual_tpp": 11.852297041006095,
+      "peak_elr": 0.06,
+      "sha256": "4600df8e0b3aaa4e81f83806e416f0fbb3bfab22f88546ee097b9b271a5076e2",
+      "expected_world_size": 4,
+      "device_batch_size": 32
+    }
+  ],
+  "validation": "Local budget, all-step scheduler, AST, CPU three-update bitwise regression and launcher sequencing checks passed; no full-scale training launched."
+}
