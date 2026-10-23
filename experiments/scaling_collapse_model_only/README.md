@@ -72,3 +72,16 @@ torchrun --standalone --nproc_per_node=4 train_fixednorm_w1536.py --input-bin '/
 发布前已在本地检查五个模型实际参数量、预算一致性、函数及模型定义一致性、全部更新步的矩阵与 gamma 调度、tiny CPU 三步 forward/backward + AdamW + 固定 RMS 投影逐位回归，以及启动器分配、GPU 映射、阶段屏障和失败阻断。
 测试脚本和测试产物不包含在本发布目录中。来源和训练脚本 SHA256 见 `publication_manifest.json`。
 这些检查不代表正式尺寸 GPU/DDP/Inductor 或真实数据训练已验证；没有启动正式训练。
+
+## 补充模型：默认单组八卡
+
+新增 `train_fixednorm_w768_d48.py`（378,458,880 参数）和 `train_fixednorm_w1536_d24.py`（756,825,600 参数）。两者均默认8卡、每卡batch16、不累积梯度，保持全局batch128、18,858步、2,471,755,776 tokens及原linear调度/优化器配置。
+
+在本目录执行，替换为与原五组一致的数据路径；两组顺序运行：
+
+```bash
+torchrun --standalone --nproc_per_node=8 train_fixednorm_w768_d48.py --input-bin '/data/fineweb_train_*.bin' --input-val-bin '/data/fineweb_val_*.bin' --run-name w768_d48 --checkpoint-dir outputs/w768_d48
+torchrun --standalone --nproc_per_node=8 train_fixednorm_w1536_d24.py --input-bin '/data/fineweb_train_*.bin' --input-val-bin '/data/fineweb_val_*.bin' --run-name w1536_d24 --checkpoint-dir outputs/w1536_d24
+```
+
+原launch.py仍只启动原五组。新增两组已通过预算、实际参数量、函数AST一致性、逐步调度、CPU三步回归和配置保护检查；未运行正式GPU/DDP训练。

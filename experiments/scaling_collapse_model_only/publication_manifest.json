@@ -66,6 +66,32 @@
       "sha256": "4600df8e0b3aaa4e81f83806e416f0fbb3bfab22f88546ee097b9b271a5076e2",
       "expected_world_size": 4,
       "device_batch_size": 32
+    },
+    {
+      "script": "train_fixednorm_w768_d48.py",
+      "width": 768,
+      "depth": 48,
+      "parameters": 378458880,
+      "total_updates": 18858,
+      "consumed_tokens": 2471755776,
+      "actual_tpp": 6.53110788680662,
+      "peak_elr": 0.06,
+      "sha256": "bbe2c9775114f3d65f44075db920e72d896d782e336ea23c1c9dd1ccbd79bda0",
+      "expected_world_size": 8,
+      "device_batch_size": 16
+    },
+    {
+      "script": "train_fixednorm_w1536_d24.py",
+      "width": 1536,
+      "depth": 24,
+      "parameters": 756825600,
+      "total_updates": 18858,
+      "consumed_tokens": 2471755776,
+      "actual_tpp": 3.2659515957176923,
+      "peak_elr": 0.06,
+      "sha256": "36947ef4e484ca85d12c84eef00cf189fee80c2b0b5fd8c726fea46f30c8c056",
+      "expected_world_size": 8,
+      "device_batch_size": 16
     }
   ],
   "validation": "Local budget, all-step scheduler, AST, CPU three-update bitwise regression and launcher sequencing checks passed; no full-scale training launched."
