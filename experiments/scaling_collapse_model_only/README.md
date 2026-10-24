@@ -90,8 +90,8 @@ torchrun --standalone --nproc_per_node=8 train_fixednorm_w1536_d24.py --input-bi
 
 | 新脚本 | 参数量 | 对照模型 | 默认GPU数 / 每卡batch |
 |---|---:|---|---|
-| train_fixednorm_w384_d36.py | 83,054,976 | w768/d6：81,112,320 | 2 / 64 |
-| train_fixednorm_w384_d60.py | 125,546,880 | w768/d12：123,590,400 | 4 / 32 |
+| train_fixednorm_w384_d36.py | 83,054,976 | w768/d6：81,112,320 | 1 / 128 |
+| train_fixednorm_w384_d60.py | 125,546,880 | w768/d12：123,590,400 | 2 / 64 |
 
 两者都保留固定训练量：18,858 updates、2,471,755,776 tokens、全局B128，
 矩阵peak ELR0.06、warmup1886步后linear decay；其余科学配置与原model-only组一致。
@@ -99,11 +99,11 @@ val loss仍默认关闭。初始化仍按fan-in，logits仍除以width/768，不
 它们是近似等参数量的宽深对照，参数量分别高约2.40%和1.58%。
 GPU分配是起始配置，未实测正式模型显存；必要时降低device batch并保留全局B128。
 
-两个新增脚本独立启动，不自动加入原八卡五模型启动计划；可在6张空闲GPU上同时运行：
+两个新增脚本独立启动，不自动加入原八卡五模型启动计划；可在3张空闲GPU上同时运行：
 
 ```bash
-CUDA_VISIBLE_DEVICES=0,1 torchrun --standalone --nproc_per_node=2 train_fixednorm_w384_d36.py --input-bin '/data/fineweb_train_*.bin' --input-val-bin '/data/fineweb_val_*.bin' --run-name w384_d36 --checkpoint-dir outputs/w384_d36
-CUDA_VISIBLE_DEVICES=2,3,4,5 torchrun --standalone --nproc_per_node=4 train_fixednorm_w384_d60.py --input-bin '/data/fineweb_train_*.bin' --input-val-bin '/data/fineweb_val_*.bin' --run-name w384_d60 --checkpoint-dir outputs/w384_d60
+CUDA_VISIBLE_DEVICES=0 torchrun --standalone --nproc_per_node=1 train_fixednorm_w384_d36.py --input-bin '/data/fineweb_train_*.bin' --input-val-bin '/data/fineweb_val_*.bin' --run-name w384_d36 --checkpoint-dir outputs/w384_d36
+CUDA_VISIBLE_DEVICES=1,2 torchrun --standalone --nproc_per_node=2 train_fixednorm_w384_d60.py --input-bin '/data/fineweb_train_*.bin' --input-val-bin '/data/fineweb_val_*.bin' --run-name w384_d60 --checkpoint-dir outputs/w384_d60
 ```
 
 上述两条命令分别在两个终端执行；输出目录应为新路径。

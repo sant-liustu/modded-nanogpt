@@ -102,9 +102,9 @@
       "consumed_tokens": 2471755776,
       "actual_tpp": 29.760477879133937,
       "peak_elr": 0.06,
-      "expected_world_size": 2,
-      "device_batch_size": 64,
-      "sha256": "721c79789bb49b4279dd8504317b5c301351d57081e3174c97542c31dc625010"
+      "expected_world_size": 1,
+      "device_batch_size": 128,
+      "sha256": "04c936cd8d3d30eec3301067bb3178c4b9f16326e3b964d41b2e9c2cee156af4"
     },
     {
       "script": "train_fixednorm_w384_d60.py",
@@ -115,9 +115,9 @@
       "consumed_tokens": 2471755776,
       "actual_tpp": 19.687910810686812,
       "peak_elr": 0.06,
-      "expected_world_size": 4,
-      "device_batch_size": 32,
-      "sha256": "5e9052ef0b4b31d44412800d2398309d279efc5386a0094c1d8d601c4974f0e5"
+      "expected_world_size": 2,
+      "device_batch_size": 64,
+      "sha256": "f519372cec52bde1db855be4dbcab39b089ba56765e43408868ccac07e724b2e"
     },
     {
       "script": "train_fixednorm_w768_d12_elr0p12.py",
