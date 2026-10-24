@@ -138,3 +138,28 @@ CUDA_VISIBLE_DEVICES=1,2 torchrun --standalone --nproc_per_node=2 train_fixednor
 ```
 
 如与之前三项同时运行，请使用互不重叠的GPU；这两项额外需要3张卡。
+
+## w768/d12：四种 shard 顺序（复用旧 AdamW datashuffle 方案）
+
+新增 `train_fixednorm_w768_d12_shardseed17.py`、`...shardseed271828.py`、
+`...shardseed314159.py`、`...shardseed987654321.py`。
+与旧 AdamW 实验相同：对sorted训练shard列表使用 `random.Random(data_seed).shuffle(files)`，
+只在loader初始化时打乱一次，此后固定顺序循环；shard内部token顺序和原loader边界规则不变。
+验证loader不shuffle。不依赖额外loader模块。
+
+模型初始化seed全部保持当前基准0；旧AdamW实验的模型seed为17，本次不沿用旧优化器/训练配置。
+四项使用当前w768/d12 linear基准：peak ELR0.06、18858步、2471755776 tokens、gamma LR0.0018、
+全局B128、默认2卡/每卡B64、val loss仍默认关闭。除了data seed，其余训练配置一致。
+log目录保存shard_order.json；checkpoint保留原有shard列表、cursor和预取x/y恢复机制。
+至少提供两个shard才可能改变顺序；shard较少时不同seed可能生成相同排列，应核对shard_order.json。
+
+不自动加入旧批量启动计划，四项同时跑共8卡。每项使用独立run-name、全新checkpoint目录：
+
+```bash
+CUDA_VISIBLE_DEVICES=0,1 torchrun --standalone --nproc_per_node=2 train_fixednorm_w768_d12_shardseed17.py --input-bin '/data/fineweb_train_*.bin' --input-val-bin '/data/fineweb_val_*.bin' --run-name w768_shardseed17 --checkpoint-dir outputs/w768_shardseed17
+CUDA_VISIBLE_DEVICES=2,3 torchrun --standalone --nproc_per_node=2 train_fixednorm_w768_d12_shardseed271828.py --input-bin '/data/fineweb_train_*.bin' --input-val-bin '/data/fineweb_val_*.bin' --run-name w768_shardseed271828 --checkpoint-dir outputs/w768_shardseed271828
+CUDA_VISIBLE_DEVICES=4,5 torchrun --standalone --nproc_per_node=2 train_fixednorm_w768_d12_shardseed314159.py --input-bin '/data/fineweb_train_*.bin' --input-val-bin '/data/fineweb_val_*.bin' --run-name w768_shardseed314159 --checkpoint-dir outputs/w768_shardseed314159
+CUDA_VISIBLE_DEVICES=6,7 torchrun --standalone --nproc_per_node=2 train_fixednorm_w768_d12_shardseed987654321.py --input-bin '/data/fineweb_train_*.bin' --input-val-bin '/data/fineweb_val_*.bin' --run-name w768_shardseed987654321 --checkpoint-dir outputs/w768_shardseed987654321
+```
+
+四条命令分别在四个终端执行即可并行。
