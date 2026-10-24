@@ -119,3 +119,22 @@ Gamma绝对LR仍为0.0018；18,858 updates、warmup1886步、linear decay、2,47
 ```bash
 CUDA_VISIBLE_DEVICES=0,1 torchrun --standalone --nproc_per_node=2 train_fixednorm_w768_d12_elr0p12.py --input-bin '/data/fineweb_train_*.bin' --input-val-bin '/data/fineweb_val_*.bin' --run-name w768_d12_elr0p12 --checkpoint-dir outputs/w768_d12_elr0p12
 ```
+
+## 新增 w384/d24 与 w384/d48
+
+| 脚本 | 参数量 | GPU数 | 每卡batch |
+|---|---:|---:|---:|
+| train_fixednorm_w384_d24.py | 61,809,024 | 1 | 128 |
+| train_fixednorm_w384_d48.py | 104,300,928 | 2 | 64 |
+
+两者均为原model-only配置：18,858步、2,471,755,776 tokens、全局batch128、
+peak ELR0.06、warmup1886步后linear decay到零、gamma LR0.0018；其余科学配置不变。
+val loss仍默认关闭。GPU分配未经过正式尺寸显存实测，必要时可降低device batch并保留全局B128。
+新增脚本独立启动，不自动加入原批量启动计划。在两个终端执行以下命令可同时运行：
+
+```bash
+CUDA_VISIBLE_DEVICES=0 torchrun --standalone --nproc_per_node=1 train_fixednorm_w384_d24.py --input-bin '/data/fineweb_train_*.bin' --input-val-bin '/data/fineweb_val_*.bin' --run-name w384_d24 --checkpoint-dir outputs/w384_d24
+CUDA_VISIBLE_DEVICES=1,2 torchrun --standalone --nproc_per_node=2 train_fixednorm_w384_d48.py --input-bin '/data/fineweb_train_*.bin' --input-val-bin '/data/fineweb_val_*.bin' --run-name w384_d48 --checkpoint-dir outputs/w384_d48
+```
+
+如与之前三项同时运行，请使用互不重叠的GPU；这两项额外需要3张卡。
