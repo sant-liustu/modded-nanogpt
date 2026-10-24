@@ -118,6 +118,20 @@
       "expected_world_size": 4,
       "device_batch_size": 32,
       "sha256": "5e9052ef0b4b31d44412800d2398309d279efc5386a0094c1d8d601c4974f0e5"
+    },
+    {
+      "script": "train_fixednorm_w768_d12_elr0p12.py",
+      "width": 768,
+      "depth": 12,
+      "parameters": 123590400,
+      "total_updates": 18858,
+      "consumed_tokens": 2471755776,
+      "actual_tpp": 19.999577442908187,
+      "peak_elr": 0.12,
+      "sha256": "762849d14da5e285448b5458d3f8cc24c3633eaae8888b247a5b27237e76e99a",
+      "expected_world_size": 2,
+      "device_batch_size": 64,
+      "control": "2x baseline peak ELR; all other configuration unchanged"
     }
   ],
   "validation": "Local budget, all-step scheduler, AST, CPU three-update bitwise regression and launcher sequencing checks passed; no full-scale training launched."

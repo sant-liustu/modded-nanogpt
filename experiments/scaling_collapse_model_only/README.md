@@ -107,3 +107,15 @@ CUDA_VISIBLE_DEVICES=2,3,4,5 torchrun --standalone --nproc_per_node=4 train_fixe
 ```
 
 上述两条命令分别在两个终端执行；输出目录应为新路径。
+
+## w768/d12：两倍 peak ELR 对照
+
+`train_fixednorm_w768_d12_elr0p12.py` 直接复制同目录 `train_fixednorm_w768.py`，
+唯一配置变化为矩阵 peak ELR 从0.06改为0.12；因此每步矩阵ELR均为原来的两倍。
+Gamma绝对LR仍为0.0018；18,858 updates、warmup1886步、linear decay、2,471,755,776 tokens、
+全局batch128、默认2卡/每卡batch64、seed及其它设置不变。val loss仍默认关闭。
+此脚本独立启动，不加入原批量运行计划。使用新run name和checkpoint目录：
+
+```bash
+CUDA_VISIBLE_DEVICES=0,1 torchrun --standalone --nproc_per_node=2 train_fixednorm_w768_d12_elr0p12.py --input-bin '/data/fineweb_train_*.bin' --input-val-bin '/data/fineweb_val_*.bin' --run-name w768_d12_elr0p12 --checkpoint-dir outputs/w768_d12_elr0p12
+```
