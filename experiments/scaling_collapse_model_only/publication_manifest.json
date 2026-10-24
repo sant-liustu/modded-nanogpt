@@ -168,12 +168,14 @@
       "consumed_tokens": 2471755776,
       "actual_tpp": 19.999577442908187,
       "peak_elr": 0.06,
-      "sha256": "f9afaf8e7bf9e513c17e6412eeb437ebdf287f3a46124cbb1f462429c1f45b0d",
+      "sha256": "89558e3b47c768a657c5565f055b0f38e3bb33ec1611f2d5f0ecc0f80576a437",
       "expected_world_size": 2,
       "device_batch_size": 64,
       "data_seed": 17,
       "model_seed": 0,
-      "data_order": "startup shard-only permutation; fixed cyclic order thereafter"
+      "data_order": "startup shard-only permutation; fixed cyclic order thereafter",
+      "val_loss_every": 100,
+      "val_tokens": 10485760
     },
     {
       "script": "train_fixednorm_w768_d12_shardseed271828.py",
@@ -184,12 +186,14 @@
       "consumed_tokens": 2471755776,
       "actual_tpp": 19.999577442908187,
       "peak_elr": 0.06,
-      "sha256": "908304492244f2774fd1924f7183fb113a11190c2e601a1ad636bc8d95892d39",
+      "sha256": "8c5bea0695cabe7c1d98d08c762b0c3670b6b6e9ec21e30aa5af6c217bd5620b",
       "expected_world_size": 2,
       "device_batch_size": 64,
       "data_seed": 271828,
       "model_seed": 0,
-      "data_order": "startup shard-only permutation; fixed cyclic order thereafter"
+      "data_order": "startup shard-only permutation; fixed cyclic order thereafter",
+      "val_loss_every": 100,
+      "val_tokens": 10485760
     },
     {
       "script": "train_fixednorm_w768_d12_shardseed314159.py",
@@ -200,12 +204,14 @@
       "consumed_tokens": 2471755776,
       "actual_tpp": 19.999577442908187,
       "peak_elr": 0.06,
-      "sha256": "7151dcb01130763777ddbdaa60ca0c857de7f80aeba72e9e3447e01925776a46",
+      "sha256": "cf2c7faa961dcfbdcf50cfac3aab8a3968315dcc277c59c30961db6b3b586f69",
       "expected_world_size": 2,
       "device_batch_size": 64,
       "data_seed": 314159,
       "model_seed": 0,
-      "data_order": "startup shard-only permutation; fixed cyclic order thereafter"
+      "data_order": "startup shard-only permutation; fixed cyclic order thereafter",
+      "val_loss_every": 100,
+      "val_tokens": 10485760
     },
     {
       "script": "train_fixednorm_w768_d12_shardseed987654321.py",
@@ -216,12 +222,14 @@
       "consumed_tokens": 2471755776,
       "actual_tpp": 19.999577442908187,
       "peak_elr": 0.06,
-      "sha256": "82ec931faf98d9c99919db46668a6fee7c24cb0cb93ec69d633a7652c9abd915",
+      "sha256": "513ed776905ab461c7a634eebc164be413c5e38910331f0177b3f06433cbd65f",
       "expected_world_size": 2,
       "device_batch_size": 64,
       "data_seed": 987654321,
       "model_seed": 0,
-      "data_order": "startup shard-only permutation; fixed cyclic order thereafter"
+      "data_order": "startup shard-only permutation; fixed cyclic order thereafter",
+      "val_loss_every": 100,
+      "val_tokens": 10485760
     }
   ],
   "validation": "Local budget, all-step scheduler, AST, CPU three-update bitwise regression and launcher sequencing checks passed; no full-scale training launched."

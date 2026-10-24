@@ -149,7 +149,7 @@ CUDA_VISIBLE_DEVICES=1,2 torchrun --standalone --nproc_per_node=2 train_fixednor
 
 模型初始化seed全部保持当前基准0；旧AdamW实验的模型seed为17，本次不沿用旧优化器/训练配置。
 四项使用当前w768/d12 linear基准：peak ELR0.06、18858步、2471755776 tokens、gamma LR0.0018、
-全局B128、默认2卡/每卡B64、val loss仍默认关闭。除了data seed，其余训练配置一致。
+全局B128、默认2卡/每卡B64、val loss每100步评估一次（含step0、最终步及checkpoint步），每次10,485,760 tokens。除了data seed，其余训练配置一致。
 log目录保存shard_order.json；checkpoint保留原有shard列表、cursor和预取x/y恢复机制。
 至少提供两个shard才可能改变顺序；shard较少时不同seed可能生成相同排列，应核对shard_order.json。
 

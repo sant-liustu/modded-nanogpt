@@ -308,7 +308,7 @@ class Hyperparameters:
     data_seed : int = 271828 # shard permutation only; model initialization seed remains 0
     seed : int = 0
     # evaluation and logging hyperparams
-    val_loss_every : int = 0 # periodic validation disabled; set positive to enable
+    val_loss_every : int = 100 # validate every 100 updates, at step 0, final and checkpoint steps
     val_tokens : int = 10485760 # how many tokens of validation data? it's important to keep this fixed for consistent comparisons
     compile_model : int = 1 # compile the model with torch.compile
     tensor_norm_every : int = 1000 # every how many steps to log tensor norm history? 0 disables
