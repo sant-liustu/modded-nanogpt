@@ -184,7 +184,7 @@ class GPTConfig:
     init_std : float = 0.02
     scale_emb : float = 1.0
     scale_base_model : int = 768
-    scale_variant : str = 'baseline' 
+    scale_variant : str = 'baseline'
 
 class GPT(nn.Module):
 
