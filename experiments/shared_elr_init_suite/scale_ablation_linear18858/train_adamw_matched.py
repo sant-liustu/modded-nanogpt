@@ -78,9 +78,10 @@ class RMSNorm(nn.Module):
 class CausalSelfAttention(nn.Module):
     def __init__(self, config):
         super().__init__()
-        self.hg = config.scale_variant in ('hg', 'hg_dp')
-        self.dp = config.scale_variant == 'hg_dp'
-        reparam = config.scale_variant == 'sandwich_or'
+        self.hg = config.scale_variant in ('hg', 'hg_dp', 'hg_dnp', 'hg_dnp_or')
+        self.dp = config.scale_variant in ('hg_dp', 'hg_dnp', 'hg_dnp_or')
+        self.dnp = config.scale_variant in ('hg_dnp', 'hg_dnp_or')
+        reparam = config.scale_variant in ('sandwich_or', 'hg_dnp_or')
         self.n_head = config.n_head
         self.n_embd = config.n_embd
         self.head_dim = self.n_embd // self.n_head
@@ -93,16 +94,17 @@ class CausalSelfAttention(nn.Module):
         self.q_norm = RMSNorm(self.head_dim, reparameterize=reparam)
         self.k_norm = RMSNorm(self.head_dim, reparameterize=reparam)
         if self.hg:
-            self.q_input_scale = RMSNorm(self.n_embd, normalize=False)
-            self.k_input_scale = RMSNorm(self.n_embd, normalize=False)
-            self.v_input_scale = RMSNorm(self.n_embd, normalize=False)
+            self.q_input_scale = RMSNorm(self.n_embd, reparameterize=reparam, normalize=False)
+            self.k_input_scale = RMSNorm(self.n_embd, reparameterize=reparam, normalize=False)
+            self.v_input_scale = RMSNorm(self.n_embd, reparameterize=reparam, normalize=False)
         if self.dp:
-            # DP adds SCALE ONLY. No extra activation normalization.
-            self.q_output_scale = RMSNorm(self.head_dim, normalize=False)
-            self.k_output_scale = RMSNorm(self.head_dim, normalize=False)
-            self.v_output_scale = RMSNorm(self.head_dim, normalize=False)
-            self.proj_input_scale = RMSNorm(self.n_embd, normalize=False)
-            self.proj_output_scale = RMSNorm(self.n_embd, normalize=False)
+            # Identical DP/DNP scale sites: only DNP enables output normalization.
+            # Existing Q/K RMSNorm stays in place in both variants.
+            self.q_output_scale = RMSNorm(self.head_dim, reparameterize=reparam, normalize=self.dnp)
+            self.k_output_scale = RMSNorm(self.head_dim, reparameterize=reparam, normalize=self.dnp)
+            self.v_output_scale = RMSNorm(self.head_dim, reparameterize=reparam, normalize=self.dnp)
+            self.proj_input_scale = RMSNorm(self.n_embd, reparameterize=reparam, normalize=False)
+            self.proj_output_scale = RMSNorm(self.n_embd, reparameterize=reparam, normalize=self.dnp)
 
     def forward(self, x):
         B, T, C = x.size()
@@ -130,13 +132,15 @@ class CausalSelfAttention(nn.Module):
 class MLP(nn.Module):
     def __init__(self, config):
         super().__init__()
-        self.dp = config.scale_variant == 'hg_dp'
+        self.dp = config.scale_variant in ('hg_dp', 'hg_dnp', 'hg_dnp_or')
+        self.dnp = config.scale_variant in ('hg_dnp', 'hg_dnp_or')
+        reparam = config.scale_variant in ('sandwich_or', 'hg_dnp_or')
         self.c_fc = nn.Linear(config.n_embd, 4 * config.n_embd, bias=False)
         self.c_proj = nn.Linear(4 * config.n_embd, config.n_embd, bias=False)
         if self.dp:
-            self.fc_output_scale = RMSNorm(4 * config.n_embd, normalize=False)
-            self.proj_input_scale = RMSNorm(4 * config.n_embd, normalize=False)
-            self.proj_output_scale = RMSNorm(config.n_embd, normalize=False)
+            self.fc_output_scale = RMSNorm(4 * config.n_embd, reparameterize=reparam, normalize=self.dnp)
+            self.proj_input_scale = RMSNorm(4 * config.n_embd, reparameterize=reparam, normalize=False)
+            self.proj_output_scale = RMSNorm(config.n_embd, reparameterize=reparam, normalize=self.dnp)
 
     def forward(self, x):
         x = self.c_fc(x)
@@ -155,9 +159,9 @@ class Block(nn.Module):
         super().__init__()
         self.attn = CausalSelfAttention(config)
         self.mlp = MLP(config)
-        self.hg = config.scale_variant in ('hg', 'hg_dp')
+        self.hg = config.scale_variant in ('hg', 'hg_dp', 'hg_dnp', 'hg_dnp_or')
         self.sandwich = config.scale_variant in ('sandwich', 'sandwich_or')
-        reparam = config.scale_variant == 'sandwich_or'
+        reparam = config.scale_variant in ('sandwich_or', 'hg_dnp_or')
         self.attn_norm = None if self.hg else RMSNorm(config.n_embd, reparameterize=reparam)
         self.mlp_norm = RMSNorm(config.n_embd, reparameterize=reparam)
         if self.sandwich:
@@ -199,7 +203,7 @@ class GPT(nn.Module):
         ))
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
         self.transformer.wte.weight = self.lm_head.weight # https://paperswithcode.com/method/weight-tying
-        self.final_norm = RMSNorm(config.n_embd, reparameterize=config.scale_variant == 'sandwich_or')
+        self.final_norm = RMSNorm(config.n_embd, reparameterize=config.scale_variant in ('sandwich_or', 'hg_dnp_or'))
         self.apply(self._init_mup_weights)
         # Final effective initialization; tied embedding stays N(0, 0.02^2).
         hidden_std = config.init_std / math.sqrt(self.width_multiplier)
@@ -380,7 +384,7 @@ cli = parser.parse_args()
 for field in fields(Hyperparameters):
     if field.name not in ('num_iterations', 'warmup_iters', 'warmdown_iters', 'reference_tpp'):
         setattr(args, field.name, getattr(cli, field.name))
-if args.scale_variant not in ('baseline', 'hg', 'hg_dp', 'sandwich', 'sandwich_or'):
+if args.scale_variant not in ('baseline', 'hg', 'hg_dp', 'hg_dnp', 'hg_dnp_or', 'sandwich', 'sandwich_or'):
     parser.error('unknown scale variant')
 if (args.model_width, args.model_depth) != (768, 12):
     parser.error('this standalone entry fixes width 768 and depth 12')
@@ -397,9 +401,11 @@ parameter_count = args.vocab_size * args.model_width + args.model_depth * (12 * 
 baseline_parameter_count = parameter_count
 extra_per_block = {'baseline': 0, 'hg': 2 * args.model_width,
     'hg_dp': 13 * args.model_width + 3 * 128,
+    'hg_dnp': 13 * args.model_width + 3 * 128,
+    'hg_dnp_or': 13 * args.model_width + 3 * 128 + 14,
     'sandwich': 2 * args.model_width,
     'sandwich_or': 2 * args.model_width + 6}[args.scale_variant]
-parameter_count += args.model_depth * extra_per_block + (1 if args.scale_variant == 'sandwich_or' else 0)
+parameter_count += args.model_depth * extra_per_block + (1 if args.scale_variant in ('sandwich_or', 'hg_dnp_or') else 0)
 tokens_per_update = args.batch_size * args.sequence_length
 scaling_budget = dict(width=args.model_width, depth=args.model_depth,
     parameter_count=parameter_count, budget_mode='fixed_w768_d12',

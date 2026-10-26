@@ -28,3 +28,15 @@ python train_hg_w768_d12_elr0p06_linear18858.py --describe-only
 Periodic validation defaults off, matching historical train-loss export. To compare NEW validation curves, consistently add --val-loss-every 100 (historical baseline has no validation curve). Old actual shard list was not recorded in the exported log, so exact historical data equivalence remains unconfirmed. For a same-trainer baseline use train_adamw_matched.py --scale-variant baseline with the same launch/data arguments.
 
 Local validation: full18858 matrix/gamma schedules equal historical source; original loader/projection retained; formal parameter counts checked. Private synthetic single-CUDA eager width128/depth1/vocab256/B1/T16/32-update tests passed for baseline and four variants. New baseline matches historical trainer weights/optimizer states bitwise. Fixed RMS error <1e-7; finite gradients including scalar beta; sandwich+OR full-state resume bitwise equal. Formal two-rank/compiled training and long-run loss differences are unverified. No data, logs, checkpoints or synthetic tests are included in this publication.
+
+## Added HG+DNP and HG+DNP+OR
+
+New entries: train_hg_dnp_w768_d12_elr0p06_linear18858.py and train_hg_dnp_or_w768_d12_elr0p06_linear18858.py. They retain the exact same historical linear18858/ELR0.06/embedding1x/gamma0.0018 protocol.
+
+HG+DNP has identical parameter names, shapes and initial values to HG+DP. The only model difference is enabling parameter-free RMS normalization immediately before six existing output-side scales: Q/K/V output (per-head128), attention output projection, MLP expansion, MLP output projection (last full feature dimension). Existing input scales are unchanged; original Q/K RMSNorm remains AFTER these output-scale sites, before RoPE, in both DP and DNP. This deliberate retained-QK setup keeps the DP/DNP intervention isolated; it is an adaptation to this QK-normalized model. Input-only scales at attention/MLP output matrices remain scale-only, exactly as in the existing DP control. No branch-level sandwich norms are added.
+
+HG+DNP+OR uses the same placement but all gamma (including shared-head Q/K norm and final norm) become beta*alpha/RMS(alpha). Alpha=ones, beta=1 initially. Alpha and scalar beta each use the unchanged absolute gamma LR schedule; no matrix projection or WD on them. Formal parameter counts: HG+DNP123714816; HG+DNP+OR123714985. No IWD or SwiGLU modification.
+
+Launch with torchrun --standalone --nproc_per_node=2 <new_entry.py>, using exactly the same --input-bin and --input-val-bin as the existing controls. Neither entry starts training until invoked.
+
+Validation: preexisting five variants have bitwise-identical initial weights, logits and gradients after extension. New DNP matches DP parameter sites exactly, enabling normalization at exactly six output scales per block. Single-CUDA synthetic eager width128/depth1/B1/T16/32updates passed for both additions; fixed-RMS relative error <1e-7, finite gradients, preserved gamma LR and full-state OR resume. Formal two-rank/compiled training remains unverified.
