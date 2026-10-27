@@ -77,12 +77,13 @@ def update(model, optimizer, tape, position, batch, lr, micro, device):
         x, y = tape.batch(position+offset, count, device)
         with amp(device):
             _, loss = model(x, y, return_logits=False)
-        if not torch.isfinite(loss):
+        loss_value = float(loss.detach())
+        if not math.isfinite(loss_value):
             raise FloatingPointError('nonfinite training loss; stopping without clipping')
         (loss * (count/batch)).backward()
-        total += float(loss.detach()) * count/batch
-    grad_sq = sum(p.grad.detach().float().square().sum() for p in model.parameters() if p.grad is not None)
-    grad_norm = float(grad_sq.sqrt())
+        total += loss_value * count/batch
+    grads = [p.grad.detach().float() for p in model.parameters() if p.grad is not None]
+    grad_norm = float(torch.linalg.vector_norm(torch.stack(torch._foreach_norm(grads, 2))))
     if not math.isfinite(grad_norm):
         raise FloatingPointError('nonfinite gradient; stopping without clipping')
     optimizer.step()
@@ -217,8 +218,6 @@ def run(args):
             if macro % args.eval_every == 0 or macro == end:
                 record(loss,grad)
                 save(checkpoint,model,macro,position,updates,contract)
-        if macro == end:
-            save(checkpoint,model,macro,position,updates,contract)
 
 
 if __name__ == '__main__':

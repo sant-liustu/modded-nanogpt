@@ -1,0 +1,46 @@
+{
+  "device": "NVIDIA GeForce RTX 3070 Ti Laptop GPU",
+  "torch": "2.5.1+cu124",
+  "model": "width768_depth12_heads6",
+  "context": 1024,
+  "batch": 4,
+  "microbatch": 4,
+  "steps_per_trial": 20,
+  "rounds": 3,
+  "timing_ms": {
+    "original": [
+      278.69682000018656,
+      279.7536799997033,
+      278.78650499988
+    ],
+    "loss_only": [
+      277.4672150000697,
+      279.2814250002266,
+      282.69187999976566
+    ],
+    "norm_only": [
+      271.2256950006122,
+      273.87449000016204,
+      274.49036999969394
+    ],
+    "optimized": [
+      271.437490000244,
+      271.6220649999741,
+      273.16410999992513
+    ]
+  },
+  "median_ms": {
+    "original": 278.78650499988,
+    "loss_only": 279.2814250002266,
+    "norm_only": 273.87449000016204,
+    "optimized": 271.6220649999741
+  },
+  "step_time_reduction": 0.025698661418022906,
+  "correctness": {
+    "cpu_parameter_updates_bitwise_equal": true,
+    "max_norm_relative_error": 3.760454062293175e-06,
+    "nonfinite_checks_passed": true
+  },
+  "same_gpu_gradients_norm_relative_error": 0.0,
+  "scope": "local GPU; excludes validation and checkpoint writes; not server speed proof"
+}

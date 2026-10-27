@@ -92,6 +92,9 @@ their optimizer-step counters as if they were equal.
 
 ## Local verification only
 
+See [PERFORMANCE.md](PERFORMANCE.md) for the measured diagnostic-overhead patch,
+correctness checks, server benchmark command, and limits of local timing.
+
 See [VALIDATION.md](VALIDATION.md) for the latest small-model end-to-end CPU,
 CUDA, interruption/resume, and Bash launcher checks and their scope.
 
