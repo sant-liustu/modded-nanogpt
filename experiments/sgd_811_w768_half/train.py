@@ -233,7 +233,7 @@ if __name__ == '__main__':
     p.add_argument('--layers',type=int,default=12)
     p.add_argument('--heads',type=int,default=6)
     p.add_argument('--seed',type=int,default=0)
-    p.add_argument('--validation-contexts',type=int,default=1024)
+    p.add_argument('--validation-contexts',type=int,default=512)
     p.add_argument('--eval-every',type=int,default=1000)
     p.add_argument('--arm',choices=['prefix','lr','batch','all'],default='all')
     p.add_argument('--device',choices=['cpu','cuda'],default='cuda')

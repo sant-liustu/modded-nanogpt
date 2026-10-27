@@ -77,8 +77,10 @@ Global batch is independent of `--microbatch` (default 1). Gradient accumulation
 averages over the full global batch. Increase microbatch on a larger GPU for
 throughput, consistently across the two arms. No DDP is implemented.
 
-Validation: same first 1024 contexts of the validation tape, default every
-1000 common macros and each arm endpoint. JSONL reports validation CE,
+Validation: same first 512 contexts (524,288 predicted tokens) of the validation tape, default every
+1000 common macros and each arm endpoint. Each validation forward uses
+`--microbatch` contexts (default 1), so default evaluation takes 512 forwards.
+JSONL reports validation CE,
 last-update train CE, gradient and parameter norms, LR, batch, tokens and T.
 The first record of each tail is the identical shared-prefix evaluation.
 Use the same T grid to compare `lr.jsonl` and `batch.jsonl`; don't compare
