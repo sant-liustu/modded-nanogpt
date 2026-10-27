@@ -1,3 +1,4 @@
+import math
 """Standalone CPU checks: projection, paired training and exact resume."""
 import json
 from pathlib import Path
@@ -120,6 +121,13 @@ train.run(Namespace(**args))
                     max_error=max(max_error,row['norm_control_max_relative_error'])
                 rows.append({row['macro']:row for row in entries})
             assert rows[0]==rows[1],arm
+            train_rows = [[json.loads(line) for line in
+                           (root/folder/f'{arm}_train.jsonl').read_text().splitlines()]
+                          for folder in ('continuous','resumed')]
+            assert train_rows[0] == train_rows[1], (arm, 'per-update training logs')
+            first_update = 1 if arm == 'prefix' else final['prefix']['updates']+1
+            assert [row['updates'] for row in train_rows[0]] == list(range(first_update,a['updates']+1))
+            assert all(math.isfinite(row['train_loss']) for row in train_rows[0])
             final[arm]=dict(updates=a['updates'],contexts=a['position'],macro=a['macro'])
         lr=json.loads((root/'continuous/lr.jsonl').read_text().splitlines()[0])
         bs=json.loads((root/'continuous/batch.jsonl').read_text().splitlines()[0])
@@ -141,7 +149,7 @@ train.run(Namespace(**args))
                         'missing targets rejected','full global batches 4/16/40',
                         'CPU continuous and interrupted/resumed weights bitwise equal',
                         'resumed JSONL identical except timing','paired clocks/data/ratios',
-                        'same controlled prefix fork','completed run can be reopened'],
+                        'every update loss retained and resume logs identical','same controlled prefix fork','completed run can be reopened'],
                 limitations='No formal width-768 run or GPU/DDP validation; no claim of loss collapse.')
     Path(__file__).with_name('verification.json').write_text(json.dumps(report,indent=2))
     print(json.dumps(report,indent=2))

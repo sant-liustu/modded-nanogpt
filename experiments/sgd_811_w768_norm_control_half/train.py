@@ -234,6 +234,17 @@ def run(args):
         if trace.exists():
             rows = [json.loads(s) for s in trace.read_text().splitlines()]
             trace.write_text(''.join(json.dumps(r)+'\n' for r in rows if r['macro'] <= macro))
+        train_trace = out/f'{arm}_train.jsonl'
+        if train_trace.exists():
+            rows = [json.loads(line) for line in train_trace.read_text().splitlines()]
+            train_trace.write_text(''.join(json.dumps(row)+'\n' for row in rows
+                                           if row['updates'] <= updates))
+        pending_train = []
+        def flush_train():
+            if pending_train:
+                with train_trace.open('a') as f:
+                    f.writelines(json.dumps(row)+'\n' for row in pending_train)
+                pending_train.clear()
         start_time = time.monotonic()
         def record(loss=None, grad=None):
             norm = float(sum(p.detach().float().square().sum() for p in model.parameters()).sqrt())
@@ -258,19 +269,26 @@ def run(args):
             repeats = 1 if arm == 'batch' else value
             size = args.batch*value if arm == 'batch' else args.batch
             lr = args.lr if arm == 'batch' else args.lr/value
-            for _ in range(repeats):
+            for substep in range(repeats):
                 micro = size if args.microbatch is None else args.microbatch
                 loss, grad = update(model,optimizer,train,position,size,lr,micro,args.device)
                 position += size
                 updates += 1
+                pending_train.append(dict(arm=arm, macro=index+1, substep=substep+1,
+                    updates=updates, T=index*args.lr+(substep+1)*lr,
+                    contexts=position, tokens=position*args.context,
+                    lr=lr, batch=size, train_loss=loss))
             macro = index+1
             milestone = save_prefix_milestone(out,model,arm,macro,position,updates,contract)
             if milestone is not None:
+                flush_train()
                 print(f'Preserved milestone checkpoint: {milestone}', flush=True)
             if macro % args.eval_every == 0 or macro == end:
+                flush_train()
                 record(loss,grad)
                 save(checkpoint,model,macro,position,updates,contract)
         if macro == end:
+            flush_train()
             save(checkpoint,model,macro,position,updates,contract)
 
 

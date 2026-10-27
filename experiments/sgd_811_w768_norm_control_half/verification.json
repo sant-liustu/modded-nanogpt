@@ -16,7 +16,7 @@
       "folder": "continuous",
       "arm": "all",
       "interrupt": null,
-      "seconds": 10.532890499991481
+      "seconds": 11.511993199994322
     },
     {
       "folder": "resumed",
@@ -25,13 +25,13 @@
         "prefix",
         40
       ],
-      "seconds": 7.404845199998817
+      "seconds": 7.884283200008213
     },
     {
       "folder": "resumed",
       "arm": "prefix",
       "interrupt": null,
-      "seconds": 7.4166270999994595
+      "seconds": 7.65813499999058
     },
     {
       "folder": "resumed",
@@ -40,13 +40,13 @@
         "lr",
         79
       ],
-      "seconds": 5.490837499994086
+      "seconds": 5.843227200006368
     },
     {
       "folder": "resumed",
       "arm": "lr",
       "interrupt": null,
-      "seconds": 5.510969299997669
+      "seconds": 6.339979899988975
     },
     {
       "folder": "resumed",
@@ -55,19 +55,19 @@
         "batch",
         81
       ],
-      "seconds": 5.339317200006917
+      "seconds": 6.216256400002749
     },
     {
       "folder": "resumed",
       "arm": "batch",
       "interrupt": null,
-      "seconds": 5.247726200002944
+      "seconds": 5.724668899987591
     },
     {
       "folder": "resumed",
       "arm": "all",
       "interrupt": null,
-      "seconds": 5.008062000008067
+      "seconds": 5.53181709999626
     }
   ],
   "final_states": {
@@ -97,6 +97,7 @@
     "CPU continuous and interrupted/resumed weights bitwise equal",
     "resumed JSONL identical except timing",
     "paired clocks/data/ratios",
+    "every update loss retained and resume logs identical",
     "same controlled prefix fork",
     "completed run can be reopened"
   ],

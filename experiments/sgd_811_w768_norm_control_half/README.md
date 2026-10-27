@@ -74,3 +74,15 @@ equal final CPU weights and equal measurement records excluding timing. Maximum
 recorded matrix RMS relative error: 2.384185791015625e-7. See verification.json.
 The 200k checkpoint trigger and target persistence are tested without performing
 200k training updates. Formal width-768 GPU training is not validated by this test.
+
+## Per-update training loss
+
+Each optimizer update is retained in `{arm}_train.jsonl` (prefix, lr, batch),
+with train_loss, updates, macro, substep, T, contexts, tokens, lr and batch.
+Rows are buffered and flushed at validation boundaries (default 1000 macros),
+at milestones, and at arm completion. Validation frequency is unchanged.
+For a full trajectory, concatenate prefix_train.jsonl with the desired tail.
+On resume, rows beyond the checkpoint update are discarded and regenerated.
+A crash can lose the buffered rows since the last save; resuming from the
+checkpoint recomputes those updates. Old checkpoints cannot recover losses
+from steps completed before this logging feature was added.
