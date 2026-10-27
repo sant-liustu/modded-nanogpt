@@ -206,7 +206,8 @@ def run(args):
             size = args.batch*value if arm == 'batch' else args.batch
             lr = args.lr if arm == 'batch' else args.lr/value
             for _ in range(repeats):
-                loss, grad = update(model,optimizer,train,position,size,lr,args.microbatch,args.device)
+                micro = size if args.microbatch is None else args.microbatch
+                loss, grad = update(model,optimizer,train,position,size,lr,micro,args.device)
                 position += size
                 updates += 1
             macro = index+1
@@ -228,7 +229,8 @@ if __name__ == '__main__':
     p.add_argument('--updates',type=int,required=True)
     p.add_argument('--lr',type=float,default=0.01)
     p.add_argument('--batch',type=int,default=4)
-    p.add_argument('--microbatch',type=int,default=4)
+    p.add_argument('--microbatch',type=int,default=None,
+                   help='Optional cap per forward/backward; omitted uses the full current global batch')
     p.add_argument('--validation-batch-size',type=int,default=32)
     p.add_argument('--context',type=int,default=1024)
     p.add_argument('--width',type=int,default=768)
@@ -241,6 +243,6 @@ if __name__ == '__main__':
     p.add_argument('--device',choices=['cpu','cuda'],default='cuda')
     p.add_argument('--preflight',action='store_true')
     args=p.parse_args()
-    if min(args.batch,args.microbatch,args.validation_batch_size,args.context,args.eval_every,args.validation_contexts) <= 0 or args.lr <= 0:
+    if min(args.batch,args.validation_batch_size,args.context,args.eval_every,args.validation_contexts) <= 0 or args.lr <= 0 or (args.microbatch is not None and args.microbatch <= 0):
         p.error('sizes, cadence, and learning rate must be positive')
     run(args)

@@ -73,15 +73,17 @@ To explicitly resume the milestone, copy it as `prefix.pt` into a NEW output
 directory and use that output with the otherwise identical command. Keep the
 same data paths/metadata. This preserves the original experiment and logs.
 
-Global batch is independent of `--microbatch` (default 4). Gradient accumulation
-averages over the full global batch. Increase microbatch on a larger GPU for
-throughput, consistently across the two arms. No DDP is implemented.
+By default, omit `--microbatch`: each update processes its full global batch
+in one forward/backward (4, then 16/40 in the batch-schedule arm). There is no
+gradient accumulation in this mode. Optionally set `--microbatch 4` to cap each
+forward/backward and accumulate a correctly averaged global-batch gradient.
+No DDP is implemented. Existing checkpoints retain their microbatch contract;
+when resuming an older microbatch-4 run, explicitly pass `--microbatch 4`.
 
 Validation: same first 512 contexts (524,288 predicted tokens) of the validation tape, default every
 1000 common macros and each arm endpoint. Each validation forward uses
 `--validation-batch-size` contexts (default 32), independently of training
-microbatch, so default evaluation takes 16 forwards. Training at global batch 4
-uses one forward/backward per update; batch 16/40 uses 4/10 microbatches of 4.
+microbatch, so default evaluation takes 16 forwards.
 JSONL reports validation CE,
 last-update train CE, gradient and parameter norms, LR, batch, tokens and T.
 The first record of each tail is the identical shared-prefix evaluation.
