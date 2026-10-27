@@ -78,6 +78,9 @@ train.run(Namespace(**args))
     # Simulate a log flushed after the saved checkpoint; it must be removed.
     with (root/'resumed/prefix.jsonl').open('a') as f:
         f.write(json.dumps(dict(macro=41, injected_stale_record=True))+'\n')
+    with (root/'resumed/prefix_steps.jsonl').open('a') as f:
+        f.write(json.dumps(dict(updates=41, injected_stale_record=True))+'\n')
+        f.write('{"updates":42')  # interrupted write of the last line
     run('resumed', 'prefix')
     run('resumed', 'lr', ['lr', 79])
     run('resumed', 'lr')
@@ -99,6 +102,13 @@ train.run(Namespace(**args))
                 x.pop('seconds',None)
             return {x['macro']:x for x in values}
         assert rows('continuous') == rows('resumed'), arm
+        def steps(folder):
+            return [json.loads(s) for s in (root/folder/f'{arm}_steps.jsonl').read_text().splitlines()]
+        assert steps('continuous')==steps('resumed'), arm
+        step_rows=steps('resumed')
+        expected_first=1 if arm=='prefix' else 79
+        assert [r['updates'] for r in step_rows]==list(range(expected_first,a['updates']+1))
+        assert all(np.isfinite(r['train_loss']) for r in step_rows)
         stats[arm] = {k:a[k] for k in ('macro','position','updates')}
     assert stats['lr']==dict(macro=82,position=400,updates=100)
     assert stats['batch']==dict(macro=82,position=400,updates=82)
@@ -128,6 +138,7 @@ train.run(Namespace(**args))
                         'prefix and both tails interrupted after checkpoint',
                         'CPU resumed weights and logs exactly equal to continuous',
                         'data cursor and ratio-path pairing','stale log rollback',
+                        'every-update logs equal after resume; partial final line recovered',
                         'completed-run reopening','mismatched config rejection',
                         'CUDA full-chain finite checks when available'])
     (root/'report.json').write_text(json.dumps(report,indent=2),encoding='utf-8')

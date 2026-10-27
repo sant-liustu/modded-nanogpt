@@ -86,6 +86,16 @@ Validation: same first 512 contexts (524,288 predicted tokens) of the validation
 microbatch, so default evaluation takes 16 forwards.
 JSONL reports validation CE,
 last-update train CE, gradient and parameter norms, LR, batch, tokens and T.
+Additionally `prefix_steps.jsonl`, `lr_steps.jsonl`, and `batch_steps.jsonl`
+record EVERY optimizer update: train loss, already-computed gradient norm,
+update counter, intrinsic time, contexts/tokens, LR, global batch and ratio.
+These files are independent of validation frequency. They use buffered writes,
+flushed every 100 updates and before checkpoints; each step is not printed to
+the terminal. To inspect live training, tail the appropriate steps JSONL file.
+Resume streams through existing step logs and removes records beyond the
+restored checkpoint, including an interrupted partial final line. If updating
+an already-running experiment, historical unrecorded losses cannot be recovered;
+step logs begin when the new version is first executed.
 The first record of each tail is the identical shared-prefix evaluation.
 Use the same T grid to compare `lr.jsonl` and `batch.jsonl`; don't compare
 their optimizer-step counters as if they were equal.

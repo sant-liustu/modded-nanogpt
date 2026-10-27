@@ -122,6 +122,28 @@ def save_prefix_milestone(out, model, arm, macro, position, updates, contract):
     return path
 
 
+@contextlib.contextmanager
+def step_trace(path, restored_updates):
+    # Stream recovery: discard rows ahead of the checkpoint, without loading
+    # hundreds of thousands of records into memory. A partial final line can
+    # result from interruption; malformed interior records are an error.
+    if path.exists():
+        tmp = path.with_suffix('.recovering')
+        with path.open() as src, tmp.open('w') as dst:
+            for line in src:
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    if src.read().strip():
+                        raise ValueError(f'malformed interior training log: {path}')
+                    break
+                if row['updates'] <= restored_updates:
+                    dst.write(line.rstrip('\n')+'\n')
+        os.replace(tmp, path)
+    with path.open('a', buffering=65536) as stream:
+        yield stream
+
+
 def run(args):
     g, prefix, scale = schedule(args.updates, args.lr)
     train = Tape(args.train, args.context)
@@ -201,23 +223,34 @@ def run(args):
             print(json.dumps(row), flush=True)
         if macro == (0 if arm == 'prefix' else prefix):
             record()
-        for index in range(macro,end):
-            value = int(g[index])
-            repeats = 1 if arm == 'batch' else value
-            size = args.batch*value if arm == 'batch' else args.batch
-            lr = args.lr if arm == 'batch' else args.lr/value
-            for _ in range(repeats):
-                micro = size if args.microbatch is None else args.microbatch
-                loss, grad = update(model,optimizer,train,position,size,lr,micro,args.device)
-                position += size
-                updates += 1
-            macro = index+1
-            milestone = save_prefix_milestone(out,model,arm,macro,position,updates,contract)
-            if milestone is not None:
-                print(f'Preserved milestone checkpoint: {milestone}', flush=True)
-            if macro % args.eval_every == 0 or macro == end:
-                record(loss,grad)
-                save(checkpoint,model,macro,position,updates,contract)
+        with step_trace(out/f'{arm}_steps.jsonl', updates) as step_file:
+            for index in range(macro,end):
+                value = int(g[index])
+                repeats = 1 if arm == 'batch' else value
+                size = args.batch*value if arm == 'batch' else args.batch
+                lr = args.lr if arm == 'batch' else args.lr/value
+                for substep in range(repeats):
+                    micro = size if args.microbatch is None else args.microbatch
+                    loss, grad = update(model,optimizer,train,position,size,lr,micro,args.device)
+                    position += size
+                    updates += 1
+                    step_file.write(json.dumps(dict(
+                        arm=arm, updates=updates, train_loss=loss, gradient_norm=grad,
+                        T=(index+(substep+1)/repeats)*args.lr,
+                        contexts=position, tokens=position*args.context,
+                        lr=lr, batch=size, ratio=size/lr))+'\n')
+                    if updates % 100 == 0:
+                        step_file.flush()
+                macro = index+1
+                if arm == 'prefix' and updates == 200_000:
+                    step_file.flush()
+                milestone = save_prefix_milestone(out,model,arm,macro,position,updates,contract)
+                if milestone is not None:
+                    print(f'Preserved milestone checkpoint: {milestone}', flush=True)
+                if macro % args.eval_every == 0 or macro == end:
+                    step_file.flush()
+                    record(loss,grad)
+                    save(checkpoint,model,macro,position,updates,contract)
 
 
 if __name__ == '__main__':
