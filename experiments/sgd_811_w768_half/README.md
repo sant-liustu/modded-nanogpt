@@ -92,6 +92,9 @@ their optimizer-step counters as if they were equal.
 
 ## Local verification only
 
+See [VALIDATION.md](VALIDATION.md) for the latest small-model end-to-end CPU,
+CUDA, interruption/resume, and Bash launcher checks and their scope.
+
 `python verify.py` checks the model snapshot against the local source, schedule
 invariants, shard-boundary token continuity and microbatch accumulation. On a
 server without the original source file, that snapshot comparison is skipped.
