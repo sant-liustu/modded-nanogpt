@@ -1,0 +1,89 @@
+{
+  "gpu": "NVIDIA GeForce RTX 3070 Ti Laptop GPU",
+  "torch": "2.5.1+cu124",
+  "model": {
+    "width": 64,
+    "layers": 2,
+    "heads": 2,
+    "vocab": 50304,
+    "context": 128,
+    "parameters": 3318208
+  },
+  "lr": 0.01,
+  "precision": "BF16 autocast / FP32 weights",
+  "warmup_each_mode": 15,
+  "timed_steps_per_window": 20,
+  "windows_each_mode": 5,
+  "method": "Same runner update(), same real FineWeb batch, reset weights before each alternating window; only project_matrix_norms enabled/disabled; synchronized wall time; includes data loading and gradient-finiteness checks; excludes validation/checkpoint/logging.",
+  "results": [
+    {
+      "batch": 4,
+      "plain_ms": 13.630934999673627,
+      "projected_ms": 14.287279999552993,
+      "extra_ms": 0.6563449998793658,
+      "overhead_percent": 4.815113562606532,
+      "samples_ms": {
+        "plain": [
+          14.415460000600433,
+          13.630934999673627,
+          14.187840000522556,
+          11.703409999608994,
+          12.41089999966789
+        ],
+        "projected": [
+          16.26851000037277,
+          15.325014999689301,
+          14.103179999801796,
+          13.528790000418667,
+          14.287279999552993
+        ]
+      }
+    },
+    {
+      "batch": 16,
+      "plain_ms": 23.06929999977001,
+      "projected_ms": 24.1436349999276,
+      "extra_ms": 1.074335000157589,
+      "overhead_percent": 4.656990026434693,
+      "samples_ms": {
+        "plain": [
+          24.052595000102883,
+          23.384074999921722,
+          23.064670000167098,
+          23.06929999977001,
+          23.05793999985326
+        ],
+        "projected": [
+          25.281920000270475,
+          23.974264999560546,
+          24.69870999993873,
+          24.1436349999276,
+          23.024774999794317
+        ]
+      }
+    },
+    {
+      "batch": 40,
+      "plain_ms": 43.959539999923436,
+      "projected_ms": 44.923924999602605,
+      "extra_ms": 0.9643849996791687,
+      "overhead_percent": 2.193801390280359,
+      "samples_ms": {
+        "plain": [
+          43.959539999923436,
+          42.83024999967893,
+          43.96162999983062,
+          44.34170000022277,
+          43.67100500021479
+        ],
+        "projected": [
+          44.52774000019417,
+          44.25355500061414,
+          45.04817999986699,
+          45.90842999969027,
+          44.923924999602605
+        ]
+      }
+    }
+  ]
+}

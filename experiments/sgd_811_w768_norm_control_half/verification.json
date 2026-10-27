@@ -1,0 +1,104 @@
+{
+  "status": "passed",
+  "device": "cpu",
+  "test_model": {
+    "width": 16,
+    "layers": 1,
+    "heads": 2,
+    "context": 16
+  },
+  "fixture": "synthetic token shards",
+  "canonical_updates": 100,
+  "validation_batch": 32,
+  "max_recorded_relative_rms_error": 2.384185791015625e-07,
+  "events": [
+    {
+      "folder": "continuous",
+      "arm": "all",
+      "interrupt": null,
+      "seconds": 10.532890499991481
+    },
+    {
+      "folder": "resumed",
+      "arm": "prefix",
+      "interrupt": [
+        "prefix",
+        40
+      ],
+      "seconds": 7.404845199998817
+    },
+    {
+      "folder": "resumed",
+      "arm": "prefix",
+      "interrupt": null,
+      "seconds": 7.4166270999994595
+    },
+    {
+      "folder": "resumed",
+      "arm": "lr",
+      "interrupt": [
+        "lr",
+        79
+      ],
+      "seconds": 5.490837499994086
+    },
+    {
+      "folder": "resumed",
+      "arm": "lr",
+      "interrupt": null,
+      "seconds": 5.510969299997669
+    },
+    {
+      "folder": "resumed",
+      "arm": "batch",
+      "interrupt": [
+        "batch",
+        81
+      ],
+      "seconds": 5.339317200006917
+    },
+    {
+      "folder": "resumed",
+      "arm": "batch",
+      "interrupt": null,
+      "seconds": 5.247726200002944
+    },
+    {
+      "folder": "resumed",
+      "arm": "all",
+      "interrupt": null,
+      "seconds": 5.008062000008067
+    }
+  ],
+  "final_states": {
+    "prefix": {
+      "updates": 78,
+      "contexts": 312,
+      "macro": 78
+    },
+    "lr": {
+      "updates": 100,
+      "contexts": 400,
+      "macro": 82
+    },
+    "batch": {
+      "updates": 82,
+      "contexts": 400,
+      "macro": 82
+    }
+  },
+  "checks": [
+    "matrix projection after every update",
+    "tied matrix counted once",
+    "gamma excluded from projection",
+    "200k milestone targets and no overwrite",
+    "missing targets rejected",
+    "full global batches 4/16/40",
+    "CPU continuous and interrupted/resumed weights bitwise equal",
+    "resumed JSONL identical except timing",
+    "paired clocks/data/ratios",
+    "same controlled prefix fork",
+    "completed run can be reopened"
+  ],
+  "limitations": "No formal width-768 run or GPU/DDP validation; no claim of loss collapse."
+}

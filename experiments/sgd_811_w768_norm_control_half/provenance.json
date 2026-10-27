@@ -1,0 +1,8 @@
+{
+  "baseline_snapshot": "F:\\tmp\\sgd811_publish_20261027\\experiments\\sgd_811_w768_half",
+  "baseline_files": {
+    "train.py": "3cd8bb0378caf020797dd8f67eb55def1b4fad70a065e2deff5bad696af8ef27",
+    "model.py": "f868ac7c49c4478a5b04916415eb01cfe68f2ad9818cd519c47543e598f5d522"
+  },
+  "model_unchanged": true
+}

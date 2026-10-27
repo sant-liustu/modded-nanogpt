@@ -1,0 +1,33 @@
+{
+  "canonical_updates": 301728,
+  "tokens_per_trajectory": 1235877888,
+  "prefix_updates": 241386,
+  "macros": 251946,
+  "terminal_intrinsic_time": 2519.46,
+  "tail_scale": 1.0,
+  "shared_prefix_plus_two_tails_tokens": 1483038720,
+  "base_lr": 0.01,
+  "base_batch": 4,
+  "source": "F:/scaling_collapse_model_only_20261022/train_fixednorm_w768.py",
+  "multipliers": [
+    1,
+    4,
+    10
+  ],
+  "phase_reference_updates": [
+    241386,
+    30172,
+    30170
+  ],
+  "lr_arm_updates": 301728,
+  "batch_arm_updates": 251946,
+  "total_executed_updates": 312288,
+  "budget_fraction_of_linear": 0.5,
+  "milestone_update": 200000,
+  "norm_control": true,
+  "norm_control_policy": "all_unique_2d_initial_rms_after_each_sgd_update_v1",
+  "control_start": "initialization",
+  "validation_contexts": 512,
+  "validation_batch_size": 32,
+  "microbatch": null
+}
