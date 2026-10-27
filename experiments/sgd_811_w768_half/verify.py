@@ -4,7 +4,7 @@ from pathlib import Path
 import tempfile
 import numpy as np
 import torch
-from train import Tape, schedule, update, save_prefix_milestone
+from train import Tape, schedule, update, save_prefix_milestone, evaluate
 from model import GPT, GPTConfig
 
 source=Path('F:/自动化/自动化for agent/人机协作区/norm_control_muon_schedule_collapse/modded-nanogpt-local/experiments/small_batch_adamw_baseline/generated_train_scripts/train_small_batch_adamw_rmsnorm_gamma_B0128_devB064_lr0p0036_wd0_seed00.py')
@@ -57,6 +57,10 @@ with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as tmp:
     update(b,ob,tape,0,4,.01,1,'cpu')
     for pa,pb in zip(a.parameters(),b.parameters()):
         torch.testing.assert_close(pa,pb,atol=2e-7,rtol=2e-6)
+    # Independent validation batching, including a final partial batch.
+    single=evaluate(a,tape,17,1,'cpu')
+    for val_batch in (4,8,32):
+        assert abs(single-evaluate(a,tape,17,val_batch,'cpu')) < 2e-6
     for array in tape.arrays:
         array._mmap.close()
 print('PASS: exact model snapshot, paired clocks/ratios/tokens, contiguous data, accumulation')

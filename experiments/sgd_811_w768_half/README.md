@@ -73,13 +73,15 @@ To explicitly resume the milestone, copy it as `prefix.pt` into a NEW output
 directory and use that output with the otherwise identical command. Keep the
 same data paths/metadata. This preserves the original experiment and logs.
 
-Global batch is independent of `--microbatch` (default 1). Gradient accumulation
+Global batch is independent of `--microbatch` (default 4). Gradient accumulation
 averages over the full global batch. Increase microbatch on a larger GPU for
 throughput, consistently across the two arms. No DDP is implemented.
 
 Validation: same first 512 contexts (524,288 predicted tokens) of the validation tape, default every
 1000 common macros and each arm endpoint. Each validation forward uses
-`--microbatch` contexts (default 1), so default evaluation takes 512 forwards.
+`--validation-batch-size` contexts (default 32), independently of training
+microbatch, so default evaluation takes 16 forwards. Training at global batch 4
+uses one forward/backward per update; batch 16/40 uses 4/10 microbatches of 4.
 JSONL reports validation CE,
 last-update train CE, gradient and parameter norms, LR, batch, tokens and T.
 The first record of each tail is the identical shared-prefix evaluation.
@@ -91,7 +93,7 @@ their optimizer-step counters as if they were equal.
 `python verify.py` checks the model snapshot against the local source, schedule
 invariants, shard-boundary token continuity and microbatch accumulation. On a
 server without the original source file, that snapshot comparison is skipped.
-`python train.py --updates 20 --output smoke_gpu --eval-every 8 --validation-contexts 2`
+`python train.py --updates 20 --output smoke_gpu --eval-every 8 --validation-contexts 2 --microbatch 1 --validation-batch-size 1`
 was run on the predecessor implementation locally with the full 768 model. The half-budget package has invariant and checkpoint tests; no new GPU training was started. This is a functional
 smoke test, not a scientific 8-1-1/collapse or convergence result: its tiny
 budget compresses the schedule tail into one macro.

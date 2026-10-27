@@ -139,7 +139,8 @@ def run(args):
                     validation_contexts=args.validation_contexts,
                     model_sha256=hashlib.sha256(Path(__file__).with_name('model.py').read_bytes()).hexdigest(),
                     schedule_sha256=hashlib.sha256(g.tobytes()).hexdigest(),
-                    microbatch=args.microbatch, device=args.device)
+                    microbatch=args.microbatch, validation_batch_size=args.validation_batch_size,
+                    device=args.device)
     summary = dict(contract=contract, macros=len(g), prefix_macros=prefix, tail_scale=scale,
                    g_histogram={str(k):int((g==k).sum()) for k in np.unique(g)},
                    terminal_T=len(g)*args.lr, tokens=needed-1,
@@ -186,7 +187,7 @@ def run(args):
             norm = float(sum(p.detach().float().square().sum() for p in model.parameters()).sqrt())
             row = dict(arm=arm, macro=macro, T=macro*args.lr, contexts=position,
                        tokens=position*args.context, updates=updates,
-                       validation_loss=evaluate(model,val,args.validation_contexts,args.microbatch,args.device),
+                       validation_loss=evaluate(model,val,args.validation_contexts,args.validation_batch_size,args.device),
                        train_loss=loss, gradient_norm=grad, parameter_norm=norm,
                        seconds=time.monotonic()-start_time)
             if macro:
@@ -227,7 +228,8 @@ if __name__ == '__main__':
     p.add_argument('--updates',type=int,required=True)
     p.add_argument('--lr',type=float,default=0.01)
     p.add_argument('--batch',type=int,default=4)
-    p.add_argument('--microbatch',type=int,default=1)
+    p.add_argument('--microbatch',type=int,default=4)
+    p.add_argument('--validation-batch-size',type=int,default=32)
     p.add_argument('--context',type=int,default=1024)
     p.add_argument('--width',type=int,default=768)
     p.add_argument('--layers',type=int,default=12)
@@ -239,6 +241,6 @@ if __name__ == '__main__':
     p.add_argument('--device',choices=['cpu','cuda'],default='cuda')
     p.add_argument('--preflight',action='store_true')
     args=p.parse_args()
-    if min(args.batch,args.microbatch,args.context,args.eval_every,args.validation_contexts) <= 0 or args.lr <= 0:
+    if min(args.batch,args.microbatch,args.validation_batch_size,args.context,args.eval_every,args.validation_contexts) <= 0 or args.lr <= 0:
         p.error('sizes, cadence, and learning rate must be positive')
     run(args)
