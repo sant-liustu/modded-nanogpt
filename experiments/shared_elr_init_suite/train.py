@@ -308,7 +308,7 @@ class Hyperparameters:
     compile_model : int = 1 # compile the model with torch.compile
     fisher_every : int = 1000 # 0 disables; otherwise 0,100,initial/final and every N updates
     fisher_draws : int = 2 # independent estimates, each accumulates then squares
-    fisher_batch_size : int = 64 # sequences per micro-batch (rank zero only)
+    fisher_batch_size : int = 64 # sequences per micro-batch per rank
     fisher_sequence_length : int = 1024
     fisher_accumulation_steps : int = 16 # micro-batches per single estimate
     fisher_seed : int = 1729
@@ -896,12 +896,13 @@ if master_process:
         gamma_wd=0.0, config=vars(args), source_sha256=hashlib.sha256(code.encode()).hexdigest()), indent=2))
 # Dedicated loader leaves the training/validation cursors untouched, including resume.
 fisher_inputs = None
-if args.fisher_every and master_process:
+if args.fisher_every:
     from fisher_diagnostics import probe as fisher_probe
-    (Path(logdir) / 'fisher_initial_rms.json').write_text(json.dumps(dict(
-        initial_step=0, resumed_at_step=start_step, rms=fisher_initial_rms,
-        definition='sqrt(sum(parameter**2)/numel)',
-        provenance='checkpoint' if cli.resume else 'before_first_update'), indent=2))
+    if master_process:
+        (Path(logdir) / 'fisher_initial_rms.json').write_text(json.dumps(dict(
+            initial_step=0, resumed_at_step=start_step, rms=fisher_initial_rms,
+            definition='sqrt(sum(parameter**2)/numel)',
+            provenance='checkpoint' if cli.resume else 'before_first_update'), indent=2))
     fisher_loader = DistributedDataLoader(args.input_bin, args.fisher_batch_size,
                                          args.fisher_sequence_length, 0, 1)
     # Keep diagnostic sequences on CPU; only one micro-batch goes to CUDA.
@@ -911,6 +912,11 @@ if args.fisher_every and master_process:
     del fisher_batches
     del fisher_loader
     fisher_input_hash = hashlib.sha256(b''.join(t.numpy().tobytes() for t in fisher_inputs)).hexdigest()
+    if args.fisher_accumulation_steps % ddp_world_size:
+        raise ValueError('Fisher accumulation steps must be divisible by world size')
+    local_sequences = len(fisher_inputs[0]) // ddp_world_size
+    fisher_inputs = tuple(t[ddp_rank*local_sequences:(ddp_rank+1)*local_sequences].contiguous()
+                          for t in fisher_inputs)
 
 def maybe_measure_fisher(step):
     from fisher_diagnostics import should_measure
@@ -918,11 +924,11 @@ def maybe_measure_fisher(step):
         return
     if use_ddp:
         dist.barrier()
+    record = fisher_probe(raw_model, *fisher_inputs, args.fisher_draws, args.fisher_seed,
+                              initial_rms=fisher_initial_rms, micro_batch_size=args.fisher_batch_size, distributed=use_ddp)
     if master_process:
-        record = fisher_probe(raw_model, *fisher_inputs, args.fisher_draws, args.fisher_seed,
-                              initial_rms=fisher_initial_rms, micro_batch_size=args.fisher_batch_size)
         record.update(step=step, input_sha256=fisher_input_hash,
-                      data_source=args.input_bin, execution='rank0_raw_model_no_ddp_reduction')
+                      data_source=args.input_bin, execution='all_ranks_SUM_gradient_before_square' if use_ddp else 'single_rank')
         with open(os.path.join(logdir, 'fisher_history.jsonl'), 'a') as f:
             f.write(json.dumps(record, allow_nan=False)+'\n')
         values = ' '.join(f"{g}={r['mean_fisher']:.3e}" for g,r in record['groups'].items())
