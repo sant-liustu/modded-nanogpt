@@ -21,11 +21,14 @@ At step i use norm s(i/N), update with baseLR*s(i/N)^p, then project to s((i+1)/
 Implementation: standalone train.py and unchanged model snapshot, three shell
 launchers, small CPU/CUDA validation. Reuse existing tape and buffered log
 recovery code locally, no framework abstraction. Keep original runners intact.
-Log each update; validate and per-tensor diagnostics every200 updates, every20
-within200 updates of WSD boundaries; checkpoint every1000, boundaries, final,
-and permanent200000. Fixed512 validation contexts in batches32.
+Log each update; validate and per-tensor diagnostics every500 updates, with boundary
+densification disabled; checkpoint every1000, boundaries, final,
+and permanent200000. Fixed256 validation contexts in batches32.
 
 Verify schedule algebra, norm bounds, same initialization/data, exact CPU
 resume including RNG/log recovery, checkpoint contract rejection, and short
 CUDA execution. Small tests do not establish collapse or full768 convergence.
 Review compensation scope, WSD fractions, progress indexing and norms first.
+
+User revision: preserve stable_end.pt separately at decay boundary before
+advancing latest.pt; never overwrite this checkpoint on later updates/resume.

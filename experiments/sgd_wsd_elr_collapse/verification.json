@@ -2,6 +2,7 @@
   "fixed": {
     "cpu_resume_bitwise_equal": true,
     "logs_equal": true,
+    "stable_checkpoint_preserved": true,
     "max_norm_relative_error": 1.3324697145655762e-07,
     "updates": 24,
     "cuda_24_updates_finite": true
@@ -9,6 +10,7 @@
   "sine_p1": {
     "cpu_resume_bitwise_equal": true,
     "logs_equal": true,
+    "stable_checkpoint_preserved": true,
     "max_norm_relative_error": 1.432512810595199e-07,
     "updates": 24,
     "cuda_24_updates_finite": true
@@ -16,6 +18,7 @@
   "sine_p2": {
     "cpu_resume_bitwise_equal": true,
     "logs_equal": true,
+    "stable_checkpoint_preserved": true,
     "max_norm_relative_error": 1.8387537581432412e-07,
     "updates": 24,
     "cuda_24_updates_finite": true

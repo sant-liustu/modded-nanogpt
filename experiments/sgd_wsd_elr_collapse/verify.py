@@ -1,6 +1,7 @@
 """Small real-token runs, resume equivalence and schedule checks. No long run."""
 import contextlib
 import io
+import hashlib
 import json
 from pathlib import Path
 import tempfile
@@ -12,6 +13,8 @@ import train
 def main():
     torch.set_num_threads(1)
     torch.use_deterministic_algorithms(True)
+    defaults=train.parser().parse_args(['--arm','fixed','--output','unused'])
+    assert (defaults.validation_contexts, defaults.eval_every, defaults.dense_window)==(256,500,0)
     report = {}
     with tempfile.TemporaryDirectory(prefix='smoke_', dir=Path(__file__).parent, ignore_cleanup_errors=True) as tmp:
         root = Path(tmp)
@@ -69,13 +72,19 @@ def main():
             assert [r['updates'] for r in steps]==list(range(1,25))
             maxerr=max(v.get('relative_error',0) for r in rows(full/'metrics.jsonl') for v in r['tensors'].values())
             assert maxerr<3e-6
+            stable=torch.load(resumed/'stable_end.pt',weights_only=False)
+            assert stable['updates']==train.boundaries(a)[1]==17
+            assert stable['position']==17*a.batch
+            assert all(torch.equal(v,torch.load(full/'stable_end.pt',weights_only=False)['model'][k]) for k,v in stable['model'].items())
+            stable_digest=hashlib.sha256((resumed/'stable_end.pt').read_bytes()).hexdigest()
             before=(resumed/'steps.jsonl').read_bytes()
             run(args(arm,resumed))
             assert (resumed/'steps.jsonl').read_bytes()==before
+            assert hashlib.sha256((resumed/'stable_end.pt').read_bytes()).hexdigest()==stable_digest
             bad=args(arm,resumed);bad.lr=.02
             try:run(bad);raise AssertionError('contract accepted changed LR')
             except ValueError:pass
-            report[arm]=dict(cpu_resume_bitwise_equal=True,logs_equal=True,
+            report[arm]=dict(cpu_resume_bitwise_equal=True,logs_equal=True,stable_checkpoint_preserved=True,
                             max_norm_relative_error=maxerr,updates=24)
         if torch.cuda.is_available():
             torch.use_deterministic_algorithms(False)

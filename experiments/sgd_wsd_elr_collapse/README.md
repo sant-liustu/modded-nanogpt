@@ -53,7 +53,7 @@ output directory. Supply `--width 384 --heads 6` etc. to change size, using a
 different OUTPUT_ROOT. Omit microbatch for full batch4; use `--microbatch 1`
 only if necessary. Do not change experiment flags when resuming.
 
-Need at least1,235,877,889 training tokens and524,289 validation tokens.
+Need at least1,235,877,889 training tokens and262,145 validation tokens.
 No downloads or implicit data recycling. Uses the same prepared uint16 shard
 format as the previous runs. Resume by repeating the original command.
 Old8-1-1 checkpoints are incompatible with this new WSD experiment.
@@ -64,12 +64,15 @@ Old8-1-1 checkpoints are incompatible with this new WSD experiment.
   base/matrix/gamma LR, pre/post norm multiplier, matrixLR/s and matrixLR/s^2,
   cumulative matrix LR, tokens and batch. Buffers flush every100updates and
   before checkpoint; this is not subsampling.
-- metrics.jsonl: fixed512 validation contexts,32 per forward (16 forwards),
+- metrics.jsonl: fixed256 validation contexts,32 per forward (8 forwards),
   global parameter norm, each tensor's measured Frobenius norm/RMS, LR/norm,
   LR/norm^2, LR/RMS and LR/RMS^2, target RMS and projection error.
-  Every200updates; every20 within200updates of warmup end/decay start;
+  Every500updates; boundary densification disabled by default;
   also initialization, boundaries and final. Diagnostics use current weights
   and the next update LR (final uses last base LR), explicitly labeled.
+- stable_end.pt: permanent checkpoint after215943 updates, at the end of
+  stable and before the first decay-phase update. Saved separately in each
+  arm directory, never overwritten by later updates or resume.
 - latest.pt: every1000updates, WSD boundaries, final and update200000.
   step200000.pt is permanent. Weights, initial norm targets, data offset,
   RNG, cumulative LR and strict experiment contract are restored.

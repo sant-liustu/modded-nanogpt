@@ -275,11 +275,15 @@ def run(args):
                 cumulative_matrix_lr=cumulative_lr,batch=args.batch))+'\n')
             if completed%100==0:steps.flush()
             special=completed in (warm,decay,args.updates)
-            dense=any(abs(completed-b)<=args.dense_window for b in (warm,decay))
+            dense=args.dense_window > 0 and any(abs(completed-b)<=args.dense_window for b in (warm,decay))
             if completed%args.eval_every==0 or special or (dense and completed%args.dense_every==0):
                 measure()
             if completed%args.checkpoint_every==0 or special or completed==200000:
                 steps.flush();metrics.flush()
+                # Preserve the fork point before advancing latest.pt past it.
+                stable_checkpoint=out/'stable_end.pt'
+                if completed==decay and not stable_checkpoint.exists():
+                    save(stable_checkpoint,model,targets,completed,contract,cumulative_lr)
                 save(checkpoint,model,targets,completed,contract,cumulative_lr)
                 if completed==200000:
                     save(out/'step200000.pt',model,targets,completed,contract,cumulative_lr)
@@ -291,7 +295,7 @@ def parser():
     p.add_argument('--val',default='F:/datasets/fineweb10B-gpt2/raw/fineweb_val_*.bin')
     p.add_argument('--output',required=True)
     p.add_argument('--arm',choices=ARMS,required=True)
-    for flag,default in [('updates',301728),('batch',4),('context',1024),('width',768),('layers',12),('heads',6),('seed',0),('validation-contexts',512),('validation-batch-size',32),('eval-every',200),('checkpoint-every',1000),('dense-window',200),('dense-every',20)]:
+    for flag,default in [('updates',301728),('batch',4),('context',1024),('width',768),('layers',12),('heads',6),('seed',0),('validation-contexts',256),('validation-batch-size',32),('eval-every',500),('checkpoint-every',1000),('dense-window',0),('dense-every',20)]:
         p.add_argument('--'+flag,type=int,default=default)
     p.add_argument('--microbatch',type=int,default=None)
     p.add_argument('--lr',type=float,default=.01)
