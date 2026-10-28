@@ -420,6 +420,12 @@ class Hyperparameters:
     val_tokens : int = 10485760 # how many tokens of validation data? it's important to keep this fixed for consistent comparisons
     compile_model : int = 1 # compile the model with torch.compile
     gradient_norm_every : int = 1 # per-module gradients before optimizer step; 0 disables
+    fisher_every : int = 1000 # 0 disables; otherwise 0,100,initial/final and every N updates
+    fisher_draws : int = 2 # independent estimates, each accumulates then squares
+    fisher_batch_size : int = 64 # sequences per micro-batch (rank zero only)
+    fisher_sequence_length : int = 1024
+    fisher_accumulation_steps : int = 16 # micro-batches per single estimate
+    fisher_seed : int = 1729
     tensor_norm_every : int = 1 # every how many steps to log tensor norm history? 0 disables
     adamw_update_norm_every : int = 1 # every how many optimizer steps to log AdamW effective update norms? 0 disables
 args = Hyperparameters()
@@ -440,6 +446,8 @@ parser.add_argument('--stop-after-save', action='store_true')
 cli = parser.parse_args()
 for field in fields(Hyperparameters):
     setattr(args, field.name, getattr(cli, field.name))
+if args.fisher_every < 0 or args.fisher_draws < 1 or min(args.fisher_batch_size, args.fisher_sequence_length, args.fisher_accumulation_steps) < 1:
+    parser.error('invalid Fisher settings: every>=0, draws>=1, batch/length/accumulation>=1')
 if args.arm not in ('mup_wd', 'fanin_wd', 'fanin_fixed'):
     parser.error('unknown arm')
 if args.schedule not in ('wsd', 'cosine'):
@@ -926,6 +934,12 @@ fixed_norm_state = build_fixed_norm_state(raw_model)
 fixed_norm_history_path = os.path.join(logdir, 'norm_control_history.jsonl') if master_process else None
 write_tensor_metadata()
 
+# Capture actual step-zero weights; restore original values on resume below.
+fisher_initial_rms = None
+if args.fisher_every:
+    from fisher_diagnostics import parameter_rms
+    fisher_initial_rms = parameter_rms(raw_model)
+
 def checkpoint_tree(value, target_device='cpu'):
     if isinstance(value, torch.Tensor):
         return value.detach().to(target_device).clone()
@@ -963,6 +977,7 @@ def capture_training_state(step, x, y):
         model=raw_model.state_dict(), optimizers=[o.state_dict() for o in optimizers],
         schedulers=[s.state_dict() for s in schedulers],
         targets={e['name']: e['target_rms'] for e in fixed_norm_state},
+        fisher_initial_rms=fisher_initial_rms,
         train_loader=loader_state(train_loader), val_loader=loader_state(val_loader),
         next_batch=(x, y),
         rng=dict(python=random.getstate(), numpy=np.random.get_state(),
@@ -971,6 +986,7 @@ def capture_training_state(step, x, y):
         source_sha256=hashlib.sha256(code.encode()).hexdigest()))
 
 def restore_training_state(state):
+    global fisher_initial_rms
     if state['config'].get('gamma_learning_rate') != args.gamma_learning_rate:
         raise RuntimeError('checkpoint uses the old gamma ELR policy; regenerate the shared warmup with absolute gamma LR')
     ignored = {'log_root', 'run_name', 'continue_wsd'}
@@ -989,6 +1005,11 @@ def restore_training_state(state):
     if state['parameter_names'] != [n for n, _ in raw_model.named_parameters()]:
         raise RuntimeError('checkpoint optimizer parameter order mismatch')
     raw_model.load_state_dict(state['model'], strict=True)
+    if args.fisher_every:
+        saved_rms = state.get('fisher_initial_rms')
+        if saved_rms is None or set(saved_rms) != set(fisher_initial_rms):
+            raise RuntimeError('checkpoint missing original Fisher RMS metadata')
+        fisher_initial_rms = saved_rms
     for opt, saved in zip(optimizers, state['optimizers'], strict=True):
         opt.load_state_dict(saved)
     for sched, saved in zip(schedulers, state['schedulers'], strict=True):
@@ -1049,6 +1070,42 @@ if master_process:
         arm=args.arm, fixed_norm=args.arm == 'fanin_fixed', matrix_wd=args.weight_decay,
         gamma_wd=0.0, config=vars(args), source_sha256=hashlib.sha256(code.encode()).hexdigest()), indent=2))
 
+# Dedicated loader leaves the training/validation cursors untouched, including resume.
+fisher_inputs = None
+if args.fisher_every and master_process:
+    from fisher_diagnostics import probe as fisher_probe
+    (Path(logdir) / 'fisher_initial_rms.json').write_text(json.dumps(dict(
+        initial_step=0, resumed_at_step=start_step, rms=fisher_initial_rms,
+        definition='sqrt(sum(parameter**2)/numel)',
+        provenance='checkpoint' if cli.resume else 'before_first_update'), indent=2))
+    fisher_loader = DistributedDataLoader(args.input_bin, args.fisher_batch_size,
+                                         args.fisher_sequence_length, 0, 1)
+    # Keep diagnostic sequences on CPU; only one micro-batch goes to CUDA.
+    fisher_batches = [tuple(t.cpu() for t in fisher_loader.next_batch())
+                      for _ in range(args.fisher_accumulation_steps)]
+    fisher_inputs = tuple(torch.cat([b[i] for b in fisher_batches]) for i in (0, 1))
+    del fisher_batches
+    del fisher_loader
+    fisher_input_hash = hashlib.sha256(b''.join(t.numpy().tobytes() for t in fisher_inputs)).hexdigest()
+
+def maybe_measure_fisher(step):
+    from fisher_diagnostics import should_measure
+    if not should_measure(step, start_step, args.num_iterations, args.fisher_every):
+        return
+    if use_ddp:
+        dist.barrier()
+    if master_process:
+        record = fisher_probe(raw_model, *fisher_inputs, args.fisher_draws, args.fisher_seed,
+                              initial_rms=fisher_initial_rms, micro_batch_size=args.fisher_batch_size)
+        record.update(step=step, input_sha256=fisher_input_hash,
+                      data_source=args.input_bin, execution='rank0_raw_model_no_ddp_reduction')
+        with open(os.path.join(logdir, 'fisher_history.jsonl'), 'a') as f:
+            f.write(json.dumps(record, allow_nan=False)+'\n')
+        values = ' '.join(f"{g}={r['mean_fisher']:.3e}" for g,r in record['groups'].items())
+        print(f"Fisher step={step} seconds={record['seconds']:.3f} {values}", flush=True)
+    if use_ddp:
+        dist.barrier()
+
 training_time_ms = 0
 # start the clock
 torch.cuda.synchronize()
@@ -1056,6 +1113,7 @@ t0 = time.time()
 # begin training
 # The initial next_batch already advanced the cursor. Do not reset it here.
 for step in range(start_step, args.num_iterations + 1):
+    maybe_measure_fisher(step)
     save_checkpoint = cli.checkpoint_dir is not None and step in checkpoint_steps
     last_step = (step == args.num_iterations)
     # This effectively ignores timing first 10 steps, which are slower for weird reasons.

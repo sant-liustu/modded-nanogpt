@@ -1,0 +1,114 @@
+"""Real FineWeb paired CUDA runs: measurement must not alter training state."""
+from pathlib import Path
+import json, os, subprocess, sys, time
+import numpy as np
+import torch
+
+root = Path(__file__).parent
+runner = os.environ.get('FISHER_TEST_RUNNER', 'train_muon.py')
+if runner not in ('train.py', 'train_muon.py'):
+    raise ValueError('FISHER_TEST_RUNNER must be train.py or train_muon.py')
+out = root/'local_checks'/('fisher_'+Path(runner).stem+'_'+time.strftime('%Y%m%d_%H%M%S'))
+out.mkdir(parents=True)
+width = int(os.environ.get('FISHER_TEST_WIDTH', '128'))
+depth = int(os.environ.get('FISHER_TEST_DEPTH', '1'))
+steps = int(os.environ.get('FISHER_TEST_STEPS', '4'))
+length = int(os.environ.get('FISHER_TEST_LENGTH', '32'))
+micro = int(os.environ.get('FISHER_TEST_MICRO_BATCH', '2'))
+accumulation = int(os.environ.get('FISHER_TEST_ACCUMULATION', '2'))
+interval = max(1, steps//2) if steps <= 4 else max(1, steps//5)
+states, timings, records = {}, {}, []
+for arm, every in [('off', 0), ('on', interval)]:
+    cmd = [sys.executable, str(root/runner), '--arm','fanin_fixed',
+           '--model-width',str(width),'--model-depth',str(depth),'--expected-world-size','1',
+           '--batch-size','1','--device-batch-size','1','--sequence-length',str(length),
+           '--vocab-size','50304','--num-iterations',str(steps),'--warmup-iters',str(max(1,steps//10)),'--warmdown-iters','1',
+           '--compile-model','0','--val-tokens',str(length),'--schedule','cosine',
+           '--input-bin','F:/datasets/fineweb10B-gpt2/raw/fineweb_train_000001.bin',
+           '--input-val-bin','F:/datasets/fineweb10B-gpt2/raw/fineweb_val_000000.bin',
+           '--log-root',str(out/arm/'logs'),'--run-name',arm,
+           '--checkpoint-dir',str(out/arm/'checkpoints'),'--peak-elr','0.1',
+           '--save-at',str(max(1,steps//2)),
+           '--fisher-every',str(every),'--fisher-draws','2','--fisher-sequence-length',str(length),
+           '--fisher-batch-size',str(micro),'--fisher-accumulation-steps',str(accumulation)]
+    (out/f'{arm}_command.json').write_text(json.dumps(cmd,indent=2))
+    start=time.perf_counter()
+    with (out/f'{arm}.log').open('w') as f:
+        proc=subprocess.run(cmd,stdout=f,stderr=subprocess.STDOUT,env=dict(os.environ,CUBLAS_WORKSPACE_CONFIG=':4096:8'))
+    timings[arm]=time.perf_counter()-start
+    if proc.returncode:
+        print((out/f'{arm}.log').read_text()[-8000:]);raise SystemExit(proc.returncode)
+    states[arm]=torch.load(out/arm/f'checkpoints/step{steps:06d}/rank00000.pt',map_location='cpu',weights_only=False)
+    if every:
+        path=next((out/arm/'logs').glob('*/fisher_history.jsonl'))
+        records=[json.loads(l) for l in path.read_text().splitlines()]
+
+def equal(a,b,path=''):
+    if isinstance(a,torch.Tensor):
+        assert torch.equal(a,b),path
+    elif isinstance(a,np.ndarray):
+        assert np.array_equal(a,b),path
+    elif isinstance(a,dict):
+        assert a.keys()==b.keys(),path
+        for k in a:equal(a[k],b[k],path+'/'+str(k))
+    elif isinstance(a,(tuple,list)):
+        assert len(a)==len(b),path
+        for i,(x,y) in enumerate(zip(a,b)):equal(x,y,path+'/'+str(i))
+    else:assert a==b,path
+
+for key in ('model','optimizers','schedulers','rng','train_loader','val_loader','next_batch','targets'):
+    equal(states['off'][key],states['on'][key],key)
+assert [r['step'] for r in records]==sorted(set(range(0,steps+1,interval))|{steps})
+assert len({r['input_sha256'] for r in records})==1
+for r in records:
+    assert set(r['groups'])=={'Emb','QK','VO','FFN','Norm'}
+    assert r['valid_tokens']==micro*accumulation*length
+    assert r['sequences']==micro*accumulation and r['accumulation_steps']==accumulation and r['micro_batch_size']==micro
+    assert r['draws']==2 and r['draw_seeds']==[1729,1730]
+    for v in list(r['groups'].values())+list(r['parameters'].values()):
+        a,b=v['mean_fisher_draws']
+        assert abs(v['mean_fisher']-(a+b)/2)<1e-15
+        assert abs(v['mc_standard_error']-abs(a-b)/2)<1e-15
+    for group,v in r['groups'].items():
+        ps=[p for p in r['parameters'].values() if p['group']==group]
+        assert sum(p['numel'] for p in ps)==v['numel']
+        assert abs(sum(p['trace'] for p in ps)-v['trace'])<1e-8*max(1,v['trace'])
+    assert all(p['mean_fisher']>=0 for p in r['parameters'].values())
+    for name, p in r['parameters'].items():
+        initial = records[0]['parameters'][name]
+        assert p['initial_rms'] == initial['rms'] == initial['initial_rms']
+        assert p['initial_rms'] == states['on']['fisher_initial_rms'][name]
+        assert p['shape'] == list(states['on']['model'][name].shape)
+        if r['step'] == steps:
+            tensor = states['on']['model'][name].double()
+            expected = tensor.square().mean().sqrt().item()
+            assert abs(p['rms']-expected) <= 1e-12*max(1, expected)
+
+# Resume the same on-run from its intermediate checkpoint, preserving step-zero RMS.
+resume_cmd = cmd.copy()
+resume_cmd[resume_cmd.index('--log-root')+1] = str(out/'resumed'/'logs')
+resume_cmd[resume_cmd.index('--checkpoint-dir')+1] = str(out/'resumed'/'checkpoints')
+resume_cmd[resume_cmd.index('--save-at')+1] = str(steps)
+resume_cmd += ['--resume', str(out/'on'/f'checkpoints/step{max(1,steps//2):06d}')]
+with (out/'resumed.log').open('w') as f:
+    proc = subprocess.run(resume_cmd, stdout=f, stderr=subprocess.STDOUT,
+                          env=dict(os.environ,CUBLAS_WORKSPACE_CONFIG=':4096:8'))
+if proc.returncode:
+    print((out/'resumed.log').read_text()[-8000:]); raise SystemExit(proc.returncode)
+resumed = torch.load(out/'resumed'/f'checkpoints/step{steps:06d}/rank00000.pt',
+                     map_location='cpu', weights_only=False)
+for key in ('model','optimizers','schedulers','rng','train_loader','val_loader','next_batch','targets','fisher_initial_rms'):
+    equal(states['on'][key], resumed[key], 'resumed/'+key)
+resume_records = [json.loads(line) for line in next((out/'resumed'/'logs').glob('*/fisher_history.jsonl')).read_text().splitlines()]
+for record in resume_records:
+    for name, p in record['parameters'].items():
+        assert p['initial_rms'] == states['on']['fisher_initial_rms'][name]
+report=dict(status='PASS',runner=runner,scope=f'single CUDA eager real FineWeb w{width} d{depth} vocab50304 B1 T{length}, {steps} updates',
+            fisher_sequences=micro*accumulation, fisher_micro_batch_size=micro, fisher_accumulation_steps=accumulation, fisher_draws=2,
+            exact_training_state_equal=True, initial_and_current_rms_verified=True,
+            exact_resume_state_equal=True, wall_seconds=timings,
+            probe_seconds=[r['seconds'] for r in records],
+            peak_allocated_bytes=max(r['peak_allocated_bytes'] for r in records),
+            measurements=[dict(step=r['step'],groups=r['groups']) for r in records],output=str(out))
+(out/'report.json').write_text(json.dumps(report,indent=2))
+print(json.dumps({k:v for k,v in report.items() if k!='measurements'},indent=2))
