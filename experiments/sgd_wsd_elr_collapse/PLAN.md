@@ -12,7 +12,7 @@ is not globally scale invariant (including tied embedding/head, V/O and MLP),
 so matching ELR need not yield collapse. Gamma co-adaptation is another limit.
 
 Controls: same seed 0 initialization, FineWeb tape order, width768/depth12/heads6,
-context1024, batch4, 301728 updates, peak base LR .01; pure SGD without decay,
+context1024, batch4, 301728 updates, peak base LR .015; pure SGD without decay,
 momentum, clipping or tangent-gradient removal. All arms run from initialization.
 WSD uses old w384 proportions: 4000/81600 warmup and 23200/81600 linear decay.
 Sine is indexed by consumed-token progress, not LR-dependent intrinsic time.

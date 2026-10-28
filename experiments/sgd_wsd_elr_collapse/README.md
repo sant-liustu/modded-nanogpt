@@ -26,14 +26,14 @@ compensation within each fixed-shape tensor; they differ across tensor sizes.
 Width768, depth12, heads6, context1024, batch4, seed0,301728 updates:
 1,235,877,888 tokens PER ARM. Three complete runs, no shared trained prefix.
 Same seed gives same starting weights; same mmap tape gives identical token
-order. Base peak LR .01, pure SGD, momentum0, weight decay0, no clipping.
+order. Base peak LR .015, pure SGD, momentum0, weight decay0, no clipping.
 No compile or DDP. FP32 parameters, BF16 CUDA autocast; unchanged model.py.
 
 WSD reproduces old w384 linear schedule proportions:4000/81600 warmup,
 23200/81600 decay. At default budget:14791 warmup updates,85785 decay updates,
 decay begins after215943 updates. The last update uses peakLR/decay_steps;
 the conceptual schedule reaches zero after the training interval.
-LR .01 is the peak, not the first warmup update LR.
+LR .015 is the peak, not the first warmup update LR.
 
 Each update uses pre-update norm s(i/N), matrixLR=baseLR*s(i/N)^p, and projects
 the result to s((i+1)/N). Gamma always receives baseLR. No tangent projection.

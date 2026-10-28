@@ -298,7 +298,7 @@ def parser():
     for flag,default in [('updates',301728),('batch',4),('context',1024),('width',768),('layers',12),('heads',6),('seed',0),('validation-contexts',256),('validation-batch-size',32),('eval-every',500),('checkpoint-every',1000),('dense-window',0),('dense-every',20)]:
         p.add_argument('--'+flag,type=int,default=default)
     p.add_argument('--microbatch',type=int,default=None)
-    p.add_argument('--lr',type=float,default=.01)
+    p.add_argument('--lr',type=float,default=.015)
     p.add_argument('--warmup-fraction',type=float,default=4000/81600)
     p.add_argument('--decay-fraction',type=float,default=23200/81600)
     p.add_argument('--device',choices=['cpu','cuda'],default='cuda')
