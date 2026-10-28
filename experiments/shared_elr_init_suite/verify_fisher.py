@@ -30,7 +30,8 @@ for arm, every in [('off', 0), ('on', interval)]:
            '--checkpoint-dir',str(out/arm/'checkpoints'),'--peak-elr','0.1',
            '--save-at',str(max(1,steps//2)),
            '--fisher-every',str(every),'--fisher-draws','2','--fisher-sequence-length',str(length),
-           '--fisher-batch-size',str(micro),'--fisher-accumulation-steps',str(accumulation)]
+           '--fisher-batch-size',str(micro),'--fisher-accumulation-steps',str(accumulation),
+           '--fisher-token-chunk-size','4']
     if arm == 'off':
         # Exercise automatic final full-checkpoint output without explicit CLI path.
         for option in ('--checkpoint-dir','--save-at'):
@@ -76,6 +77,8 @@ for r in records:
     assert not any(k in snapshot for k in ('optimizers','schedulers','rng','train_loader'))
     assert not snapshot_path.with_suffix('.tmp').exists()
     if r['step']==steps: equal(snapshot['model'],states['on']['model'],'snapshot/model')
+    assert r['vocabulary_head']=='chunked_hidden_chain_rule' and r['token_chunk_size']==4
+    assert r['precision']=='bf16_autocast_fp32_accumulation_fp64_square_sum'
     assert set(r['groups'])=={'Emb','QK','VO','FFN','Norm'}
     assert r['valid_tokens']==micro*accumulation*length
     assert r['sequences']==micro*accumulation and r['accumulation_steps']==accumulation and r['micro_batch_size']==micro

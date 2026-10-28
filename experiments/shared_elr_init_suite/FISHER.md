@@ -25,19 +25,23 @@ Other optimizer, ELR and norm-control settings remain unchanged.
 
 For each draw, freeze weights. A dedicated loader supplies 16 different consecutive batches,
 kept on CPU and reused at every measurement. For each micro-batch, move only
-that batch to GPU, forward, sample independent categorical pseudo-labels at
-valid positions, and differentiate sum(CE) / N, where N is the TOTAL valid-token
+that batch to GPU, forward the backbone to hidden states, project the head in bounded token
+chunks, sample independent categorical pseudo-labels, and differentiate sum(CE) / N, where N is the TOTAL valid-token
 count across all 16 micro-batches. Accumulate gradients in private FP32 buffers.
-Release each graph immediately. After all 16 backward passes, square the sum
+For each micro-batch, backward head chunks immediately into private head-weight
+and hidden-state gradient buffers, then backward the retained backbone graph
+once. Release that graph before the next micro-batch. After all 16 backbone
+backward passes, square the sum
 ONCE: trace_j = N * sum(g_j**2); mean_fisher_j = trace_j / numel_j.
 Squaring/reducing uses FP64. This is NOT an average of 16 squared gradients.
 With length 1024 and no mask, N=1,048,576, not 1024.
 
 Each draw costs 16 GLOBAL micro-batch forwards/backwards. On two ranks each
 rank performs 8, followed by SUM gradient communication; two draws perform 16
-per rank in total. The diagnostic uses FP32 eager on all training ranks. Training
-may use mixed precision; speedup depends on compute versus communication. A 64x1024
-FP32 diagnostic can require substantial GPU memory. Local shortened-sequence
+per rank in total. The diagnostic uses BF16 autocast eager on all training ranks, matching training
+compute precision; master weights and gradient accumulation remain FP32. Training
+may use mixed precision; speedup depends on compute versus communication. A 64x1024 backbone can still require substantial GPU memory; the vocabulary
+head is now bounded by fisher_token_chunk_size (default 1024 token rows). Local shortened-sequence
 tests do not validate the memory footprint of the full-length configuration.
 
 ## Output and interpretation
@@ -160,3 +164,50 @@ final weights match the complete checkpoint, strict loading into a fresh model
 works (including tied embedding/head and finite forward), and off/on/resumed
 training states remain exactly identical. The off-arm exercises the automatic
 final full-checkpoint path without --checkpoint-dir.
+
+## Full-length OOM fix (2026-10-28)
+
+Old probe disabled autocast, computed real-label CE then discarded it, boolean-
+indexed full logits into another tensor, and retained full-vocabulary softmax
+probabilities while computing pseudo-label CE. Its memory usage exceeded normal
+training; full-length cloud runs exposed this at step 0. Algebraic correctness
+checks did not validate this memory path. That implementation has been replaced.
+
+GPT.forward(..., return_hidden=True) now bypasses both lm_head and real-label CE.
+The probe computes each head chunk using a detached hidden leaf, samples labels,
+releases probabilities, and backpropagates the chunk. It accumulates the direct
+head-weight gradient and dL/dhidden, then calls autograd.grad once through the
+backbone. When head and embedding are tied, their gradient contributions are
+added to the SAME private parameter buffer before Fisher squaring.
+
+--fisher-token-chunk-size 1024 bounds EACH vocabulary tensor to at most
+[1024, vocab_size], not [64*1024, vocab_size]. For vocab100278, one FP32 chunk is
+about 392 MiB, versus about 24.5 GiB for the full FP32 vocabulary matrix.
+Chunk size can be reduced (e.g. 256) without changing global sequence count,
+micro-batch size, Fisher normalization or the mathematical target. Different
+chunking/precision changes random-number consumption/numerical rounding; do not
+expect identical pseudo-label estimates to the old version for the same seed.
+
+CUDA uses BF16 autocast as training does, while categorical probabilities and CE
+are FP32; accumulated parameter gradients remain FP32 and trace reductions FP64.
+The same two independent draws, global token denominator, SUM-before-square,
+RMS metadata and per-measurement model snapshots remain. Generic non-GPT models
+without supports_fisher_hidden still use the full-logits fallback; this optimized
+memory guarantee applies to the two GPT training runners.
+
+Correctness: python verify_fisher_chunked.py checks actual tied-head GPT against
+an explicit complete objective with identical sampled labels on CPU FP32, CUDA
+FP32 and CUDA BF16, and asserts head calls never exceed the token chunk bound.
+verify_fisher_distributed.py now exercises the hidden/head path on two CPU/Gloo
+processes. verify_fisher.py uses multiple token chunks in both small CUDA runners.
+
+Small CUDA memory comparison (w128/d1/vocab100278/B2/T1024, chunk1024, no optimizer
+state): old FP32 peak 5,072,124,416 bytes, old BF16-only peak 5,105,135,616 bytes,
+new chunked BF16 peak 1,613,369,344 bytes. Changing precision alone did not solve
+the vocabulary-buffer issue in this test. Full cloud w768/B64/T1024/two-GPU peak
+has NOT been measured locally. These numbers are evidence for the memory fix,
+not a guarantee of full-run GPU capacity or a statistical accuracy benchmark.
+
+For reproduction, export the pre-fix helper from commit 01b2279 and pass its
+path to benchmark_fisher_memory.py --baseline-helper PATH. Never replace the
+current runtime helper with that reference file.

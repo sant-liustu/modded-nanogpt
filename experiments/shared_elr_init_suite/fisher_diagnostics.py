@@ -1,4 +1,4 @@
-"""Paper 2502.19002 Eq.3-4 / Sophia-G GNB diagnostics for this Muon runner."""
+"""Paper 2502.19002 Eq.3-4 / Sophia-G GNB diagnostics for the AdamW/Muon runners."""
 import math
 import time
 import torch
@@ -31,13 +31,49 @@ def should_measure(step, start_step, final_step, every):
     return every > 0 and (step in (0, 100, start_step, final_step) or step % every == 0)
 
 
-def probe(model, x, y, draws, seed, initial_rms=None, micro_batch_size=64, distributed=False):
+def _accumulate_hidden_head(model, xb, yb, params, accum, N, generator, token_chunk_size):
+    """Chain rule with a bounded vocabulary head; no full [B,T,V] tensor.
+
+    The detached leaf separates head graphs from the retained trunk graph.
+    Direct head and trunk/embedding contributions are added to the SAME buffer
+    for tied weights. This is the exact loss gradient for the sampled labels.
+    """
+    hidden = model(xb, return_hidden=True)
+    leaf = hidden.detach().reshape(-1, hidden.shape[-1])
+    hidden_grad = torch.zeros_like(leaf)
+    head_index = next(i for i, (_, p) in enumerate(params) if p is model.lm_head.weight)
+    mask = (yb.reshape(-1) != -1)
+    for offset in range(0, len(leaf), token_chunk_size):
+        valid = mask[offset:offset+token_chunk_size]
+        if not valid.any():
+            continue
+        h = leaf[offset:offset+token_chunk_size].detach().requires_grad_(True)
+        z = model.lm_head(h) / model.width_multiplier
+        # Sampling buffers are bounded and released BEFORE CE backward buffers.
+        with torch.no_grad():
+            probs = z.float().softmax(-1)
+            labels = torch.multinomial(probs, 1, generator=generator).squeeze(-1)
+            labels[~valid] = -1
+            del probs
+        loss = F.cross_entropy(z.float(), labels, ignore_index=-1, reduction='sum') / N
+        head_grad, h_grad = torch.autograd.grad(loss, (model.lm_head.weight, h))
+        accum[head_index].add_(head_grad.detach())
+        hidden_grad[offset:offset+len(h)].copy_(h_grad.detach())
+        del loss, z, labels, head_grad, h_grad, h
+    grads = torch.autograd.grad(hidden, [p for _, p in params],
+                                grad_outputs=hidden_grad.reshape_as(hidden), allow_unused=True)
+    for total, grad in zip(accum, grads):
+        if grad is not None:
+            total.add_(grad.detach())
+
+
+def probe(model, x, y, draws, seed, initial_rms=None, micro_batch_size=64, distributed=False, token_chunk_size=1024, use_bf16=True):
     """Each independent draw accumulates token-mean gradients, THEN squares.
 
-    Inputs may be CPU resident. y only selects valid positions and full logits.
+    Inputs may be CPU resident. y supplies the valid-position mask, never true CE labels.
     Private gradient buffers never write training parameter .grad.
     """
-    if draws < 1 or micro_batch_size < 1:
+    if draws < 1 or micro_batch_size < 1 or token_chunk_size < 1:
         raise ValueError('Expected positive draws and micro-batch size')
     if distributed and not dist.is_initialized():
         raise ValueError('Distributed Fisher requires an initialized process group')
@@ -73,7 +109,7 @@ def probe(model, x, y, draws, seed, initial_rms=None, micro_batch_size=64, distr
     draw_seeds = [seeds[rank] for seeds in all_draw_seeds]
     try:
         model.eval()
-        with torch.random.fork_rng(devices=[device.index] if cuda else []), torch.enable_grad(), torch.autocast(device.type, enabled=False):
+        with torch.random.fork_rng(devices=[device.index] if cuda else []), torch.enable_grad(), torch.autocast(device.type, dtype=torch.bfloat16, enabled=cuda and use_bf16):
             for draw_seed in draw_seeds:
                 accum = [torch.zeros_like(p) for _, p in params]
                 generator = torch.Generator(device=device).manual_seed(draw_seed)
@@ -81,6 +117,10 @@ def probe(model, x, y, draws, seed, initial_rms=None, micro_batch_size=64, distr
                     xb = x[offset:offset+micro_batch_size].to(device)
                     yb = y[offset:offset+micro_batch_size].to(device)
                     if not (yb != -1).any():
+                        continue
+                    if getattr(model, 'supports_fisher_hidden', False):
+                        _accumulate_hidden_head(model, xb, yb, params, accum, N, generator, token_chunk_size)
+                        del xb, yb
                         continue
                     logits, real_loss = model(xb, yb, return_logits=True)
                     del real_loss
@@ -129,7 +169,9 @@ def probe(model, x, y, draws, seed, initial_rms=None, micro_batch_size=64, distr
                 micro_batch_size=micro_batch_size,
                 accumulation_steps=math.ceil(global_sequences/micro_batch_size),
                 local_accumulation_steps=math.ceil(len(x)/micro_batch_size),
-                draws=draws, seed=seed, draw_seeds=draw_seeds, draw_seeds_by_rank=all_draw_seeds, seconds=elapsed, precision='fp32_forward_accumulation_fp64_square_sum',
+                draws=draws, seed=seed, draw_seeds=draw_seeds, draw_seeds_by_rank=all_draw_seeds, seconds=elapsed, precision='bf16_autocast_fp32_accumulation_fp64_square_sum' if cuda and use_bf16 else 'fp32_forward_accumulation_fp64_square_sum',
+                token_chunk_size=token_chunk_size,
+                vocabulary_head='chunked_hidden_chain_rule' if getattr(model, 'supports_fisher_hidden', False) else 'generic_full_logits',
                 peak_allocated_bytes=peak, extra_peak_allocated_bytes=max(0,peak-before_bytes),
                 uncertainty='pseudo-label Monte Carlo only, conditional on fixed inputs; two-draw SE is noisy' if draws > 1 else 'single estimate; Monte Carlo standard error unavailable',
                 embedding_policy='tied embedding/head counted once as Emb',

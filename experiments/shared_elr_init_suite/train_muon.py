@@ -253,6 +253,8 @@ class GPTConfig:
 
 class GPT(nn.Module):
 
+    supports_fisher_hidden = True
+
     def __init__(self, config):
         super().__init__()
         self.config = config
@@ -282,7 +284,7 @@ class GPT(nn.Module):
         elif isinstance(module, nn.Embedding):
             torch.nn.init.normal_(module.weight, mean=0.0, std=self.config.init_std)
 
-    def forward(self, idx, targets=None, return_logits=True):
+    def forward(self, idx, targets=None, return_logits=True, return_hidden=False):
 
         # forward the GPT model itself
         x = self.transformer.wte(idx) # token embeddings of shape (b, t, n_embd)
@@ -290,6 +292,8 @@ class GPT(nn.Module):
         for block in self.transformer.h:
             x = block(x)
         x = self.final_norm(x)
+        if return_hidden:
+            return x
 
         if targets is not None:
             # if we are given some desired targets also calculate the loss
@@ -425,6 +429,7 @@ class Hyperparameters:
     fisher_batch_size : int = 64 # sequences per micro-batch per rank
     fisher_sequence_length : int = 1024
     fisher_accumulation_steps : int = 16 # micro-batches per single estimate
+    fisher_token_chunk_size : int = 1024 # bound vocabulary projection/probability memory
     fisher_seed : int = 1729
     tensor_norm_every : int = 1 # every how many steps to log tensor norm history? 0 disables
     adamw_update_norm_every : int = 1 # every how many optimizer steps to log AdamW effective update norms? 0 disables
@@ -446,7 +451,7 @@ parser.add_argument('--stop-after-save', action='store_true')
 cli = parser.parse_args()
 for field in fields(Hyperparameters):
     setattr(args, field.name, getattr(cli, field.name))
-if args.fisher_every < 0 or args.fisher_draws < 1 or min(args.fisher_batch_size, args.fisher_sequence_length, args.fisher_accumulation_steps) < 1:
+if args.fisher_every < 0 or args.fisher_draws < 1 or min(args.fisher_batch_size, args.fisher_sequence_length, args.fisher_accumulation_steps, args.fisher_token_chunk_size) < 1:
     parser.error('invalid Fisher settings: every>=0, draws>=1, batch/length/accumulation>=1')
 if args.arm not in ('mup_wd', 'fanin_wd', 'fanin_fixed'):
     parser.error('unknown arm')
@@ -1107,8 +1112,13 @@ def maybe_measure_fisher(step):
         return
     if use_ddp:
         dist.barrier()
+    if master_process:
+        print(f"Fisher start step={step} world={ddp_world_size} local_sequences={len(fisher_inputs[0])} "
+              f"micro={args.fisher_batch_size} token_chunk={args.fisher_token_chunk_size} draws={args.fisher_draws} "
+              "precision=bf16_autocast head=chunked", flush=True)
     record = fisher_probe(raw_model, *fisher_inputs, args.fisher_draws, args.fisher_seed,
-                              initial_rms=fisher_initial_rms, micro_batch_size=args.fisher_batch_size, distributed=use_ddp)
+                              initial_rms=fisher_initial_rms, micro_batch_size=args.fisher_batch_size, distributed=use_ddp,
+                              token_chunk_size=args.fisher_token_chunk_size)
     if master_process:
         # Model-only snapshot for offline probes; training resume uses full checkpoints.
         snapshot_relative = Path('fisher_models') / f'step{step:06d}.pt'

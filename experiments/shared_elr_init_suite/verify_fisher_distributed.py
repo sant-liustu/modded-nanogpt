@@ -8,12 +8,16 @@ import torch.multiprocessing as mp
 from fisher_diagnostics import probe, parameter_rms
 
 class Tiny(torch.nn.Module):
+    supports_fisher_hidden = True
     def __init__(self):
         super().__init__()
         self.block = torch.nn.Module()
-        self.block.mlp = torch.nn.Linear(3,5)
-    def forward(self,x,y,return_logits=True):
-        return self.block.mlp(x),None
+        self.block.mlp = torch.nn.Linear(3,3)
+        self.lm_head = torch.nn.Linear(3,5,bias=False)
+        self.width_multiplier = 1.0
+    def forward(self,x,y=None,return_logits=True,return_hidden=False):
+        h=self.block.mlp(x)
+        return h if return_hidden else (self.lm_head(h),None)
 
 def worker(rank, init_url):
     torch.set_num_threads(1)
@@ -30,6 +34,7 @@ def worker(rank, init_url):
         rng=torch.get_rng_state().clone()
         part=slice(rank*4,(rank+1)*4)
         out=probe(m,x[part],y[part],2,103,parameter_rms(m),micro_batch_size=2,distributed=True)
+        assert out['vocabulary_head']=='chunked_hidden_chain_rule'
         assert out['world_size']==2 and out['sequences']==8 and out['local_sequences']==4
         assert out['accumulation_steps']==4 and out['local_accumulation_steps']==2
         assert out['draw_seeds_by_rank']==[[103,104],[105,106]]
@@ -43,9 +48,10 @@ def worker(rank, init_url):
             for r in range(2):
                 gen=torch.Generator().manual_seed(103+2*draw+r)
                 for offset in range(r*4,(r+1)*4,2):
-                    z=m(x[offset:offset+2],y[offset:offset+2])[0][y[offset:offset+2]!=-1]
+                    z=m(x[offset:offset+2],y[offset:offset+2])[0].reshape(-1,5)
                     labels=torch.multinomial(z.detach().softmax(-1),1,generator=gen).squeeze(-1)
-                    loss=loss+torch.nn.functional.cross_entropy(z,labels,reduction='sum')/out['valid_tokens']
+                    labels[y[offset:offset+2].reshape(-1)==-1]=-1
+                    loss=loss+torch.nn.functional.cross_entropy(z,labels,ignore_index=-1,reduction='sum')/out['valid_tokens']
             grads=torch.autograd.grad(loss,list(m.parameters()))
             expected.append({n:out['valid_tokens']*g.double().square().sum().item()/p.numel()
                              for (n,p),g in zip(m.named_parameters(),grads)})
