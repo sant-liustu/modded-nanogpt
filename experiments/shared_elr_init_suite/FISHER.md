@@ -128,3 +128,35 @@ torchrun --standalone --nproc_per_node=2 train_fanin_fixed_muon_w768_d12_elr0p1_
 
 Both training and Fisher run on two ranks. Existing data paths may need local
 CLI overrides. Old-version checkpoint source/config checks remain enforced.
+
+## Model snapshots at measurement points (2026-10-28)
+
+Rank 0 writes fisher_models/step000000.pt, step000100.pt, step001000.pt,
+and so on, for EVERY actual measurement (including final/resume points).
+Each is a model-only snapshot containing model state_dict, model_config,
+training config, completed step, initial RMS, norm-control targets, input hash,
+schedule hash, runner source hash and source text. It contains no optimizer,
+RNG or loader state and cannot be passed to --resume for exact continuation.
+It is intended for loading a fresh same-config model and offline diagnostics.
+
+Snapshots are saved after measurement and before the next optimizer update;
+the probe leaves model weights unchanged. The file is written as .tmp and
+atomically renamed to .pt before JSONL records model_checkpoint (relative to
+logdir). Rank 1 waits at the existing barrier and writes no duplicate snapshot.
+If interrupted mid-write, an unfinished .tmp may remain; JSONL will not link it.
+Snapshots add CPU copies, disk usage and write time not included in probe seconds.
+The snapshot runner source references the accompanying helper, so retain
+fisher_diagnostics.py from the same published commit for offline remeasurement.
+
+Full training checkpoints still use the existing rank-per-file format and
+complete.json manifest. The final full checkpoint is now enabled by default.
+For cosine without --checkpoint-dir, it is under <logdir>/checkpoints/stepXXXXXX/.
+Existing WSD automatic directory and decay-boundary checkpoint policy remain.
+Use explicit --checkpoint-dir and --save-at STEP for an additional full fork
+checkpoint. Model-only snapshots are independent of this setting.
+
+Tests verify every measurement has an atomic snapshot, weights match logged RMS,
+final weights match the complete checkpoint, strict loading into a fresh model
+works (including tied embedding/head and finite forward), and off/on/resumed
+training states remain exactly identical. The off-arm exercises the automatic
+final full-checkpoint path without --checkpoint-dir.

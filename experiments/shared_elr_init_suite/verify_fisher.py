@@ -31,6 +31,11 @@ for arm, every in [('off', 0), ('on', interval)]:
            '--save-at',str(max(1,steps//2)),
            '--fisher-every',str(every),'--fisher-draws','2','--fisher-sequence-length',str(length),
            '--fisher-batch-size',str(micro),'--fisher-accumulation-steps',str(accumulation)]
+    if arm == 'off':
+        # Exercise automatic final full-checkpoint output without explicit CLI path.
+        for option in ('--checkpoint-dir','--save-at'):
+            index=cmd.index(option)
+            del cmd[index:index+2]
     (out/f'{arm}_command.json').write_text(json.dumps(cmd,indent=2))
     start=time.perf_counter()
     with (out/f'{arm}.log').open('w') as f:
@@ -38,7 +43,9 @@ for arm, every in [('off', 0), ('on', interval)]:
     timings[arm]=time.perf_counter()-start
     if proc.returncode:
         print((out/f'{arm}.log').read_text()[-8000:]);raise SystemExit(proc.returncode)
-    states[arm]=torch.load(out/arm/f'checkpoints/step{steps:06d}/rank00000.pt',map_location='cpu',weights_only=False)
+    checkpoint=(out/arm/f'checkpoints/step{steps:06d}/rank00000.pt' if arm=='on'
+                else next((out/arm/'logs').glob(f'*/checkpoints/step{steps:06d}/rank00000.pt')))
+    states[arm]=torch.load(checkpoint,map_location='cpu',weights_only=False)
     if every:
         path=next((out/arm/'logs').glob('*/fisher_history.jsonl'))
         records=[json.loads(l) for l in path.read_text().splitlines()]
@@ -61,6 +68,14 @@ for key in ('model','optimizers','schedulers','rng','train_loader','val_loader',
 assert [r['step'] for r in records]==sorted(set(range(0,steps+1,interval))|{steps})
 assert len({r['input_sha256'] for r in records})==1
 for r in records:
+    snapshot_path=path.parent/r['model_checkpoint']
+    snapshot=torch.load(snapshot_path,map_location='cpu',weights_only=False)
+    assert snapshot['format']=='fisher_model_only_v1' and snapshot['step']==r['step']
+    assert snapshot['input_sha256']==r['input_sha256']
+    assert snapshot['fisher_initial_rms']==states['on']['fisher_initial_rms']
+    assert not any(k in snapshot for k in ('optimizers','schedulers','rng','train_loader'))
+    assert not snapshot_path.with_suffix('.tmp').exists()
+    if r['step']==steps: equal(snapshot['model'],states['on']['model'],'snapshot/model')
     assert set(r['groups'])=={'Emb','QK','VO','FFN','Norm'}
     assert r['valid_tokens']==micro*accumulation*length
     assert r['sequences']==micro*accumulation and r['accumulation_steps']==accumulation and r['micro_batch_size']==micro
@@ -79,10 +94,32 @@ for r in records:
         assert p['initial_rms'] == initial['rms'] == initial['initial_rms']
         assert p['initial_rms'] == states['on']['fisher_initial_rms'][name]
         assert p['shape'] == list(states['on']['model'][name].shape)
+        tensor=snapshot['model'][name].double()
+        assert abs(tensor.square().mean().sqrt().item()-p['rms'])<1e-12
         if r['step'] == steps:
             tensor = states['on']['model'][name].double()
             expected = tensor.square().mean().sqrt().item()
             assert abs(p['rms']-expected) <= 1e-12*max(1, expected)
+
+# Load into a fresh model without executing the trainer's top-level loop.
+import ast, math
+from dataclasses import dataclass
+from types import SimpleNamespace
+source=ast.parse(snapshot['source_code'])
+model_names={'Rotary','apply_rotary_emb','RMSNorm','CausalSelfAttention','MLP','Block','GPTConfig','GPT'}
+model_ast=ast.Module(body=[n for n in source.body
+                          if isinstance(n,(ast.ClassDef,ast.FunctionDef)) and n.name in model_names], type_ignores=[])
+namespace=dict(torch=torch,nn=torch.nn,F=torch.nn.functional,math=math,dataclass=dataclass,
+               args=SimpleNamespace(**snapshot['config']),__name__='__main__')
+exec(compile(model_ast,runner,'exec'),namespace)
+restored_model=namespace['GPT'](namespace['GPTConfig'](**snapshot['model_config']))
+restored_model.load_state_dict(snapshot['model'],strict=True)
+equal(restored_model.state_dict(),snapshot['model'],'fresh_model_load')
+assert restored_model.transformer.wte.weight is restored_model.lm_head.weight
+with torch.no_grad():
+    logits,_=restored_model(torch.zeros((1,2),dtype=torch.long),torch.zeros((1,2),dtype=torch.long))
+    assert torch.isfinite(logits).all()
+del restored_model
 
 # Resume the same on-run from its intermediate checkpoint, preserving step-zero RMS.
 resume_cmd = cmd.copy()
@@ -105,6 +142,7 @@ for record in resume_records:
         assert p['initial_rms'] == states['on']['fisher_initial_rms'][name]
 report=dict(status='PASS',runner=runner,scope=f'single CUDA eager real FineWeb w{width} d{depth} vocab50304 B1 T{length}, {steps} updates',
             fisher_sequences=micro*accumulation, fisher_micro_batch_size=micro, fisher_accumulation_steps=accumulation, fisher_draws=2,
+            model_snapshots_verified=True, default_final_full_checkpoint_verified=True,
             exact_training_state_equal=True, initial_and_current_rms_verified=True,
             exact_resume_state_equal=True, wall_seconds=timings,
             probe_seconds=[r['seconds'] for r in records],

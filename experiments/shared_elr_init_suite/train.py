@@ -591,6 +591,13 @@ if master_process:
         f.write(f'{result.stdout}\n')
         f.write('='*100 + '\n')
 
+# Default complete final checkpoint uses the unique run directory.
+if cli.checkpoint_dir is None:
+    checkpoint_path = [str(Path(logdir) / 'checkpoints') if master_process else None]
+    if use_ddp:
+        dist.broadcast_object_list(checkpoint_path, src=0)
+    cli.checkpoint_dir = Path(checkpoint_path[0])
+
 def tensor_metadata_records(model):
     records = []
     for name, tensor in model.named_parameters():
@@ -927,6 +934,23 @@ def maybe_measure_fisher(step):
     record = fisher_probe(raw_model, *fisher_inputs, args.fisher_draws, args.fisher_seed,
                               initial_rms=fisher_initial_rms, micro_batch_size=args.fisher_batch_size, distributed=use_ddp)
     if master_process:
+        # Model-only snapshot for offline probes; training resume uses full checkpoints.
+        snapshot_relative = Path('fisher_models') / f'step{step:06d}.pt'
+        snapshot_path = Path(logdir) / snapshot_relative
+        snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+        snapshot = checkpoint_tree(dict(
+            format='fisher_model_only_v1', step=step,
+            model=raw_model.state_dict(), model_config=vars(raw_model.config),
+            config=vars(args), fisher_initial_rms=fisher_initial_rms,
+            norm_targets={e['name']: e['target_rms'] for e in fixed_norm_state},
+            input_sha256=fisher_input_hash, schedule_sha256=schedule_sha256,
+            source_sha256=hashlib.sha256(code.encode()).hexdigest(),
+            source_code=code, runner=Path(__file__).name))
+        torch.save(snapshot, snapshot_path.with_suffix('.tmp'))
+        os.replace(snapshot_path.with_suffix('.tmp'), snapshot_path)
+        del snapshot
+        record.update(model_checkpoint=snapshot_relative.as_posix(),
+                      model_checkpoint_format='fisher_model_only_v1')
         record.update(step=step, input_sha256=fisher_input_hash,
                       data_source=args.input_bin, execution='all_ranks_SUM_gradient_before_square' if use_ddp else 'single_rank')
         with open(os.path.join(logdir, 'fisher_history.jsonl'), 'a') as f:
