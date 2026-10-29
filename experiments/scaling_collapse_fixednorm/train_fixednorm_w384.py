@@ -304,8 +304,8 @@ class Hyperparameters:
     target_tpp : float = 20.0
     seed : int = 0
     # evaluation and logging hyperparams
-    val_loss_every : int = 0 # periodic validation disabled; set positive to enable
-    val_tokens : int = 10485760 # how many tokens of validation data? it's important to keep this fixed for consistent comparisons
+    val_loss_every : int = 31 # periodic validation; also initial/final and checkpoint steps
+    val_tokens : int = 2097152 # 2048 total validation sequences x context1024, across all ranks
     compile_model : int = 1 # compile the model with torch.compile
     tensor_norm_every : int = 1000 # every how many steps to log tensor norm history? 0 disables
     adamw_update_norm_every : int = 1000 # every how many optimizer steps to log AdamW effective update norms? 0 disables

@@ -3,23 +3,23 @@
   "files": [
     {
       "file": "train_fixednorm_w384.py",
-      "sha256": "f8031e89cf8603a680233871d99f596aceab21d2bb8793bb5334f93843514819"
+      "sha256": "3b934ffd4116f12b97eefbe389cfbfce0a1f106a199cfbef0ecc162eaa57b89c"
     },
     {
       "file": "train_fixednorm_w768.py",
-      "sha256": "8d4e02c4549201f6abe0b217b407cc585c446b41ce8d363cddbe68e802e05a1a"
+      "sha256": "2f27082aec3112fdd858d6e67d1dac3ea849212a40b7ddfbc1c4a83349031954"
     },
     {
       "file": "train_fixednorm_w1536.py",
-      "sha256": "815a75b227de0f9957f770f506a2077899550ddef83810ec81ec76b75682c650"
+      "sha256": "cdf46b611cec5e841dd45277c890f45a3b10ac969a97222a2bc064427745941f"
     },
     {
       "file": "train_fixednorm_w768_d6.py",
-      "sha256": "cadfdf4098fcf83974b89aa07a4182d315c2d4c75a327598ae9ee4babe187deb"
+      "sha256": "c570a54514ba8e91a95d109b0e0970e11d1c7d61af23b45309f5d5255c2b2c47"
     },
     {
       "file": "train_fixednorm_w768_d24.py",
-      "sha256": "b326dab2d2483188517ddebdbaa000611d9d10af0af353c2ef50f2caf517626c"
+      "sha256": "0a6274889567dcfa63e6909576070e0ba3bae0007de4e9b384d16d1c99403a2f"
     },
     {
       "file": "launch.py",

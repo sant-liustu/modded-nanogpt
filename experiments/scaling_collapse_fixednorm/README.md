@@ -121,3 +121,17 @@ The five scripts match the source hashes in publication_manifest.json. GPU lane
 allocation, global batch, TPP budgets, and schedules remain unchanged. Source-hash
 checkpoint validation is still strict: old-source checkpoints cannot directly
 resume with these optimized scripts. No running training processes were changed.
+
+## Validation plan (2026-10-30)
+
+Each evaluation consumes 2048 sequences total across all ranks, at context1024: `val_tokens=2097152` (one fifth of the previous 10485760-token budget). This is the total evaluation sample count, not device batch size. Device batch sizes and training global B128 stay as configured. Each evaluation resets the validation loader to the same prefix.
+
+| Model | Updates | Validation interval | Regular + initial/final points |
+|---|---:|---:|---:|
+| w384/d12 | 6189 | 31 | 201 |
+| w768/d6 | 12377 | 62 | 201 |
+| w768/d12 | 18858 | 94 | 202 |
+| w768/d24 | 31822 | 159 | 202 |
+| w1536/d12 | 63636 | 318 | 202 |
+
+Existing checkpoint-triggered evaluation is retained and can add points outside this grid. The intervals above are fixed integer intervals, approximately matching relative training progress. These settings apply to future training; archived runs remain unchanged.
