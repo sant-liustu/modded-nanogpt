@@ -4,7 +4,7 @@ import runpy
 import sys
 
 # Prevent CLI/JSON overrides from silently changing the named treatment.
-for option in ('--arm', '--model-width', '--model-depth', '--peak-elr', '--schedule-json'):
+for option in ('--lr-mode', '--arm', '--model-width', '--model-depth', '--peak-elr', '--schedule-json'):
     if any(arg == option or arg.startswith(option + '=') for arg in sys.argv[1:]):
         raise SystemExit(f'{option} is fixed by this ELR entry point')
 sys.argv[1:1] = [

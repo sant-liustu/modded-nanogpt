@@ -6,6 +6,9 @@ import torch
 
 root = Path(__file__).parent
 runner = os.environ.get('FISHER_TEST_RUNNER', 'train_muon.py')
+lr_mode = os.environ.get('FISHER_TEST_LR_MODE', 'rms_elr')
+if lr_mode == 'absolute' and runner != 'train.py':
+    raise ValueError('absolute LR is supported by train.py only')
 if runner not in ('train.py', 'train_muon.py'):
     raise ValueError('FISHER_TEST_RUNNER must be train.py or train_muon.py')
 out = root/'local_checks'/('fisher_'+Path(runner).stem+'_'+time.strftime('%Y%m%d_%H%M%S'))
@@ -32,6 +35,9 @@ for arm, every in [('off', 0), ('on', interval)]:
            '--fisher-every',str(every),'--fisher-draws','2','--fisher-sequence-length',str(length),
            '--fisher-batch-size',str(micro),'--fisher-accumulation-steps',str(accumulation),
            '--fisher-token-chunk-size','4']
+    if lr_mode == 'absolute':
+        cmd += ['--lr-mode','absolute','--learning-rate','0.0009','--embedding-lr-multiplier','2','--min-lr-ratio','0.1',
+                '--weight-decay','0.1','--grad-clip','0']
     if arm == 'off':
         # Exercise automatic final full-checkpoint output without explicit CLI path.
         for option in ('--checkpoint-dir','--save-at'):
@@ -143,7 +149,25 @@ resume_records = [json.loads(line) for line in next((out/'resumed'/'logs').glob(
 for record in resume_records:
     for name, p in record['parameters'].items():
         assert p['initial_rms'] == states['on']['fisher_initial_rms'][name]
-report=dict(status='PASS',runner=runner,scope=f'single CUDA eager real FineWeb w{width} d{depth} vocab50304 B1 T{length}, {steps} updates',
+if lr_mode == 'absolute':
+    history=[json.loads(line) for line in (path.parent/'tensor_rms_elr_history.jsonl').read_text().splitlines()]
+    schedule=json.loads((path.parent/'schedule.json').read_text())
+    assert schedule['kind']=='absolute_lr'
+    rates={row['update_step']:row['learning_rate'] for row in schedule['steps']}
+    for row in history:
+        assert row['lr_policy']=='baseline_absolute_lr'
+        assert row['lr']==rates[row['step']]*(2 if row['name']=='transformer.wte.weight' else 1)
+        assert row['target_rms_elr'] is None
+    warm=max(1,steps//10)
+    expected_final=0.0009*(0.1+0.9*0.5*(1+math.cos(math.pi*(steps-1-warm)/(steps-warm))))
+    assert abs(rates[steps]-expected_final)<1e-15
+    assert len({row['pre_update_rms'] for row in history})>1
+    for opt in states['on']['optimizers']:
+        for group in opt['param_groups']:
+            assert group['weight_decay'] in (0.0,0.1) and group['betas']==(0.9,0.95) and group['eps']==1e-8
+    norms=[json.loads(line) for line in (path.parent/'norm_control_history.jsonl').read_text().splitlines()]
+    assert norms and max(row['relative_error'] for row in norms)<1e-6
+report=dict(status='PASS',runner=runner,lr_mode=lr_mode,scope=f'single CUDA eager real FineWeb w{width} d{depth} vocab50304 B1 T{length}, {steps} updates',
             fisher_sequences=micro*accumulation, fisher_micro_batch_size=micro, fisher_accumulation_steps=accumulation, fisher_draws=2,
             model_snapshots_verified=True, default_final_full_checkpoint_verified=True,
             exact_training_state_equal=True, initial_and_current_rms_verified=True,

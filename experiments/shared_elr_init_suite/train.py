@@ -294,6 +294,11 @@ class Hyperparameters:
     vocab_size : int = 50304
     arm : str = 'mup_wd'
     schedule : str = 'wsd'
+    lr_mode : str = 'rms_elr' # legacy ELR, or uniform absolute LR
+    learning_rate : float = 0.0009 # absolute baseline block/gamma peak LR
+    min_lr_ratio : float = 0.1 # old cosine baseline terminal/peak ratio
+    embedding_lr_multiplier : float = 2.0 # absolute mode tied embedding/head LR ratio
+    grad_clip : float = 0.0 # global norm clipping; legacy default unchanged
     peak_elr : float = 0.03
     continue_wsd : int = 0
     log_root : str = 'logs/shared_elr_init_suite'
@@ -304,7 +309,7 @@ class Hyperparameters:
     gamma_learning_rate : float = 0.0018 # original absolute LR; warmup then constant
     warmup_iters : int = 1000 # same warmup token budget as 250 updates at batch512
     warmdown_iters : int = 5800 # legacy scheduler setting; actual tensor ELR comes from JSON
-    weight_decay : float = 0.0 # fixed-initial-RMS arm: no weight decay
+    weight_decay : float = 0.1 # absolute mode respects this; legacy arms override below
     seed : int = 0
     # evaluation and logging hyperparams
     val_loss_every : int = 0 # periodic validation disabled; set positive to enable
@@ -349,7 +354,18 @@ if not 0 <= args.warmup_iters < args.num_iterations or not 0 < args.warmdown_ite
     parser.error('invalid warmup/warmdown/total boundaries')
 if not math.isfinite(args.peak_elr) or args.peak_elr <= 0 or not math.isfinite(args.gamma_learning_rate) or args.gamma_learning_rate < 0:
     parser.error('invalid peak ELR/gamma LR')
-args.weight_decay = 0.0 if args.arm == 'fanin_fixed' else 0.1
+if args.lr_mode not in ('rms_elr', 'absolute'):
+    parser.error('unknown lr_mode')
+if not math.isfinite(args.learning_rate) or args.learning_rate <= 0 or not 0 <= args.min_lr_ratio <= 1:
+    parser.error('invalid absolute learning rate or minimum ratio')
+if not math.isfinite(args.grad_clip) or args.grad_clip < 0 or not math.isfinite(args.weight_decay) or args.weight_decay < 0:
+    parser.error('invalid gradient clipping or weight decay')
+if not math.isfinite(args.embedding_lr_multiplier) or args.embedding_lr_multiplier <= 0:
+    parser.error('invalid embedding LR multiplier')
+if args.lr_mode == 'absolute' and cli.schedule_json:
+    parser.error('absolute LR mode does not accept an ELR schedule JSON')
+if args.lr_mode == 'rms_elr':
+    args.weight_decay = 0.0 if args.arm == 'fanin_fixed' else 0.1
 cli.branch = args.arm
 if args.schedule == 'wsd':
     if cli.checkpoint_dir is None:
@@ -384,6 +400,20 @@ def reject_duplicate_keys(pairs):
         result[key] = value
     return result
 
+def actual_learning_rate(update):
+    # Legacy lr0p0018 baseline uses zero-based optimizer iteration for cosine.
+    it = update - 1
+    if args.warmup_iters and it < args.warmup_iters:
+        return args.learning_rate * (it+1) / args.warmup_iters
+    if args.schedule == 'cosine':
+        progress = min(1.0, max(0.0, (it - args.warmup_iters) / (args.num_iterations - args.warmup_iters)))
+        factor = 0.5 * (1 + math.cos(math.pi * progress))
+    else:
+        stable_end = args.num_iterations - args.warmdown_iters
+        factor = 1.0 if it < stable_end else (args.num_iterations - it) / args.warmdown_iters
+    return args.learning_rate * (args.min_lr_ratio + (1-args.min_lr_ratio)*factor)
+
+
 def shared_elr(update):
     if args.warmup_iters and update <= args.warmup_iters:
         return args.peak_elr * update / args.warmup_iters
@@ -393,7 +423,13 @@ def shared_elr(update):
     stable_end = args.num_iterations - args.warmdown_iters
     return args.peak_elr * (1.0 if update <= stable_end else (args.num_iterations - update) / args.warmdown_iters)
 
-if cli.schedule_json:
+if args.lr_mode == 'absolute':
+    schedule_document = dict(version=1, kind='absolute_lr', steps=[
+        dict(update_step=u, learning_rate=actual_learning_rate(u),
+             embedding_learning_rate=args.embedding_lr_multiplier*actual_learning_rate(u),
+             gamma_learning_rate=actual_learning_rate(u)) for u in range(1,args.num_iterations+1)])
+    schedule_text = json.dumps(schedule_document, indent=2)
+elif cli.schedule_json:
     schedule_text = cli.schedule_json.read_text(encoding='utf-8-sig')
     schedule_document = json.loads(schedule_text, object_pairs_hook=reject_duplicate_keys)
     if any(row.get('overrides') for row in schedule_document.get('steps', [])):
@@ -500,8 +536,8 @@ width_multiplier = model.width_multiplier
 model = model.cuda()
 # Keep clean parameter names while the execution model is compiled and wrapped.
 raw_model = model
-tensor_elr_schedule = load_tensor_elr_schedule(schedule_document,
-    [n for n, p in raw_model.named_parameters() if p.requires_grad and p.ndim >= 2], cli.fork_step, args.num_iterations)
+tensor_elr_schedule = (None if args.lr_mode == 'absolute' else load_tensor_elr_schedule(schedule_document,
+    [n for n, p in raw_model.named_parameters() if p.requires_grad and p.ndim >= 2], cli.fork_step, args.num_iterations))
 if hasattr(config, "coordinate_descent_tuning"):
     config.coordinate_descent_tuning = True # suggested by @Chillee
 if args.compile_model:
@@ -530,26 +566,29 @@ block_parameters = [
     p for name, p in raw_model.named_parameters()
     if name.startswith('transformer.h.') and id(p) not in rmsnorm_gamma_param_ids
 ]
-optimizer1 = torch.optim.AdamW(raw_model.lm_head.parameters(), lr=args.embed_learning_rate, betas=(0.9, 0.95),
+optimizer1 = torch.optim.AdamW(raw_model.lm_head.parameters(), lr=args.learning_rate*args.embedding_lr_multiplier if args.lr_mode == 'absolute' else args.embed_learning_rate, betas=(0.9, 0.95),
                                weight_decay=args.weight_decay, fused=True)
 optimizer2_groups = []
 for p in block_parameters:
     optimizer2_groups.append(dict(params=[p], weight_decay=args.weight_decay))
 for p in rmsnorm_gamma_parameters:
-    optimizer2_groups.append(dict(params=[p], lr=args.gamma_learning_rate, weight_decay=0.0))
-optimizer2 = torch.optim.AdamW(optimizer2_groups, lr=0.5 * args.embed_learning_rate / width_multiplier, betas=(0.9, 0.95),
+    optimizer2_groups.append(dict(params=[p], lr=args.learning_rate if args.lr_mode == 'absolute' else args.gamma_learning_rate,
+                                  weight_decay=0.0))
+optimizer2 = torch.optim.AdamW(optimizer2_groups, lr=args.learning_rate if args.lr_mode == 'absolute' else 0.5 * args.embed_learning_rate / width_multiplier, betas=(0.9, 0.95),
                                fused=True)
 optimizers = [optimizer1, optimizer2]
 
 # learning rate decay scheduler (linear warmup, constant plateau, linear warmdown)
 def get_lr(it):
+    if args.lr_mode == 'absolute':
+        return actual_learning_rate(it+1) / args.learning_rate
     return (it+1) / args.warmup_iters if it < args.warmup_iters else 1.0
 
 schedulers = [torch.optim.lr_scheduler.LambdaLR(opt, get_lr) for opt in optimizers]
 
 @torch.no_grad()
 def apply_tensor_rms_elr(optimizers, update_step, history_path=None):
-    """Matrices use JSON ELR; gamma uses absolute LR, independent of its RMS."""
+    """Apply legacy RMS-ELR or ordinary baseline actual LR; record both units."""
     records = []
     for opt in optimizers:
         for group in opt.param_groups:
@@ -560,14 +599,15 @@ def apply_tensor_rms_elr(optimizers, update_step, history_path=None):
             if not math.isfinite(rms) or rms <= 0:
                 raise RuntimeError('per-tensor RMS-ELR requires finite positive RMS')
             is_gamma = id(p) in rmsnorm_gamma_param_ids
-            target = None if is_gamma else tensor_elr_schedule[update_step][tensor_name_by_id[id(p)]]
+            target = None if is_gamma or args.lr_mode == 'absolute' else tensor_elr_schedule[update_step][tensor_name_by_id[id(p)]]
             # Use the global update index so resume starts at the correct LR.
-            group['lr'] = (args.gamma_learning_rate * get_lr(update_step - 1)
-                           if is_gamma else target * rms)
+            absolute_multiplier = args.embedding_lr_multiplier if p is raw_model.transformer.wte.weight else 1.0
+            group['lr'] = (absolute_multiplier*actual_learning_rate(update_step) if args.lr_mode == 'absolute' else
+                           args.gamma_learning_rate * get_lr(update_step - 1) if is_gamma else target * rms)
             if history_path is not None:
                 records.append(dict(step=update_step, name=tensor_name_by_id[id(p)],
                                     target_rms_elr=target, pre_update_rms=rms,
-                                    lr_policy='absolute_gamma_lr' if is_gamma else 'json_rms_elr',
+                                    lr_policy='baseline_absolute_lr' if args.lr_mode == 'absolute' else 'absolute_gamma_lr' if is_gamma else 'json_rms_elr',
                                     lr=group['lr'], actual_rms_elr=group['lr']/rms))
     if history_path is not None:
         with open(history_path, 'a') as f:
@@ -903,7 +943,7 @@ if master_process:
     (Path(logdir) / 'schedule_metadata.json').write_text(json.dumps(dict(
         schedule_sha256=schedule_sha256, completed_step=start_step,
         next_update=start_step+1, total_updates=args.num_iterations,
-        scope='all matrices including tied embedding/head; gamma uses absolute LR',
+        scope='ordinary AdamW actual LR: tied embedding/head multiplier; blocks and gamma share base LR' if args.lr_mode == 'absolute' else 'all matrices including tied embedding/head; gamma uses absolute LR',
         arm=args.arm, fixed_norm=args.arm == 'fanin_fixed', matrix_wd=args.weight_decay,
         gamma_wd=0.0, config=vars(args), source_sha256=hashlib.sha256(code.encode()).hexdigest()), indent=2))
 # Dedicated loader leaves the training/validation cursors untouched, including resume.
@@ -1041,6 +1081,8 @@ for step in range(start_step, args.num_iterations + 1):
         x, y = train_loader.next_batch()
     for p in model.parameters():
         p.grad /= train_accumulation_steps
+    if args.grad_clip > 0:
+        torch.nn.utils.clip_grad_norm_(raw_model.parameters(), args.grad_clip)
     # step the optimizers and schedulers
     update_step = step + 1
     apply_tensor_rms_elr(optimizers, update_step,
