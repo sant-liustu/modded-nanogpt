@@ -11,7 +11,7 @@
     },
     {
       "file": "train_fixednorm_w1536.py",
-      "sha256": "cdf46b611cec5e841dd45277c890f45a3b10ac969a97222a2bc064427745941f"
+      "sha256": "ca5b2f37e93e04e411e3629bae59edc9c61958a3159b646e52acd8da9c63575c"
     },
     {
       "file": "train_fixednorm_w768_d6.py",
@@ -23,11 +23,11 @@
     },
     {
       "file": "launch.py",
-      "sha256": "8ec3d6c12118c335d0e593484d8c2e7bad6d0aea6189d1443637833385a223ef"
+      "sha256": "65da4ebe27a59d4e6d3cbbbd672cd517442647706f38b4568949e6c8c8b3ca90"
     },
     {
       "file": "verify_launcher.py",
-      "sha256": "f0995178d95a12ad49c27b59b27cf326277670a82c9efe5133c4a0de9acefd1c"
+      "sha256": "534fe575c31bc4ad06798f6c778b0a3240c6e660431233b3cb0fea2119ac06d6"
     },
     {
       "file": "run_large.sh",

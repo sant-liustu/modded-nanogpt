@@ -4,7 +4,7 @@ from pathlib import Path
 import launch
 root=Path(__file__).parent
 plan=launch.make_plan([str(i) for i in range(8)],Path('/output'),'train*','val*')
-assert [[j['gpu_ids'] for j in stage] for stage in plan['large']]==[[['0','1','2','3']]]
+assert [[j['gpu_ids'] for j in stage] for stage in plan['large']]==[[[str(i) for i in range(8)]]]
 assert [[j['gpu_ids'] for j in stage] for stage in plan['remaining']]==[[['4','5','6','7']],[['4','5'],['6'],['7']]]
 for stages in plan.values():
     for stage in stages:
@@ -30,5 +30,5 @@ with tempfile.TemporaryDirectory() as temp:
     assert not blocked.exists()
 env=os.environ.copy();env['CUDA_VISIBLE_DEVICES']='7,6,5,4,3,2,1,0'
 raw=subprocess.check_output([sys.executable,str(root/'launch.py'),'--train-glob','train*','--val-glob','val*','--output','unused','--dry-run'],env=env,text=True)
-assert json.loads(raw)['large'][0][0]['gpu_ids']==['7','6','5','4']
+assert json.loads(raw)['large'][0][0]['gpu_ids']==['7','6','5','4','3','2','1','0']
 print('PASS: allocation, global B128, outer remapping, stage dependency, parallel stage, failure blocking')

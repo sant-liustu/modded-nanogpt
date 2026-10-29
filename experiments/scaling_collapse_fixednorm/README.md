@@ -6,7 +6,7 @@ Five standalone trainers derived from the shared ELR initialization suite. Width
 |---|---:|---:|---:|---:|---:|---|
 | train_fixednorm_w384.py | 384 | 40,563,072 | 6,189 | 811,204,608 | 19.998599 | 1 / 128 |
 | train_fixednorm_w768.py | 768 | 123,590,400 | 18,858 | 2,471,755,776 | 19.999577 | 2 / 64 |
-| train_fixednorm_w1536.py | 1536 | 417,047,040 | 63,636 | 8,340,897,792 | 19.999897 | 4 / 32 |
+| train_fixednorm_w1536.py | 1536 | 417,047,040 | 63,636 | 8,340,897,792 | 19.999897 | 8 / 16 |
 
 The common target is TPP=20.0, anchored to w768 with 123590400 unique trainable parameters (2471808000 target tokens). Use the SAME `--tpp` argument on all entries to change it. Total updates round to the nearest full global batch (TPP differences above are rounding only). Parameter counts include all trainable gamma and count tied embedding/head once.
 
@@ -38,7 +38,7 @@ python train_fixednorm_w384.py --describe-only --tpp 20
 ```bash
 torchrun --standalone --nproc_per_node=1 train_fixednorm_w384.py --input-bin '/data/fineweb_train_*.bin' --input-val-bin '/data/fineweb_val_*.bin' --checkpoint-dir outputs/w384 --run-name w384
 torchrun --standalone --nproc_per_node=2 train_fixednorm_w768.py --input-bin '/data/fineweb_train_*.bin' --input-val-bin '/data/fineweb_val_*.bin' --checkpoint-dir outputs/w768 --run-name w768
-torchrun --standalone --nproc_per_node=4 train_fixednorm_w1536.py --input-bin '/data/fineweb_train_*.bin' --input-val-bin '/data/fineweb_val_*.bin' --checkpoint-dir outputs/w1536 --run-name w1536
+torchrun --standalone --nproc_per_node=8 train_fixednorm_w1536.py --input-bin '/data/fineweb_train_*.bin' --input-val-bin '/data/fineweb_val_*.bin' --checkpoint-dir outputs/w1536 --run-name w1536
 ```
 
 Choose fresh checkpoint directories. Inherited complete-state checkpoint/resume behavior remains; the new per-width source hashes/config must match. Do not resume old source checkpoints. Periodic validation remains disabled by default (`--val-loss-every 0`); a validation glob is still needed by the inherited loader.
@@ -69,9 +69,9 @@ Verification covers all five entries; formal multi-GPU runs have not been launch
 
 ## Eight-GPU execution plan
 
-Two independent lanes run concurrently:
+Run the large lane first, then the remaining lane (the large model occupies all eight GPUs):
 
-- large: GPUs0-3 run w1536, 4 ranks/device B32.
+- large: GPUs0-7 run w1536, 8 ranks/device B16.
 - remaining stage1: GPUs4-7 run w768/depth24, 4 ranks/device B32.
 - remaining stage2 (only after stage1 succeeds): GPUs4-5 w768/depth12 (2 ranks/device B64), GPU6 w768/depth6 (1 rank/device B128), GPU7 w384/depth12 (1 rank/device B128), concurrently.
 
@@ -89,7 +89,7 @@ bash run_large.sh --train-glob '/data/fineweb_train_*.bin' --val-glob '/data/fin
 bash run_remaining.sh --train-glob '/data/fineweb_train_*.bin' --val-glob '/data/fineweb_val_*.bin' --output outputs/remaining01
 ```
 
-Do not combine the all-lanes command with separate lane commands on the same GPUs. --gpu-ids accepts eight unique indices into the outer CUDA-visible inventory; default0..7. Each torchrun job has its own standalone rendezvous. Console logs, allocation manifest, checkpoints and result summary are under the fresh output root. A failed stage blocks its next stage and stops peers within that stage; the other lane remains independent. Formal GPU training has not been launched. `python verify_launcher.py` tests CPU subprocess sequencing, failure barriers, remapping and allocations.
+Do not combine the all-lanes command with separate lane commands on the same GPUs. --gpu-ids accepts eight unique indices into the outer CUDA-visible inventory; default0..7. Each torchrun job has its own standalone rendezvous. Console logs, allocation manifest, checkpoints and result summary are under the fresh output root. A failed stage blocks its next stage and stops peers within that stage; the next lane is also blocked. Formal GPU training has not been launched. `python verify_launcher.py` tests CPU subprocess sequencing, failure barriers, remapping and allocations.
 
 
 ## Optimized training scripts (2026-10-16)
@@ -135,3 +135,5 @@ Each evaluation consumes 2048 sequences total across all ranks, at context1024: 
 | w1536/d12 | 63636 | 318 | 202 |
 
 Existing checkpoint-triggered evaluation is retained and can add points outside this grid. The intervals above are fixed integer intervals, approximately matching relative training progress. These settings apply to future training; archived runs remain unchanged.
+
+The default `--lane all` now runs large then remaining sequentially. Never run `run_large.sh` and `run_remaining.sh` concurrently on the same eight GPUs. w1536/d12 uses 8 ranks x device batch16, matching the historical allocation.

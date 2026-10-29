@@ -1,6 +1,5 @@
-"""Two independent GPU lanes; the remaining lane has a strict stage barrier."""
+"""Eight-GPU large model first, then the remaining model stages."""
 import argparse
-from concurrent.futures import ThreadPoolExecutor
 import glob
 import json
 import os
@@ -21,7 +20,7 @@ def make_plan(gpus, output, train_glob, val_glob):
              '--input-val-bin',val_glob,'--checkpoint-dir',str(output/'checkpoints'/name),
              '--log-root',str(output/'logs'),'--run-name',name]
         return dict(name=name,gpu_ids=ids,command=cmd)
-    return dict(large=[[job('w1536',[0,1,2,3])]],remaining=[
+    return dict(large=[[job('w1536',list(range(8)))]],remaining=[
         [job('w768_d24',[4,5,6,7])],
         [job('w768',[4,5]),job('w768_d6',[6]),job('w384',[7])]])
 
@@ -93,19 +92,20 @@ def main():
     if a.dry_run:
         print(json.dumps(selected,indent=2)); return
     import torch
-    used={int(ids[i]) for i in (range(8) if a.lane=='all' else (range(4) if a.lane=='large' else range(4,8)))}
+    used={int(ids[i]) for i in (range(8) if a.lane=='all' else (range(8) if a.lane=='large' else range(4,8)))}
     if not torch.cuda.is_available() or max(used)>=torch.cuda.device_count(): p.error('selected GPUs are unavailable')
     if not glob.glob(a.train_glob) or not glob.glob(a.val_glob): p.error('training/validation files not found')
     if output.exists(): p.error('output root exists; choose a fresh path')
     (output/'console').mkdir(parents=True)
     (output/'manifest.json').write_text(json.dumps(selected,indent=2),encoding='utf-8')
     results={}
-    # Failure in one lane blocks its subsequent stages, but the independent lane continues.
-    with ThreadPoolExecutor(max_workers=len(selected)) as pool:
-        futures={name:pool.submit(run_lane,name,stages,output) for name,stages in selected.items()}
-        for name,future in futures.items():
-            try: results[name]=dict(status='PASS',jobs=future.result())
-            except Exception as exc: results[name]=dict(status='FAIL',error=str(exc))
+    # The large model occupies all eight GPUs; never overlap the lanes.
+    for name,stages in selected.items():
+        try:
+            results[name]=dict(status='PASS',jobs=run_lane(name,stages,output))
+        except Exception as exc:
+            results[name]=dict(status='FAIL',error=str(exc))
+            break
     (output/'results.json').write_text(json.dumps(results,indent=2),encoding='utf-8')
     if any(row['status']=='FAIL' for row in results.values()): raise SystemExit(1)
 
