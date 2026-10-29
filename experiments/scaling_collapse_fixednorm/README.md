@@ -137,3 +137,7 @@ Each evaluation consumes 2048 sequences total across all ranks, at context1024: 
 Existing checkpoint-triggered evaluation is retained and can add points outside this grid. The intervals above are fixed integer intervals, approximately matching relative training progress. These settings apply to future training; archived runs remain unchanged.
 
 The default `--lane all` now runs large then remaining sequentially. Never run `run_large.sh` and `run_remaining.sh` concurrently on the same eight GPUs. w1536/d12 uses 8 ranks x device batch16, matching the historical allocation.
+
+## Periodic checkpoints (2026-10-30)
+
+All five trainers save complete checkpoints every 1000 optimizer updates and at the final update when a checkpoint directory is supplied (the launcher supplies one). Explicit `--save-at` is also retained. Resume filters out checkpoints at or before the resumed step. Each checkpoint triggers validation in addition to the regular validation grid. Validation remains 2048 total sequences per evaluation.

@@ -389,7 +389,8 @@ if cli.checkpoint_dir:
         parser.error('checkpoint output directory already exists')
 if cli.stop_after_save and cli.save_at is None:
     parser.error('--stop-after-save requires an explicit --save-at')
-checkpoint_steps = {args.num_iterations}
+checkpoint_steps = set(range(1000, args.num_iterations + 1, 1000))
+checkpoint_steps.add(args.num_iterations)
 if args.schedule == 'wsd':
     checkpoint_steps.add(args.num_iterations - args.warmdown_iters)
 if cli.save_at is not None:
