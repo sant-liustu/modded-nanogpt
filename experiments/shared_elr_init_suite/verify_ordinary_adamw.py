@@ -1,6 +1,6 @@
-"""Golden AdamW+projection update and all-step old-baseline LR audit."""
+"""Golden plain AdamW update (optional projection) and all-step old-baseline LR audit."""
 from pathlib import Path
-import ast, copy, math
+import ast, copy, math, os
 from dataclasses import dataclass
 from types import SimpleNamespace
 import torch
@@ -12,7 +12,7 @@ names={'Rotary','apply_rotary_emb','RMSNorm','CausalSelfAttention','MLP','Block'
        'is_rmsnorm_gamma_name','build_fixed_norm_state','apply_fixed_norm_control',
        'apply_tensor_rms_elr','actual_learning_rate','get_lr'}
 module=ast.Module(body=[n for n in ast.parse(source).body if isinstance(n,(ast.ClassDef,ast.FunctionDef)) and n.name in names],type_ignores=[])
-a=SimpleNamespace(arm='fanin_fixed',lr_mode='absolute',learning_rate=.0009,embedding_lr_multiplier=2.,
+a=SimpleNamespace(arm=os.environ.get('ADAMW_TEST_ARM','fanin_wd'),lr_mode='absolute',learning_rate=.0009,embedding_lr_multiplier=2.,
                   min_lr_ratio=.1,grad_clip=0.,warmup_iters=1000,num_iterations=20400,warmdown_iters=5800,
                   schedule='cosine',weight_decay=.1,embed_learning_rate=.0036,gamma_learning_rate=.0018)
 ns=dict(torch=torch,nn=torch.nn,F=torch.nn.functional,math=math,dataclass=dataclass,args=a,__name__='__main__')
@@ -50,7 +50,9 @@ for step in (1,2,3):
     ns['apply_fixed_norm_control'](entries,step)
     with torch.no_grad():
         for name,p in ref.named_parameters():
-            if name in refs:p.mul_(refs[name]/p.float().square().mean().sqrt())
+            if a.arm=='fanin_fixed' and name in refs:p.mul_(refs[name]/p.float().square().mean().sqrt())
     for (name,p),(_,q) in zip(m.named_parameters(),ref.named_parameters()):
         assert torch.equal(p,q),name
-print('PASS: all 20400 LR steps match old lr0p0018 baseline; three runtime AdamW+projection updates exactly match plain PyTorch reference; differing parameter RMS does not rescale LR')
+if a.arm!='fanin_fixed':
+    assert any(p.float().square().mean().sqrt().item()!=refs[n].item() for n,p in m.named_parameters() if n in refs)
+print('PASS:', a.arm, 'all 20400 LR steps match old lr0p0018 baseline; three runtime updates exactly match plain PyTorch reference; free-norm mode has no projection; differing parameter RMS does not rescale LR')

@@ -7,6 +7,7 @@ import torch
 root = Path(__file__).parent
 runner = os.environ.get('FISHER_TEST_RUNNER', 'train_muon.py')
 lr_mode = os.environ.get('FISHER_TEST_LR_MODE', 'rms_elr')
+training_arm = os.environ.get('FISHER_TEST_ARM', 'fanin_fixed')
 if lr_mode == 'absolute' and runner != 'train.py':
     raise ValueError('absolute LR is supported by train.py only')
 if runner not in ('train.py', 'train_muon.py'):
@@ -22,7 +23,7 @@ accumulation = int(os.environ.get('FISHER_TEST_ACCUMULATION', '2'))
 interval = max(1, steps//2) if steps <= 4 else max(1, steps//5)
 states, timings, records = {}, {}, []
 for arm, every in [('off', 0), ('on', interval)]:
-    cmd = [sys.executable, str(root/runner), '--arm','fanin_fixed',
+    cmd = [sys.executable, str(root/runner), '--arm',training_arm,
            '--model-width',str(width),'--model-depth',str(depth),'--expected-world-size','1',
            '--batch-size','1','--device-batch-size','1','--sequence-length',str(length),
            '--vocab-size','50304','--num-iterations',str(steps),'--warmup-iters',str(max(1,steps//10)),'--warmdown-iters','1',
@@ -165,9 +166,16 @@ if lr_mode == 'absolute':
     for opt in states['on']['optimizers']:
         for group in opt['param_groups']:
             assert group['weight_decay'] in (0.0,0.1) and group['betas']==(0.9,0.95) and group['eps']==1e-8
-    norms=[json.loads(line) for line in (path.parent/'norm_control_history.jsonl').read_text().splitlines()]
-    assert norms and max(row['relative_error'] for row in norms)<1e-6
-report=dict(status='PASS',runner=runner,lr_mode=lr_mode,scope=f'single CUDA eager real FineWeb w{width} d{depth} vocab50304 B1 T{length}, {steps} updates',
+    metadata=json.loads((path.parent/'schedule_metadata.json').read_text())
+    assert metadata['fixed_norm']==(training_arm=='fanin_fixed')
+    if training_arm=='fanin_fixed':
+        norms=[json.loads(line) for line in (path.parent/'norm_control_history.jsonl').read_text().splitlines()]
+        assert norms and max(row['relative_error'] for row in norms)<1e-6
+    else:
+        assert not (path.parent/'norm_control_history.jsonl').exists()
+        assert any(p['rms']!=p['initial_rms'] for p in records[-1]['parameters'].values() if len(p['shape'])==2)
+
+report=dict(status='PASS',runner=runner,lr_mode=lr_mode,training_arm=training_arm,scope=f'single CUDA eager real FineWeb w{width} d{depth} vocab50304 B1 T{length}, {steps} updates',
             fisher_sequences=micro*accumulation, fisher_micro_batch_size=micro, fisher_accumulation_steps=accumulation, fisher_draws=2,
             model_snapshots_verified=True, default_final_full_checkpoint_verified=True,
             exact_training_state_equal=True, initial_and_current_rms_verified=True,

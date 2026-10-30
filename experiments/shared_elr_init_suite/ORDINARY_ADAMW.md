@@ -1,17 +1,19 @@
-# Old lr0p0018 AdamW baseline + current fixed-initial-RMS model
+# Ordinary lr0p0018 AdamW baseline: FREE parameter norms
 
 Run from repository root on two GPUs:
 
 ```bash
-torchrun --standalone --nproc_per_node=2 experiments/shared_elr_init_suite/train_adamw_fixed_w768_d12_lr0p0018.py
+torchrun --standalone --nproc_per_node=2 experiments/shared_elr_init_suite/train_adamw_w768_d12_lr0p0018.py
 ```
 
 This preserves the CURRENT w768/d12 model (QK RMSNorm, RoPE, ReLU squared,
 tied head), fan-in initialization, FineWeb data, B128/T1024, per-device B64,
 seed0, 20400 updates, and current distributed chunked Fisher/snapshots.
 It uses ordinary torch.optim.AdamW with actual per-group learning rates that
-do NOT depend on RMS. Matrix RMS is projected to its own step-zero RMS after
-each update; RMSNorm gamma is trainable and not projected.
+do NOT depend on RMS. No parameter is projected or rescaled after updates.
+Matrix and gamma norms evolve freely; norm/Fisher logging is observation only.
+The entry fixes arm=fanin_wd and lr_mode=absolute. Schedule metadata records
+fixed_norm=false and no norm_control_history.jsonl is written.
 
 The user's old baseline was located and verified in:
 experiments/eta_lambda_invariance/train_gpt2_mupp_w768_lr0p0018_cosine_wd0p1.py.
@@ -43,9 +45,12 @@ DIAGNOSTIC ratio only, not the LR-setting rule. Schedule metadata describes
 the selected policy. Checkpoint config includes lr_mode and LR hyperparameters;
 the source/config guards reject incompatible old checkpoints.
 
-This is the old actual-LR baseline with CURRENT-model norm control added.
-It is not a full paper reproduction (data/model/init/batch remain current),
-nor a free-norm baseline. Decay is applied during AdamW before matrix projection.
+This is ordinary AdamW on the CURRENT model/init/data with the historical
+actual-LR policy. It is not a full paper reproduction. Weight decay is part of
+the ordinary optimizer update and is not followed by norm projection.
+
+The old train_adamw_fixed_w768_d12_lr0p0018.py remains a separately named
+fixed-RMS ablation. Do NOT use that fixed entry for this plain AdamW baseline.
 
 Verify the golden update and the old LR schedule:
 
@@ -59,12 +64,14 @@ Small real FineWeb runner tests (PowerShell):
 $env:FISHER_TEST_RUNNER='train.py'
 $env:FISHER_TEST_LENGTH='8'
 $env:FISHER_TEST_LR_MODE='absolute'
+$env:FISHER_TEST_ARM='fanin_wd'
 python verify_fisher.py
 $env:FISHER_TEST_LR_MODE='rms_elr'
+$env:FISHER_TEST_ARM='fanin_fixed'
 python verify_fisher.py
 ```
 
-Tests verify group actual LR independence from matrix RMS, norm projection,
+Tests verify group actual LR independence from matrix RMS, freely changing matrix norms, absence of projection,
 Fisher off/on isolation, snapshots, and exact resumed state. Only small local
 CUDA eager checks are claimed; full cloud two-GPU compiled performance remains
 unvalidated for this new entry.
