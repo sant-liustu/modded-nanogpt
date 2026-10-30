@@ -23,7 +23,11 @@ The lr0p0018 name denotes EMBEDDING LR, not a common LR for all parameters:
 |---|---:|---:|
 | tied embedding/head | 0.0018 | 0.1 |
 | Transformer block matrices | 0.0009 | 0.1 |
-| RMSNorm gamma (including final norm) | 0.0009 | 0 |
+| RMSNorm gamma (including final norm) | 0.0009 | 0.1 |
+
+Current gamma WD is explicitly 0.1 per the user request, matching the paper
+optimizer grouping; the historical LR baseline used gamma WD0. Only its LR
+policy is inherited here.
 
 AdamW betas=(.9,.95), eps=1e-8, fused=True; no gradient clipping, matching that
 old baseline. Warmup1000, then cosine to 10% peak. The old zero-based optimizer
@@ -33,7 +37,8 @@ steps were audited against the legacy formula. Gamma follows this SAME cosine
 curve; it does not use the old ELR runner's separate LR.0018 constant plateau.
 
 CLI --learning-rate controls the BLOCK/GAMMA peak (default .0009), and
---embedding-lr-multiplier defaults2. These are absolute LRs. --min-lr-ratio
+--embedding-lr-multiplier defaults2. These are absolute LRs. --gamma-weight-decay is explicitly .1 in this free-norm entry. The underlying
+trainer defaults it to0 to preserve older controls. --min-lr-ratio
 defaults.1 and --grad-clip defaults0. ELR JSON and ELR-only flags are rejected
 by this entry. --schedule-json is not accepted in absolute mode.
 Original train_fanin_fixed_*_elr*.py entries retain rms_elr mode and policies.

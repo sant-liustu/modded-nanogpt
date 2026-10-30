@@ -38,7 +38,7 @@ for arm, every in [('off', 0), ('on', interval)]:
            '--fisher-token-chunk-size','4']
     if lr_mode == 'absolute':
         cmd += ['--lr-mode','absolute','--learning-rate','0.0009','--embedding-lr-multiplier','2','--min-lr-ratio','0.1',
-                '--weight-decay','0.1','--grad-clip','0']
+                '--weight-decay','0.1','--gamma-weight-decay',str(0.1 if training_arm=='fanin_wd' else 0.0),'--grad-clip','0']
     if arm == 'off':
         # Exercise automatic final full-checkpoint output without explicit CLI path.
         for option in ('--checkpoint-dir','--save-at'):
@@ -172,6 +172,8 @@ if lr_mode == 'absolute':
         norms=[json.loads(line) for line in (path.parent/'norm_control_history.jsonl').read_text().splitlines()]
         assert norms and max(row['relative_error'] for row in norms)<1e-6
     else:
+        assert metadata['gamma_wd']==0.1
+        assert all(g['weight_decay']==0.1 for opt in states['on']['optimizers'] for g in opt['param_groups'])
         assert not (path.parent/'norm_control_history.jsonl').exists()
         assert any(p['rms']!=p['initial_rms'] for p in records[-1]['parameters'].values() if len(p['shape'])==2)
 

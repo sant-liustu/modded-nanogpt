@@ -10,7 +10,7 @@ for option in ('--arm','--lr-mode','--model-width','--model-depth','--schedule-j
 sys.argv[1:1]=[
     '--arm','fanin_wd','--lr-mode','absolute','--model-width','768','--model-depth','12',
     '--learning-rate','0.0009','--embedding-lr-multiplier','2',
-    '--embed-learning-rate','0.0018','--gamma-learning-rate','0.0009','--min-lr-ratio','0.1','--weight-decay','0.1','--grad-clip','0',
+    '--embed-learning-rate','0.0018','--gamma-learning-rate','0.0009','--min-lr-ratio','0.1','--weight-decay','0.1','--gamma-weight-decay','0.1','--grad-clip','0',
     '--schedule','cosine','--expected-world-size','2','--device-batch-size','64',
     '--run-name','adamw_w768_d12_lr0p0018','--log-root','logs/adamw_w768_d12_lr0p0018',
 ]

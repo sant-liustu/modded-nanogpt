@@ -306,6 +306,7 @@ class Hyperparameters:
     sequence_length : int = 1024 # sequence length, in tokens
     num_iterations : int = 20400 # same total training tokens as 5100 updates at global batch512
     embed_learning_rate : float = 0.0036 # matrix LR is overwritten by JSON ELR
+    gamma_weight_decay : float = 0.0 # explicit; plain AdamW entry sets 0.1
     gamma_learning_rate : float = 0.0018 # original absolute LR; warmup then constant
     warmup_iters : int = 1000 # same warmup token budget as 250 updates at batch512
     warmdown_iters : int = 5800 # legacy scheduler setting; actual tensor ELR comes from JSON
@@ -354,6 +355,8 @@ if not 0 <= args.warmup_iters < args.num_iterations or not 0 < args.warmdown_ite
     parser.error('invalid warmup/warmdown/total boundaries')
 if not math.isfinite(args.peak_elr) or args.peak_elr <= 0 or not math.isfinite(args.gamma_learning_rate) or args.gamma_learning_rate < 0:
     parser.error('invalid peak ELR/gamma LR')
+if not math.isfinite(args.gamma_weight_decay) or args.gamma_weight_decay < 0:
+    parser.error('invalid gamma weight decay')
 if args.lr_mode not in ('rms_elr', 'absolute'):
     parser.error('unknown lr_mode')
 if not math.isfinite(args.learning_rate) or args.learning_rate <= 0 or not 0 <= args.min_lr_ratio <= 1:
@@ -573,7 +576,7 @@ for p in block_parameters:
     optimizer2_groups.append(dict(params=[p], weight_decay=args.weight_decay))
 for p in rmsnorm_gamma_parameters:
     optimizer2_groups.append(dict(params=[p], lr=args.learning_rate if args.lr_mode == 'absolute' else args.gamma_learning_rate,
-                                  weight_decay=0.0))
+                                  weight_decay=args.gamma_weight_decay))
 optimizer2 = torch.optim.AdamW(optimizer2_groups, lr=args.learning_rate if args.lr_mode == 'absolute' else 0.5 * args.embed_learning_rate / width_multiplier, betas=(0.9, 0.95),
                                fused=True)
 optimizers = [optimizer1, optimizer2]
@@ -945,7 +948,7 @@ if master_process:
         next_update=start_step+1, total_updates=args.num_iterations,
         scope='ordinary AdamW actual LR: tied embedding/head multiplier; blocks and gamma share base LR' if args.lr_mode == 'absolute' else 'all matrices including tied embedding/head; gamma uses absolute LR',
         arm=args.arm, fixed_norm=args.arm == 'fanin_fixed', matrix_wd=args.weight_decay,
-        gamma_wd=0.0, config=vars(args), source_sha256=hashlib.sha256(code.encode()).hexdigest()), indent=2))
+        gamma_wd=args.gamma_weight_decay, config=vars(args), source_sha256=hashlib.sha256(code.encode()).hexdigest()), indent=2))
 # Dedicated loader leaves the training/validation cursors untouched, including resume.
 fisher_inputs = None
 if args.fisher_every:
