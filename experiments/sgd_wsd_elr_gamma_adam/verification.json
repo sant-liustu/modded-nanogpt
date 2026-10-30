@@ -1,0 +1,29 @@
+{
+  "fixed": {
+    "cpu_resume_bitwise_equal": true,
+    "adam_moments_equal": true,
+    "logs_equal": true,
+    "stable_checkpoint_preserved": true,
+    "max_norm_relative_error": 1.3929069420104412e-07,
+    "updates": 24,
+    "cuda_24_updates_finite": true
+  },
+  "sine_p1": {
+    "cpu_resume_bitwise_equal": true,
+    "adam_moments_equal": true,
+    "logs_equal": true,
+    "stable_checkpoint_preserved": true,
+    "max_norm_relative_error": 1.7447060496333933e-07,
+    "updates": 24,
+    "cuda_24_updates_finite": true
+  },
+  "sine_p2": {
+    "cpu_resume_bitwise_equal": true,
+    "adam_moments_equal": true,
+    "logs_equal": true,
+    "stable_checkpoint_preserved": true,
+    "max_norm_relative_error": 1.7447060496333933e-07,
+    "updates": 24,
+    "cuda_24_updates_finite": true
+  }
+}
