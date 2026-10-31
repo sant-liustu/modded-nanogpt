@@ -66,10 +66,16 @@ def main():
             assert {r['updates'] for r in grads}=={4,8,12,16,20,24}
             assert any(r['name']=='final_norm.weight' for r in grads)
             assert len(updates)==2*len(grads)
+            for row in grads:
+                assert row['grad_rms']==row['grad_l2']/np.sqrt(row['numel'])
+                assert 'grad_abs_max' not in row
+            for row in updates:
+                assert row['delta_rms']==row['raw_parameter_delta_norm']/np.sqrt(row['numel'])
+                assert 'radial_delta' not in row
             for g in grads:
                 before=next(r for r in updates if r['updates']==g['updates'] and r['name']==g['name'] and r['stage']=='optimizer_before_projection')
                 if before['optimizer_type']=='SGD':
-                    assert abs(before['optimizer_update_norm']-g['grad_l2']) < 2e-4*max(g['grad_l2'],1.)
+                    assert abs(before['raw_parameter_delta_norm']/before['lr']-g['grad_l2']) < 2e-4*max(g['grad_l2'],1.)
                 else:
                     after=next(r for r in updates if r['updates']==g['updates'] and r['name']==g['name'] and r['stage']=='total_after_projection')
                     assert after['raw_parameter_delta_norm']==before['raw_parameter_delta_norm']

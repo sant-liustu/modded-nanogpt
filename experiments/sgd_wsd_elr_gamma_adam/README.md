@@ -74,27 +74,22 @@ collapse/convergence claim. Existing training processes are not touched.
 
 ## Per-tensor gradient and update monitors
 
-Both default to every500updates plus final; override with
-`--gradient-norm-every 1 --update-norm-every 1` for every update, or0 to disable.
-Whole-model gradient_norm and training loss remain recorded every step.
+Default every500updates plus final. Set --gradient-norm-every and
+--update-norm-every to1 for every update, or0 to disable each monitor.
+Whole-model gradient_norm and loss remain every step.
 
-- gradient_norm_history.jsonl: name/shape/step, grad_l2, grad_rms, grad_abs_max,
-  grad_finite, parameter_dot_gradient=<W,g>, radial_gradient=<W,g>/||W||.
-  Recorded after gradient accumulation, before either optimizer; no clipping.
-- optimizer_update_norm_history.jsonl: two rows per tensor per measurement.
-  stage=optimizer_before_projection measures actual optimizer delta; stage=
-  total_after_projection measures optimizer plus norm projection together.
-  Both include raw_parameter_delta_norm, delta_rms/abs_max, relative_update_norm,
-  parameter_dot_delta=<W_before,delta>, radial_delta, delta_finite and actual LR.
-  Optimizer-stage optimizer_update_norm/rms means ||delta||/LR, matching the old
-  monitor's normalized-direction convention (WD0). It is NOT the raw delta norm.
-  Gamma is not projected, so its two stage displacements are identical.
+- gradient_norm_history.jsonl: grad_l2 and grad_rms, after accumulation and
+  before optimizer. Reuses L2 reductions already used for overall gradient norm.
+- optimizer_update_norm_history.jsonl: raw_parameter_delta_norm (actual delta L2)
+  and delta_rms. optimizer_before_projection is actual optimizer displacement;
+  total_after_projection includes norm projection. Gamma's second measurement
+  reuses the first because gamma is never projected.
 
-All unique trainable tensors included; tied embedding/head appears once.
-Packed stats use one host transfer per stage; buffered files flush every100
-updates and before checkpoints. Resume trims stale/partial rows. No probe
-forward pass or RNG sampling. Snapshots add one FP32 model of temporary memory
-(about0.5GB at width768) plus tensor scratch on measured updates; cadence1 can
-substantially increase I/O and runtime. Full768 monitoring performance unmeasured.
-Small CPU tests compare monitors enabled/disabled for exact weights, Adam moments,
-RNG and loss logs, plus exact resumed monitor rows. CUDA short tests check execution.
+RMS=L2/sqrt(numel), computed from the same L2 scalar, without another tensor
+reduction. Only identity metadata (step/name/shape/numel, stage, optimizer/LR)
+accompanies these two metrics. No maxima, radial/relative/finite or delta/LR
+metrics. Existing overall nonfinite checks remain active.
+Packed host transfers, buffered logs and checkpoint rollback remain. Update
+snapshots cost about one extra FP32 model plus tensor scratch; cadence1 can
+increase I/O/runtime. CPU on/off exactness and resume checks plus CUDA short
+runs are covered in verify.py; full768 monitoring performance unmeasured.

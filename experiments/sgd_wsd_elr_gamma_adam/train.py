@@ -157,53 +157,36 @@ def monitor_due(every, step, total):
 
 
 @torch.no_grad()
-def gradient_records(model, step):
-    records, packed = [], []
+def gradient_records(model, step, grad_norms):
+    # Reuse the same per-tensor L2 reductions as the overall gradient norm.
+    values=iter(torch.stack(grad_norms).cpu().tolist())
+    records=[]
     for name,p in model.named_parameters():
-        row=dict(updates=step,step=step,name=name,shape=list(p.shape),numel=p.numel(),
-                 stage='after_accumulation_before_optimizer',gradient_present=p.grad is not None)
-        if p.grad is None:
-            row.update(grad_l2=None,grad_rms=None,grad_abs_max=None,grad_finite=None,
-                       parameter_dot_gradient=None,radial_gradient=None)
-        else:
-            g=p.grad.detach().float(); w=p.detach().float()
-            l2=torch.linalg.vector_norm(g);lo,hi=torch.aminmax(g)
-            dot=(w*g).sum(); norm=torch.linalg.vector_norm(w)
-            packed.append(torch.stack((l2,l2/math.sqrt(g.numel()),torch.maximum(lo.abs(),hi.abs()),
-                (torch.isfinite(lo)&torch.isfinite(hi)).to(l2.dtype),dot,dot/norm.clamp_min(1e-30))))
-        records.append(row)
-    values=iter(torch.stack(packed).cpu().tolist() if packed else [])
-    for row in records:
-        if row['gradient_present']:
-            l2,rms,maximum,finite,dot,radial=next(values)
-            row.update(grad_l2=l2,grad_rms=rms,grad_abs_max=maximum,grad_finite=bool(finite),
-                       parameter_dot_gradient=dot,radial_gradient=radial)
+        l2=next(values) if p.grad is not None else None
+        records.append(dict(updates=step,step=step,name=name,shape=list(p.shape),
+            numel=p.numel(),stage='after_accumulation_before_optimizer',
+            grad_l2=l2,grad_rms=l2/math.sqrt(p.numel()) if l2 is not None else None))
     return records
 
 
 @torch.no_grad()
-def displacement_records(model, before, step, matrix_lr, gamma_rate, stage):
+def displacement_records(model, before, step, matrix_lr, gamma_rate, stage, previous=None):
     records,packed=[],[]
     for name,p in model.named_parameters():
-        w=before[name];delta=p.detach()-w
-        norm=torch.linalg.vector_norm(w);d=torch.linalg.vector_norm(delta)
-        lo,hi=torch.aminmax(delta);dot=(w*delta).sum()
-        lr=matrix_lr if p.ndim==2 else gamma_rate
-        packed.append(torch.stack((d,d/math.sqrt(p.numel()),torch.maximum(lo.abs(),hi.abs()),
-            norm,d/norm.clamp_min(1e-30),dot,dot/norm.clamp_min(1e-30),
-            (torch.isfinite(lo)&torch.isfinite(hi)).to(d.dtype))))
+        # Gamma is not projected, so reuse its optimizer-stage measurement.
+        if previous is not None and p.ndim==1:
+            row=dict(previous[name]);row['stage']=stage
+            records.append(row)
+            continue
+        packed.append(torch.linalg.vector_norm(p.detach()-before[name]))
         records.append(dict(updates=step,step=step,name=name,shape=list(p.shape),
-            optimizer_type='SGD' if p.ndim==2 else 'Adam',lr=lr,weight_decay=0.,stage=stage))
-    for row,(d,rms,maximum,norm,relative,dot,radial,finite) in zip(records,torch.stack(packed).cpu().tolist()):
-        row.update(raw_parameter_delta_norm=d,delta_rms=rms,delta_abs_max=maximum,
-            parameter_norm_before=norm,relative_update_norm=relative,
-            parameter_dot_delta=dot,radial_delta=radial,delta_finite=bool(finite))
-        # Historical monitor reported the normalized direction -delta/LR.
-        # Valid here only before projection, with weight decay zero.
-        if stage=='optimizer_before_projection':
-            row.update(optimizer_update_norm=d/row['lr'] if row['lr'] else None,
-                optimizer_update_rms=rms/row['lr'] if row['lr'] else None,
-                optimizer_update_inferred=row['lr']!=0)
+            numel=p.numel(),optimizer_type='SGD' if p.ndim==2 else 'Adam',
+            lr=matrix_lr if p.ndim==2 else gamma_rate,stage=stage))
+    values=iter(torch.stack(packed).cpu().tolist() if packed else [])
+    for row in records:
+        if 'raw_parameter_delta_norm' not in row:
+            l2=next(values)
+            row.update(raw_parameter_delta_norm=l2,delta_rms=l2/math.sqrt(row['numel']))
     return records
 
 
@@ -226,25 +209,28 @@ def update(model, optimizer, tape, position, args, lr, scale, targets, next_scal
         (loss * (count/args.batch)).backward()
         total += value*count/args.batch
     grads = [p.grad.detach().float() for p in model.parameters() if p.grad is not None]
-    grad = float(torch.linalg.vector_norm(torch.stack(torch._foreach_norm(grads,2))))
+    grad_norms = torch._foreach_norm(grads,2)
+    grad = float(torch.linalg.vector_norm(torch.stack(grad_norms)))
     if not math.isfinite(grad):
         raise FloatingPointError('nonfinite gradient')
     step=position//args.batch+1
     if monitors is not None and monitor_due(args.gradient_norm_every,step,args.updates):
-        for row in gradient_records(model,step):
+        for row in gradient_records(model,step,grad_norms):
             monitors[0].write(json.dumps(row)+'\n')
     capture=monitors is not None and monitor_due(args.update_norm_every,step,args.updates)
     before={n:p.detach().clone() for n,p in model.named_parameters()} if capture else None
     optimizer.step()
     gamma_optimizer.step()
     if capture:
-        for row in displacement_records(model,before,step,optimizer.param_groups[0]['lr'],
-                gamma_optimizer.param_groups[0]['lr'],'optimizer_before_projection'):
+        optimizer_rows=displacement_records(model,before,step,optimizer.param_groups[0]['lr'],
+                gamma_optimizer.param_groups[0]['lr'],'optimizer_before_projection')
+        for row in optimizer_rows:
             monitors[1].write(json.dumps(row)+'\n')
     project(model, targets, next_scale)
     if capture:
         for row in displacement_records(model,before,step,optimizer.param_groups[0]['lr'],
-                gamma_optimizer.param_groups[0]['lr'],'total_after_projection'):
+                gamma_optimizer.param_groups[0]['lr'],'total_after_projection',
+                {row['name']:row for row in optimizer_rows}):
             monitors[1].write(json.dumps(row)+'\n')
     return total,grad
 

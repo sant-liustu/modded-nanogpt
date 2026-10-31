@@ -25,3 +25,7 @@ for optimizer-only rows. Buffer files and recover to checkpoint like step logs.
 Verify on/off exact weights, Adam state, RNG and losses; resumed monitor rows;
 SGD direction vs raw gradient, gamma unchanged by matrix projection. Snapshot
 cost is one extra FP32 model plus per-tensor scratch at measured updates.
+
+User refinement: retain only L2/RMS plus identifying metadata. Reuse gradient
+L2 from overall norm; derive RMS on CPU. Reuse gamma displacement across
+projection stages. Remove maxima/dots/radial/relative/delta-over-LR metrics.
