@@ -33,3 +33,7 @@ User approved implementation, then requested a single self-contained PyTorch fil
 2026-10-31 user amendment: use the previous sequential shard reader, not random-window sampling. Training, validation and Fisher use isolated deterministic cursors; persist shard/position/epoch/rank/world/batch size for exact resume. Keep all model/optimizer/LR/batch/stop/Fisher-estimator settings fixed.
 
 2026-10-31 gradient attribution: log each tensor pre-clip L2 norm, RMS and squared-norm fraction every update, after DDP/accumulation. Rank0 only, read-only reductions, no new abstraction. Save actual global clipping coefficient and flag with step. Validate known gradients, zero gradients, real short-run log coverage, and unchanged training state.
+
+2026-10-31 user amendment: default four ranks and complete resume checkpoints every2000 completed updates plus cutoff. Keep global480, context1024, micro8, so accumulation15; Fisher1024 splits into256 sequences/rank (4 micro64). Validate four actual CPU/Gloo ranks, serial-update/Fisher equivalence, periodic checkpoint completeness and exact distributed resume.
+
+User follow-up: per-rank training microbatch30 instead of8; four ranks x30 x4 accumulation = global480. Fisher microbatch remains64.

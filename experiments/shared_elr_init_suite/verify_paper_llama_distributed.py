@@ -1,4 +1,4 @@
-"""Two CPU/Gloo ranks: LLaMA Fisher serial reference and actual training entry."""
+"""Four CPU/Gloo ranks: LLaMA Fisher serial reference and actual training entry."""
 import json
 import os
 from pathlib import Path
@@ -12,10 +12,12 @@ import torch.distributed as dist
 import torch.multiprocessing as mp
 import train_llama025b_fineweb as run
 
+WORLD = 4
+
 
 def fisher_worker(rank, url):
     torch.set_num_threads(1)
-    dist.init_process_group('gloo',init_method=url,rank=rank,world_size=2,timeout=timedelta(seconds=60))
+    dist.init_process_group('gloo',init_method=url,rank=rank,world_size=WORLD,timeout=timedelta(seconds=60))
     try:
         torch.manual_seed(67)
         model=run.Llama(run.LlamaConfig(41,32,128,1,4))
@@ -23,16 +25,16 @@ def fisher_worker(rank, url):
         y=torch.zeros_like(x)
         y[1,:]=-1
         y[6,1:]=-1
-        part=slice(rank*4,(rank+1)*4)
+        part=slice(rank*(8//WORLD),(rank+1)*(8//WORLD))
         record=run.probe(model,x[part],y[part],2,103,run.parameter_rms(model),2,True,3)
-        assert record['draw_seeds_by_rank']==[[103,104],[105,106]]
-        assert record['world_size']==2 and record['sequences']==8 and record['local_sequences']==4
+        assert record['draw_seeds_by_rank']==[[103+draw*WORLD+r for r in range(WORLD)] for draw in range(2)]
+        assert record['world_size']==WORLD and record['sequences']==8 and record['local_sequences']==8//WORLD
         worst=0.0
         for draw in range(2):
             objective=0
-            for r in range(2):
-                generator=torch.Generator().manual_seed(103+draw*2+r)
-                for b in range(r*4,(r+1)*4,2):
+            for r in range(WORLD):
+                generator=torch.Generator().manual_seed(103+draw*WORLD+r)
+                for b in range(r*(8//WORLD),(r+1)*(8//WORLD),2):
                     hidden=model(x[b:b+2],return_hidden=True).reshape(-1,32)
                     mask=y[b:b+2].reshape(-1)!=-1
                     for t in range(0,len(hidden),3):
@@ -49,22 +51,23 @@ def fisher_worker(rank, url):
                 error=abs(actual-expected)/max(expected,1e-15)
                 worst=max(worst,error)
                 assert error<2e-5,(name,error)
-        shared=[None,None]
+        shared=[None]*WORLD
         dist.all_gather_object(shared,record['groups'])
-        assert shared[0]==shared[1]
-        if rank==0: print('PASS two-rank LLaMA Fisher SUM-before-square, serial objective; max relative error',worst,flush=True)
+        assert all(item==shared[0] for item in shared)
+        if rank==0: print('PASS four-rank LLaMA Fisher SUM-before-square, serial objective; max relative error',worst,flush=True)
     finally: dist.destroy_process_group()
 
 
-def entry_worker(rank, port, output, data):
-    os.environ.update(RANK=str(rank),WORLD_SIZE='2',LOCAL_RANK=str(rank),MASTER_ADDR='127.0.0.1',
+def entry_worker(rank, port, output, data, resume=None):
+    os.environ.update(RANK=str(rank),WORLD_SIZE=str(WORLD),LOCAL_RANK=str(rank),MASTER_ADDR='127.0.0.1',
                       MASTER_PORT=str(port),USE_LIBUV='0')
     sys.argv=['train_llama025b_fineweb.py','--input-bin',data,'--input-val-bin',data,
               '--output',output,'--device','cpu','--hidden-size','32','--intermediate-size','128',
               '--num-layers','1','--num-heads','4','--vocab-size','41','--sequence-length','4',
-              '--batch-size','4','--micro-batch-size','1','--stop-step','2','--warmup-steps','1',
+              '--stop-step','4','--warmup-steps','1',
               '--fisher-sequences','4','--fisher-micro-batch-size','1','--fisher-token-chunk-size','3',
-              '--fisher-every','1','--save-every','1','--val-every','1','--val-batches','1']
+              '--fisher-every','1','--save-every','2','--val-every','1','--val-batches','1']
+    if resume: sys.argv += ['--resume', resume]
     run.main()
 
 
@@ -81,12 +84,13 @@ if __name__=='__main__':
     tokens=np.arange(1000,dtype=np.uint16)%41
     header=np.zeros(256,dtype=np.int32); header[:3]=[20240520,1,len(tokens)]
     with open(data,'wb') as f: f.write(header.tobytes()); f.write(tokens.tobytes())
-    mp.spawn(fisher_worker,args=(f'tcp://127.0.0.1:{port()}?use_libuv=0',),nprocs=2,join=True)
-    mp.spawn(entry_worker,args=(port(),str(out/'run'),str(data)),nprocs=2,join=True)
-    ckpt=out/'run'/'checkpoints'/'step000002'
-    states=[torch.load(ckpt/f'rank{r}.pt',weights_only=False) for r in range(2)]
-    assert json.loads((ckpt/'complete.json').read_text())==dict(step=2,world_size=2)
-    for k in states[0]['model']: assert torch.equal(states[0]['model'][k],states[1]['model'][k])
+    mp.spawn(fisher_worker,args=(f'tcp://127.0.0.1:{port()}?use_libuv=0',),nprocs=WORLD,join=True)
+    mp.spawn(entry_worker,args=(port(),str(out/'run'),str(data)),nprocs=WORLD,join=True)
+    ckpt=out/'run'/'checkpoints'/'step000004'
+    states=[torch.load(ckpt/f'rank{r}.pt',weights_only=False) for r in range(WORLD)]
+    assert json.loads((ckpt/'complete.json').read_text())==dict(step=4,world_size=WORLD)
+    for k in states[0]['model']:
+        assert all(torch.equal(states[0]['model'][k],state['model'][k]) for state in states)
     # Compare ACTUAL entry-point DDP+accumulation updates with a serial global-batch AdamW.
     torch.set_num_threads(1)
     reference=run.Llama(run.LlamaConfig(41,32,128,1,4))
@@ -95,9 +99,9 @@ if __name__=='__main__':
     groups=[{'params':[v for n,v in reference.named_parameters() if run.block_type(n)==name],'name':name}
             for name in ('Emb','Head','Norm','QK','VO','FFN')]
     optimizer=torch.optim.AdamW(groups,lr=8e-4,betas=(0.9,0.95),eps=1e-8,weight_decay=0.1,fused=False)
-    samplers=[run.TokenData(str(data),4,41,r,2) for r in range(2)]
-    for iteration in range(2):
-        batches=[sampler.batch(1) for sampler in samplers for _ in range(2)]
+    samplers=[run.TokenData(str(data),4,41,r,WORLD) for r in range(WORLD)]
+    for iteration in range(4):
+        batches=[sampler.batch(30) for sampler in samplers for _ in range(4)]
         x=torch.cat([b[0] for b in batches]); y=torch.cat([b[1] for b in batches])
         optimizer.zero_grad(set_to_none=True)
         _,loss=reference(x,y)
@@ -109,16 +113,37 @@ if __name__=='__main__':
     for name,v in reference.state_dict().items():
         torch.testing.assert_close(v,states[0]['model'][name],rtol=2e-5,atol=2e-7)
     assert states[0]['data_state']['position']==states[1]['data_state']['position']
-    assert [s['data_state']['rank'] for s in states]==[0,1]
+    assert [s['data_state']['rank'] for s in states]==list(range(WORLD))
     rows=[json.loads(s) for s in (out/'run'/'fisher_history.jsonl').read_text().splitlines()]
-    assert [r['step'] for r in rows]==[0,1,2] and all(r['world_size']==2 for r in rows)
+    assert [r['step'] for r in rows]==[0,1,2,3,4] and all(r['world_size']==WORLD for r in rows)
     grads=[json.loads(s) for s in (out/'run'/'tensor_grad_norm_history.jsonl').read_text().splitlines()]
-    assert [g['step'] for g in grads]==[1,2]
+    assert [g['step'] for g in grads]==[1,2,3,4]
     for row in grads:
         assert set(row['parameters'])==set(states[0]['model'])
         recovered=sum(v['grad_norm']**2 for v in row['parameters'].values())**0.5
         assert abs(recovered-row['global_grad_norm'])<1e-5
-    (out/'report.json').write_text(json.dumps(dict(two_process_gloo=True,serial_fisher_agreement=True,
-                                                actual_entry_training=True,steps=2,rank_weights_equal=True,
+    intermediate=out/'run'/'checkpoints'/'step000002'
+    assert sorted(p.name for p in (out/'run'/'checkpoints').iterdir())==['step000002','step000004']
+    assert json.loads((intermediate/'complete.json').read_text())==dict(step=2,world_size=WORLD)
+    mp.spawn(entry_worker,args=(port(),str(out/'resumed'),str(data),str(intermediate)),nprocs=WORLD,join=True)
+    def equal(a,b):
+        if isinstance(a,torch.Tensor):
+            if a.is_floating_point(): torch.testing.assert_close(a,b,rtol=2e-5,atol=2e-8)
+            else: assert torch.equal(a,b)
+        elif isinstance(a,dict):
+            assert a.keys()==b.keys()
+            for k in a: equal(a[k],b[k])
+        elif isinstance(a,(tuple,list)):
+            assert len(a)==len(b)
+            for x,y in zip(a,b): equal(x,y)
+        else: assert a==b
+    resume_max_weight_error=0.0
+    for rank,state in enumerate(states):
+        resumed=torch.load(out/'resumed'/'checkpoints'/'step000004'/f'rank{rank}.pt',weights_only=False)
+        resume_max_weight_error=max(resume_max_weight_error,max((v-resumed['model'][name]).abs().max().item() for name,v in state['model'].items()))
+        for key in ('model','optimizer','data_state','torch_rng','python_rng'):
+            equal(state[key],resumed[key])
+    (out/'report.json').write_text(json.dumps(dict(world_size=WORLD,four_process_gloo=True,serial_fisher_agreement=True,
+                                                actual_entry_training=True,four_rank_resume_numerically_consistent=True,resume_max_weight_error=resume_max_weight_error,global_batch=480,micro_batch=30,accumulation=4,periodic_checkpoint_steps=[2,4],steps=4,rank_weights_equal=True,
                                                 serial_AdamW_global_batch_max_weight_error=worst)))
-    print('PASS actual two-rank training vs serial AdamW, measurement, validation, checkpoint; output',out)
+    print('PASS actual four-rank training vs serial AdamW, measurement, validation, checkpoint; output',out)

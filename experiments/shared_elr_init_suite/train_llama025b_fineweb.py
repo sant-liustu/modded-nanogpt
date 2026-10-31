@@ -276,13 +276,13 @@ def main():
     p.add_argument('--warmup-steps', type=int, default=1000)
     p.add_argument('--learning-rate', type=float, default=8e-4)
     p.add_argument('--batch-size', type=int, default=480)
-    p.add_argument('--micro-batch-size', type=int, default=8)
+    p.add_argument('--micro-batch-size', type=int, default=30)
     p.add_argument('--sequence-length', type=int, default=1024)
-    p.add_argument('--expected-world-size', type=int, default=2)
+    p.add_argument('--expected-world-size', type=int, default=4)
     p.add_argument('--device', choices=['cpu', 'cuda'], default='cuda')
     p.add_argument('--seed', type=int, default=41)
     p.add_argument('--resume', type=Path)
-    p.add_argument('--save-every', type=int, default=0)  # full resume state at cutoff; model snapshots at every probe
+    p.add_argument('--save-every', type=int, default=2000)  # full resume checkpoints; model snapshots at every probe
     p.add_argument('--val-every', type=int, default=1000)
     p.add_argument('--val-batches', type=int, default=20)
     p.add_argument('--fisher-every', type=int, default=1000)
