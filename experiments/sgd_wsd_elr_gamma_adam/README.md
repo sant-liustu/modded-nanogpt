@@ -74,7 +74,7 @@ collapse/convergence claim. Existing training processes are not touched.
 
 ## Per-tensor gradient and update monitors
 
-Default every500updates plus final. Set --gradient-norm-every and
+Default every1000updates plus final. Set --gradient-norm-every and
 --update-norm-every to1 for every update, or0 to disable each monitor.
 Whole-model gradient_norm and loss remain every step.
 

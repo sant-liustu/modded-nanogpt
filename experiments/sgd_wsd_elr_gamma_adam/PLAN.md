@@ -29,3 +29,6 @@ cost is one extra FP32 model plus per-tensor scratch at measured updates.
 User refinement: retain only L2/RMS plus identifying metadata. Reuse gradient
 L2 from overall norm; derive RMS on CPU. Reuse gamma displacement across
 projection stages. Remove maxima/dots/radial/relative/delta-over-LR metrics.
+
+User cadence revision: both per-tensor monitors default to every1000 updates
+plus final. Validation remains every500 and whole-model step logs every update.
