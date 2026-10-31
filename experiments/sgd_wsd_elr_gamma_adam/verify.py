@@ -36,7 +36,7 @@ def main():
                 '--context','8','--batch','4','--validation-contexts','5',
                 '--validation-batch-size','3','--eval-every','4',
                 '--checkpoint-every','4','--dense-every','2','--dense-window','2',
-                '--device',device])
+                '--gradient-norm-every','4','--update-norm-every','4','--device',device])
         def run(a):
             with contextlib.redirect_stdout(io.StringIO()):train.run(a)
         def rows(path):
@@ -51,6 +51,28 @@ def main():
                 eta=train.base_lr(a,min(i,23))
                 assert abs(eta*s**power/s**power-eta)<1e-12
             run(a)
+            off=args(arm,root/(arm+'_off'));off.gradient_norm_every=off.update_norm_every=0
+            run(off)
+            on_state=torch.load(full/'latest.pt',weights_only=False)
+            off_state=torch.load(Path(off.output)/'latest.pt',weights_only=False)
+            assert all(torch.equal(v,off_state['model'][k]) for k,v in on_state['model'].items())
+            assert torch.equal(on_state['rng'],off_state['rng'])
+            for key,state in on_state['gamma_optimizer']['state'].items():
+                for field,value in state.items():
+                    assert torch.equal(value,off_state['gamma_optimizer']['state'][key][field])
+            assert rows(full/'steps.jsonl')==rows(Path(off.output)/'steps.jsonl')
+            grads=rows(full/'gradient_norm_history.jsonl')
+            updates=rows(full/'optimizer_update_norm_history.jsonl')
+            assert {r['updates'] for r in grads}=={4,8,12,16,20,24}
+            assert any(r['name']=='final_norm.weight' for r in grads)
+            assert len(updates)==2*len(grads)
+            for g in grads:
+                before=next(r for r in updates if r['updates']==g['updates'] and r['name']==g['name'] and r['stage']=='optimizer_before_projection')
+                if before['optimizer_type']=='SGD':
+                    assert abs(before['optimizer_update_norm']-g['grad_l2']) < 2e-4*max(g['grad_l2'],1.)
+                else:
+                    after=next(r for r in updates if r['updates']==g['updates'] and r['name']==g['name'] and r['stage']=='total_after_projection')
+                    assert after['raw_parameter_delta_norm']==before['raw_parameter_delta_norm']
             original_save=train.save
             def interrupted(path,*values):
                 original_save(path,*values)
@@ -61,7 +83,7 @@ def main():
                 raise AssertionError('interruption did not happen')
             except InterruptedError:pass
             finally:train.save=original_save
-            for filename in ('steps.jsonl','metrics.jsonl'):
+            for filename in ('steps.jsonl','metrics.jsonl','gradient_norm_history.jsonl','optimizer_update_norm_history.jsonl'):
                 with (resumed/filename).open('a') as f:
                     f.write('{"updates":9,"stale":true}\n{"updates":')
             run(args(arm,resumed))
@@ -81,7 +103,7 @@ def main():
                        if r['updates']>=train.boundaries(a)[0])
             assert x['position']==y['position']==96
             assert x['norm_targets']==y['norm_targets']
-            for filename in ('steps.jsonl','metrics.jsonl'):
+            for filename in ('steps.jsonl','metrics.jsonl','gradient_norm_history.jsonl','optimizer_update_norm_history.jsonl'):
                 assert rows(full/filename)==rows(resumed/filename),filename
             steps=rows(full/'steps.jsonl')
             assert [r['updates'] for r in steps]==list(range(1,25))
@@ -99,7 +121,7 @@ def main():
             bad=args(arm,resumed);bad.lr=.02
             try:run(bad);raise AssertionError('contract accepted changed LR')
             except ValueError:pass
-            report[arm]=dict(cpu_resume_bitwise_equal=True,adam_moments_equal=True,logs_equal=True,stable_checkpoint_preserved=True,
+            report[arm]=dict(cpu_resume_bitwise_equal=True,adam_moments_equal=True,monitor_on_off_exact=True,logs_equal=True,stable_checkpoint_preserved=True,
                             max_norm_relative_error=maxerr,updates=24)
         if torch.cuda.is_available():
             torch.use_deterministic_algorithms(False)

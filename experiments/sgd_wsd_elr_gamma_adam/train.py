@@ -151,7 +151,63 @@ def diagnostics(model, targets, scale, lr_matrix, lr_gamma):
     return result
 
 
-def update(model, optimizer, tape, position, args, lr, scale, targets, next_scale, gamma_optimizer):
+
+def monitor_due(every, step, total):
+    return every > 0 and (step % every == 0 or step == total)
+
+
+@torch.no_grad()
+def gradient_records(model, step):
+    records, packed = [], []
+    for name,p in model.named_parameters():
+        row=dict(updates=step,step=step,name=name,shape=list(p.shape),numel=p.numel(),
+                 stage='after_accumulation_before_optimizer',gradient_present=p.grad is not None)
+        if p.grad is None:
+            row.update(grad_l2=None,grad_rms=None,grad_abs_max=None,grad_finite=None,
+                       parameter_dot_gradient=None,radial_gradient=None)
+        else:
+            g=p.grad.detach().float(); w=p.detach().float()
+            l2=torch.linalg.vector_norm(g);lo,hi=torch.aminmax(g)
+            dot=(w*g).sum(); norm=torch.linalg.vector_norm(w)
+            packed.append(torch.stack((l2,l2/math.sqrt(g.numel()),torch.maximum(lo.abs(),hi.abs()),
+                (torch.isfinite(lo)&torch.isfinite(hi)).to(l2.dtype),dot,dot/norm.clamp_min(1e-30))))
+        records.append(row)
+    values=iter(torch.stack(packed).cpu().tolist() if packed else [])
+    for row in records:
+        if row['gradient_present']:
+            l2,rms,maximum,finite,dot,radial=next(values)
+            row.update(grad_l2=l2,grad_rms=rms,grad_abs_max=maximum,grad_finite=bool(finite),
+                       parameter_dot_gradient=dot,radial_gradient=radial)
+    return records
+
+
+@torch.no_grad()
+def displacement_records(model, before, step, matrix_lr, gamma_rate, stage):
+    records,packed=[],[]
+    for name,p in model.named_parameters():
+        w=before[name];delta=p.detach()-w
+        norm=torch.linalg.vector_norm(w);d=torch.linalg.vector_norm(delta)
+        lo,hi=torch.aminmax(delta);dot=(w*delta).sum()
+        lr=matrix_lr if p.ndim==2 else gamma_rate
+        packed.append(torch.stack((d,d/math.sqrt(p.numel()),torch.maximum(lo.abs(),hi.abs()),
+            norm,d/norm.clamp_min(1e-30),dot,dot/norm.clamp_min(1e-30),
+            (torch.isfinite(lo)&torch.isfinite(hi)).to(d.dtype))))
+        records.append(dict(updates=step,step=step,name=name,shape=list(p.shape),
+            optimizer_type='SGD' if p.ndim==2 else 'Adam',lr=lr,weight_decay=0.,stage=stage))
+    for row,(d,rms,maximum,norm,relative,dot,radial,finite) in zip(records,torch.stack(packed).cpu().tolist()):
+        row.update(raw_parameter_delta_norm=d,delta_rms=rms,delta_abs_max=maximum,
+            parameter_norm_before=norm,relative_update_norm=relative,
+            parameter_dot_delta=dot,radial_delta=radial,delta_finite=bool(finite))
+        # Historical monitor reported the normalized direction -delta/LR.
+        # Valid here only before projection, with weight decay zero.
+        if stage=='optimizer_before_projection':
+            row.update(optimizer_update_norm=d/row['lr'] if row['lr'] else None,
+                optimizer_update_rms=rms/row['lr'] if row['lr'] else None,
+                optimizer_update_inferred=row['lr']!=0)
+    return records
+
+
+def update(model, optimizer, tape, position, args, lr, scale, targets, next_scale, gamma_optimizer, monitors=None):
     model.train()
     optimizer.param_groups[0]['lr'] = lr * scale**ARMS[args.arm]
     gamma_optimizer.param_groups[0]['lr'] = gamma_lr(args, position // args.batch)
@@ -173,9 +229,23 @@ def update(model, optimizer, tape, position, args, lr, scale, targets, next_scal
     grad = float(torch.linalg.vector_norm(torch.stack(torch._foreach_norm(grads,2))))
     if not math.isfinite(grad):
         raise FloatingPointError('nonfinite gradient')
+    step=position//args.batch+1
+    if monitors is not None and monitor_due(args.gradient_norm_every,step,args.updates):
+        for row in gradient_records(model,step):
+            monitors[0].write(json.dumps(row)+'\n')
+    capture=monitors is not None and monitor_due(args.update_norm_every,step,args.updates)
+    before={n:p.detach().clone() for n,p in model.named_parameters()} if capture else None
     optimizer.step()
     gamma_optimizer.step()
+    if capture:
+        for row in displacement_records(model,before,step,optimizer.param_groups[0]['lr'],
+                gamma_optimizer.param_groups[0]['lr'],'optimizer_before_projection'):
+            monitors[1].write(json.dumps(row)+'\n')
     project(model, targets, next_scale)
+    if capture:
+        for row in displacement_records(model,before,step,optimizer.param_groups[0]['lr'],
+                gamma_optimizer.param_groups[0]['lr'],'total_after_projection'):
+            monitors[1].write(json.dumps(row)+'\n')
     return total,grad
 
 
@@ -196,6 +266,8 @@ def run(args):
         raise ValueError('positive sizes and LR required')
     if not math.isfinite(args.gamma_lr) or args.gamma_lr <= 0:
         raise ValueError('gamma LR must be positive and finite')
+    if args.gradient_norm_every < 0 or args.update_norm_every < 0:
+        raise ValueError('monitor cadence must be nonnegative; zero disables')
     if args.microbatch is not None and args.microbatch <= 0:
         raise ValueError('microbatch must be positive')
     if args.width % args.heads or (args.width//args.heads)%2:
@@ -256,7 +328,7 @@ def run(args):
             torch.cuda.set_rng_state_all([v.cpu() for v in state['cuda_rng']])
         del state
     started=time.monotonic()
-    with step_trace(out/'steps.jsonl',completed) as steps, step_trace(out/'metrics.jsonl',completed) as metrics:
+    with step_trace(out/'steps.jsonl',completed) as steps, step_trace(out/'metrics.jsonl',completed) as metrics, step_trace(out/'gradient_norm_history.jsonl',completed) as gradient_log, step_trace(out/'optimizer_update_norm_history.jsonl',completed) as update_log:
         def measure():
             # Diagnostics describe current checkpoint weights and NEXT update LR.
             index=min(completed,args.updates-1)
@@ -279,20 +351,21 @@ def run(args):
             scale=scale_at(args.arm,index,args.updates)
             next_scale=scale_at(args.arm,index+1,args.updates)
             lr=base_lr(args,index);matrix_lr=lr*scale**ARMS[args.arm]
-            loss,grad=update(model,optimizer,train,index*args.batch,args,lr,scale,targets,next_scale,gamma_optimizer)
+            loss,grad=update(model,optimizer,train,index*args.batch,args,lr,scale,targets,next_scale,gamma_optimizer,(gradient_log,update_log))
             completed=index+1;cumulative_lr+=matrix_lr
             steps.write(json.dumps(dict(updates=completed,tokens=completed*args.batch*args.context,
                 train_loss=loss,gradient_norm=grad,base_lr=lr,matrix_lr=matrix_lr,gamma_lr=gamma_lr(args,index),
                 norm_scale_used=scale,norm_scale_after=next_scale,
                 matrix_lr_over_scale=matrix_lr/scale,matrix_lr_over_scale2=matrix_lr/scale**2,
                 cumulative_matrix_lr=cumulative_lr,batch=args.batch))+'\n')
-            if completed%100==0:steps.flush()
+            if completed%100==0:
+                steps.flush();gradient_log.flush();update_log.flush()
             special=completed in (warm,decay,args.updates)
             dense=args.dense_window > 0 and any(abs(completed-b)<=args.dense_window for b in (warm,decay))
             if completed%args.eval_every==0 or special or (dense and completed%args.dense_every==0):
                 measure()
             if completed%args.checkpoint_every==0 or special or completed==200000:
-                steps.flush();metrics.flush()
+                steps.flush();metrics.flush();gradient_log.flush();update_log.flush()
                 # Preserve the fork point before advancing latest.pt past it.
                 stable_checkpoint=out/'stable_end.pt'
                 if completed==decay and not stable_checkpoint.exists():
@@ -313,6 +386,8 @@ def parser():
     p.add_argument('--microbatch',type=int,default=None)
     p.add_argument('--lr',type=float,default=.015)
     p.add_argument('--gamma-lr',type=float,default=.0003)
+    p.add_argument('--gradient-norm-every',type=int,default=500)
+    p.add_argument('--update-norm-every',type=int,default=500)
     p.add_argument('--warmup-fraction',type=float,default=4000/81600)
     p.add_argument('--decay-fraction',type=float,default=23200/81600)
     p.add_argument('--device',choices=['cpu','cuda'],default='cuda')

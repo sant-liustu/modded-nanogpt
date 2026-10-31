@@ -54,8 +54,7 @@ LR, norm multipliers and scale-normalized matrix LR. Flush every100updates,
 not subsampling. metrics.jsonl every500updates plus initialization, WSD
 boundaries and final: val256contexts, batch32 (8forwards), parameter norms,
 per-tensor RMS/norm and LR ratios. Gamma LR/norm ratios are descriptive only;
-Adam update magnitude also depends on its saved moments. No per-tensor gradient
-or actual update norms are recorded in this version.
+Adam update magnitude also depends on its saved moments. Per-tensor gradient and actual update monitoring is described below.
 
 latest.pt every1000updates, boundaries/final/200000. Permanent stable_end.pt at
 215943 BEFORE decay; permanent step200000.pt. Checkpoints include Adam step,
@@ -72,3 +71,30 @@ checks, exact CPU resumed weights/Adam moments/RNG/logs, permanent stable
 checkpoint, stale/partial log recovery, changed-LR rejection, CUDA finite-loss
 short runs. verification.json reports executed results. No full768 training or
 collapse/convergence claim. Existing training processes are not touched.
+
+## Per-tensor gradient and update monitors
+
+Both default to every500updates plus final; override with
+`--gradient-norm-every 1 --update-norm-every 1` for every update, or0 to disable.
+Whole-model gradient_norm and training loss remain recorded every step.
+
+- gradient_norm_history.jsonl: name/shape/step, grad_l2, grad_rms, grad_abs_max,
+  grad_finite, parameter_dot_gradient=<W,g>, radial_gradient=<W,g>/||W||.
+  Recorded after gradient accumulation, before either optimizer; no clipping.
+- optimizer_update_norm_history.jsonl: two rows per tensor per measurement.
+  stage=optimizer_before_projection measures actual optimizer delta; stage=
+  total_after_projection measures optimizer plus norm projection together.
+  Both include raw_parameter_delta_norm, delta_rms/abs_max, relative_update_norm,
+  parameter_dot_delta=<W_before,delta>, radial_delta, delta_finite and actual LR.
+  Optimizer-stage optimizer_update_norm/rms means ||delta||/LR, matching the old
+  monitor's normalized-direction convention (WD0). It is NOT the raw delta norm.
+  Gamma is not projected, so its two stage displacements are identical.
+
+All unique trainable tensors included; tied embedding/head appears once.
+Packed stats use one host transfer per stage; buffered files flush every100
+updates and before checkpoints. Resume trims stale/partial rows. No probe
+forward pass or RNG sampling. Snapshots add one FP32 model of temporary memory
+(about0.5GB at width768) plus tensor scratch on measured updates; cadence1 can
+substantially increase I/O and runtime. Full768 monitoring performance unmeasured.
+Small CPU tests compare monitors enabled/disabled for exact weights, Adam moments,
+RNG and loss logs, plus exact resumed monitor rows. CUDA short tests check execution.

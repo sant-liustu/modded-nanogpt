@@ -14,3 +14,14 @@ Maintain val256/every500, every-step losses, stable_end and200k checkpoints.
 Save and restore Adam step/first/second moments. Verify exact CPU resumed
 weights, Adam state and logs, schedule invariants and short CUDA runs. Existing
 SGD checkpoints cannot be resumed into this suite. No formal training locally.
+
+## Gradient/update monitoring extension
+Reuse packed per-tensor gradient stats and pre/post optimizer snapshots from
+F:/shared_elr_init_suite_20261014/train_muon.py. Default cadence500, zero disables.
+Measure all unique tensors including gamma; add dot products/radial components.
+Distinguish optimizer-only displacement (before projection) and total displacement
+(after projection). Save raw delta and historical direction norm delta/LR only
+for optimizer-only rows. Buffer files and recover to checkpoint like step logs.
+Verify on/off exact weights, Adam state, RNG and losses; resumed monitor rows;
+SGD direction vs raw gradient, gamma unchanged by matrix projection. Snapshot
+cost is one extra FP32 model plus per-tensor scratch at measured updates.
