@@ -15,11 +15,11 @@ def main():
     torch.use_deterministic_algorithms(True)
     defaults=train.parser().parse_args(['--arm','fixed','--output','unused'])
     assert (defaults.validation_contexts, defaults.eval_every, defaults.dense_window)==(256,500,0)
-    assert defaults.gamma_lr == .0018
+    assert defaults.gamma_lr == .0003
     warm,decay=train.boundaries(defaults)
-    assert abs(train.gamma_lr(defaults,0)-.0018/warm)<1e-18
+    assert abs(train.gamma_lr(defaults,0)-.0003/warm)<1e-18
     for step in (warm-1, warm, decay, defaults.updates-1):
-        assert train.gamma_lr(defaults,step)==.0018
+        assert train.gamma_lr(defaults,step)==.0003
     report = {}
     with tempfile.TemporaryDirectory(prefix='smoke_', dir=Path(__file__).parent, ignore_cleanup_errors=True) as tmp:
         root = Path(tmp)

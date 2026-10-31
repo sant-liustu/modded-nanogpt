@@ -3,7 +3,8 @@
 Keep the existing pure-SGD suite intact. New three-arm suite changes all 1D
 RMSNorm gamma parameters to Adam, betas(.9,.95), eps1e-8, WD0. Matrix SGD,
 norm projection and sine compensation remain unchanged. Historical gamma
-peak LR .0018 is reused as a starting setting, not validated as optimal for B4.
+peak LR .0018 at B128 motivates sqrt-scaled .0003182 at B4; user selects
+.0003 as the new default, not validated as optimal.
 Gamma warms up with the current14791-step warmup then stays constant. This
 changes BOTH optimizer and gamma tail schedule relative to the SGD suite.
 CLI --gamma-lr supports explicit smaller-rate comparisons; no automatic batch

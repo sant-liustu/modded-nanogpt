@@ -312,7 +312,7 @@ def parser():
         p.add_argument('--'+flag,type=int,default=default)
     p.add_argument('--microbatch',type=int,default=None)
     p.add_argument('--lr',type=float,default=.015)
-    p.add_argument('--gamma-lr',type=float,default=.0018)
+    p.add_argument('--gamma-lr',type=float,default=.0003)
     p.add_argument('--warmup-fraction',type=float,default=4000/81600)
     p.add_argument('--decay-fraction',type=float,default=23200/81600)
     p.add_argument('--device',choices=['cpu','cuda'],default='cuda')

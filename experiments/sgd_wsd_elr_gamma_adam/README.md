@@ -13,16 +13,16 @@ Every unique2D tensor is projected, tied embedding/head once. All49 RMSNorm
 1D gamma tensors use Adam, including attention/MLP norms, Q/K norms and final
 norm. Gamma is not projected and never receives sine LR compensation.
 
-Gamma Adam: peak LR0.0018, betas(0.9,0.95), eps1e-8, weight_decay0,
-foreach=False. Linear warmup over14791 updates, then CONSTANT0.0018 through
+Gamma Adam: peak LR0.0003, betas(0.9,0.95), eps1e-8, weight_decay0,
+foreach=False. Linear warmup over14791 updates, then CONSTANT0.0003 through
 training end. Original source used AdamW with zero gamma decay, so the
 mathematical update rule is Adam; this runner explicitly uses torch.optim.Adam.
 Historical source: experiments/norm_control_schedule_collapse/
 train_gpt2_gamma_cosine_wave_lrmatched_baselr_cosine_decay0_B0128_devB064.py,
 embed LR0.0036, gamma LR0.5*embed LR, batch128, betas(0.9,0.95), gamma WD0.
 Historical warmup was1000steps; this experiment retains the current WSD warmup
-length14791. Default0.0018 is a historical starting setting, not a validated
-optimal LR for current batch4. No automatic batch-size scaling.
+length14791. Default0.0003 is user-selected, rounded from historical0.0018*sqrt(4/128)
+=0.0003182. It is not a validated optimal LR for batch4. No automatic batch-size scaling.
 
 Matrix SGD remains momentum0/WD0, peak baseLR0.015, WSD warmup14791,
 stable ends after215943 updates, then85785 linear decay updates. Width768,
@@ -42,7 +42,7 @@ bash run_sine_p1.sh
 bash run_sine_p2.sh
 ```
 
-To explicitly compare a smaller gamma LR, use a new output root and pass
+To explicitly compare another gamma LR, use a new output root and pass
 `--gamma-lr 0.0009` to ALL three launchers. Keep the original baseline results.
 Microbatch omitted means full batch4. Requires1,235,877,889 train tokens and
 262,145 val tokens, prepared FineWeb uint16 format. No data cycling/downloads.

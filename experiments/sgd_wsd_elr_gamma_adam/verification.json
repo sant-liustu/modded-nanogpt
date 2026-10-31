@@ -4,7 +4,7 @@
     "adam_moments_equal": true,
     "logs_equal": true,
     "stable_checkpoint_preserved": true,
-    "max_norm_relative_error": 1.3929069420104412e-07,
+    "max_norm_relative_error": 1.063965385794674e-07,
     "updates": 24,
     "cuda_24_updates_finite": true
   },
@@ -13,7 +13,7 @@
     "adam_moments_equal": true,
     "logs_equal": true,
     "stable_checkpoint_preserved": true,
-    "max_norm_relative_error": 1.7447060496333933e-07,
+    "max_norm_relative_error": 1.7458604051334703e-07,
     "updates": 24,
     "cuda_24_updates_finite": true
   },
