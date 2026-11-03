@@ -1,0 +1,39 @@
+{
+  "status": "PASS",
+  "scope": "source equivalence except schedule/checkpoint migration; original schedule hash; all schedule values; actual stop block; describe and launcher dry-run",
+  "experiments": [
+    {
+      "arm": "stable",
+      "updates": 1000,
+      "intrinsic_time": 60,
+      "checkpoints": [
+        16000
+      ]
+    },
+    {
+      "arm": "high",
+      "updates": 2000,
+      "intrinsic_time": 120,
+      "checkpoints": [
+        18000
+      ]
+    },
+    {
+      "arm": "low",
+      "updates": 2000,
+      "intrinsic_time": 12,
+      "checkpoints": [
+        18000
+      ]
+    },
+    {
+      "arm": "pulse",
+      "updates": 2200,
+      "intrinsic_time": 121.2,
+      "checkpoints": [
+        16200,
+        18200
+      ]
+    }
+  ]
+}

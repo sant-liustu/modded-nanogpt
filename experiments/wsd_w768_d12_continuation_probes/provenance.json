@@ -1,0 +1,7 @@
+{
+  "commit": "088c926204ca35f24b0ff0f781ff11e56e5f3d08",
+  "source": "../wsd_five_sizes_stable15000/train_fixednorm_w768.py",
+  "source_sha256": "b8435caa509b958ef7bd1f4524629e059127818e2011e4ede58e38e8e89c1f41",
+  "source_schedule_sha256": "38e74728f90116c44727d8da1985cde02668d1d7747bc30a699589640e7f18be",
+  "common_stable_schedule_sha256": "9e3a4b48e9c2de544e2c1c7f35775c80f910b39717eed85ac45645434961c387"
+}

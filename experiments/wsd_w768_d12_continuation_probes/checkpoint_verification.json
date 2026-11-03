@@ -1,0 +1,5 @@
+{
+  "status": "PASS",
+  "scope": "tiny CUDA eager synthetic, pinned original migration and rejection guards; shared stable16000 migration to all branches; real ELR application at16200/16201; disk roundtrip; next branched update/model/optimizer/RNG bitwise equal; synthetic loader positions restored",
+  "torch": "2.5.1+cu124"
+}
