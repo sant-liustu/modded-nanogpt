@@ -1,0 +1,4 @@
+{
+  "status": "PASS",
+  "scope": "actual save/stop AST block with mocked checkpoint I/O; exactly15000 updates and checkpoints5000/10000/15000 for all five entries"
+}

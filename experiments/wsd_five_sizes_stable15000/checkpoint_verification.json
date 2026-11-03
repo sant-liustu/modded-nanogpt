@@ -1,0 +1,5 @@
+{
+  "status": "PASS",
+  "scope": "tiny CUDA eager synthetic, actual capture/restore functions, disk roundtrip, next update/model/optimizer/RNG bitwise equal; synthetic loader positions restored",
+  "torch": "2.5.1+cu124"
+}

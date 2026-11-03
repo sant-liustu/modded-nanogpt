@@ -1,0 +1,32 @@
+[
+  {
+    "script": "train_fixednorm_w384.py",
+    "source": "F:\\scaling_collapse_model_only_20261022\\train_fixednorm_w384.py",
+    "source_sha256": "124ea14bd0daaa1c18d935dbdbef3b1d5e1eae8df0b034901b1e54583f80aaf6",
+    "sha256": "cc0d7c8380dc2e241536d9c99d4e8b3ba9883b502a24627ad5a11801dd3d96d6"
+  },
+  {
+    "script": "train_fixednorm_w768.py",
+    "source": "F:\\scaling_collapse_model_only_20261022\\train_fixednorm_w768.py",
+    "source_sha256": "65e3f2450ad04896a10566a48de6447b314e5a6c3c3edf2489ef6b305d963a2f",
+    "sha256": "b30b74a5781a6abdaa0eea036874cc3c3d2aa030ded54878cb2cfa87080ef983"
+  },
+  {
+    "script": "train_fixednorm_w1536.py",
+    "source": "F:\\scaling_collapse_model_only_20261022\\train_fixednorm_w1536.py",
+    "source_sha256": "3315a7e380b33dfd0042fc9e9477f9e96242a5283be450daeba811d8c53ce238",
+    "sha256": "6fd3b73f4484b6bd0fbf4e49201dee9816d264d798aa1ad6517c2c129eabf8b8"
+  },
+  {
+    "script": "train_fixednorm_w768_d6.py",
+    "source": "F:\\scaling_collapse_model_only_20261022\\train_fixednorm_w768_d6.py",
+    "source_sha256": "b6a28d1ec97a2d71e35fd982ba271876e7473e01d0fcc38cda795fc0b7b82d4b",
+    "sha256": "2f518b8c924da1ea93733b1a00d87aa7bca663ad5ff43f2f25d3914e819f6a36"
+  },
+  {
+    "script": "train_fixednorm_w768_d24.py",
+    "source": "F:\\scaling_collapse_model_only_20261022\\train_fixednorm_w768_d24.py",
+    "source_sha256": "037258c783420dcec3ececa4ed3222717747bc8fe4ff08a0a5aa13af4c400a1c",
+    "sha256": "f502fb17cc57059fd2eb3e15019ab002985afca18dfacbbd80f037d2f7b1bdd7"
+  }
+]
