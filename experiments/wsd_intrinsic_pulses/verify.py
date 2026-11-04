@@ -1,38 +1,51 @@
 from pathlib import Path
-import ast,io,json,hashlib,math,subprocess,sys,tempfile,tokenize
+import ast,json,hashlib,math,subprocess,sys,tempfile
 from types import SimpleNamespace
 root=Path(__file__).resolve().parent
 source=root/'train_intrinsic_pulse.py'
 t=ast.parse(source.read_text(encoding='utf-8'))
 provenance=json.loads((root/'provenance.json').read_text())
 allowed={'shared_elr','capture_training_state','restore_training_state'}
-def definition_hash(text, node):
-    # Token names/text are independent of ast.dump's version-specific fields.
-    # Retain statement/indent boundaries and decorators, ignoring comments/formatting.
-    first = min([node.lineno] + [d.lineno for d in node.decorator_list])
-    segment = ''.join(text.splitlines(keepends=True)[first-1:node.end_lineno])
-    tokens = []
-    for token in tokenize.generate_tokens(io.StringIO(segment).readline):
-        if token.type in (tokenize.COMMENT, tokenize.NL, tokenize.ENDMARKER):
-            continue
-        value = '' if token.type in (tokenize.INDENT, tokenize.DEDENT, tokenize.NEWLINE) else token.string
-        tokens.append((tokenize.tok_name[token.type], value))
-    return hashlib.sha256(json.dumps(tokens, ensure_ascii=True, separators=(',', ':')).encode()).hexdigest()
+def canonical(node):
+    if isinstance(node, ast.AST):
+        fields=[]
+        for key,value in ast.iter_fields(node):
+            # Added in3.12; absent in3.10. Only empty generic parameter lists
+            # are equivalent to absence. Nonempty lists remain in the hash.
+            if key=='type_params' and value==[]:
+                continue
+            fields.append((key,canonical(value)))
+        return (type(node).__name__,tuple(sorted(fields)))
+    if isinstance(node,list):
+        return tuple(canonical(value) for value in node)
+    return node
+
+def definition_hash(node):
+    # Includes decorators, defaults, annotations, nesting, f-string expressions
+    # and docstrings; excludes source positions/comments and empty type_params.
+    return hashlib.sha256(repr(canonical(node)).encode()).hexdigest()
 
 text=source.read_text(encoding='utf-8')
-actual={n.name:definition_hash(text,n) for n in t.body if isinstance(n,(ast.FunctionDef,ast.ClassDef)) and n.name not in allowed}
-expected=provenance['inherited_token_sha256']
+actual={n.name:definition_hash(n) for n in t.body if isinstance(n,(ast.FunctionDef,ast.ClassDef)) and n.name not in allowed}
+expected=provenance['inherited_normalized_ast_sha256']
 mismatches=sorted(k for k in actual.keys() | expected.keys() if actual.get(k)!=expected.get(k))
 assert not mismatches, 'Inherited source differs from reference: '+', '.join(mismatches)
-# Regression: Python3.10-style AST lacks type_params; identical source must still pass.
-legacy=ast.parse(text, feature_version=(3,10))
+# feature_version alone does not emulate an older AST schema: strip the actual
+# added field too, then compare every inherited definition (including f-strings).
+legacy=ast.parse(text,feature_version=(3,10))
 for node in ast.walk(legacy):
-    if hasattr(node,'type_params'):delattr(node,'type_params')
-assert actual=={n.name:definition_hash(text,n) for n in legacy.body if isinstance(n,(ast.FunctionDef,ast.ClassDef)) and n.name not in allowed}
-a=ast.parse('@torch.no_grad()\ndef f():\n    return 1\n').body[0]
-base='@torch.no_grad()\ndef f():\n    return 1\n'
-assert definition_hash(base,a)!=definition_hash(base.replace('return 1','return 2'),a)
-assert definition_hash(base,a)!=definition_hash(base.replace('torch.no_grad','torch.enable_grad'),a)
+    if hasattr(node,'type_params'):
+        assert node.type_params==[]
+        delattr(node,'type_params')
+        node._fields=tuple(k for k in node._fields if k!='type_params')
+assert actual=={n.name:definition_hash(n) for n in legacy.body if isinstance(n,(ast.FunctionDef,ast.ClassDef)) and n.name not in allowed}
+base="@torch.no_grad()\ndef f(x=1):\n    return f'value={x!r:>4}'\n"
+a=ast.parse(base).body[0]
+for changed in (base.replace('no_grad','enable_grad'),base.replace('x=1','x=2'),base.replace('value=','other='),base.replace('x!r','(x+1)!r'),base.replace('>4','>5')):
+    assert definition_hash(a)!=definition_hash(ast.parse(changed).body[0])
+assert definition_hash(a)==definition_hash(ast.parse(base.replace('return', '# note\n    return')).body[0])
+# A real logic/nesting change must still be rejected.
+assert definition_hash(ast.parse('def f(x):\n    if x:\n        return 1\n    return 2\n').body[0])!=definition_hash(ast.parse('def f(x):\n    if x:\n        return 1\n        return 2\n').body[0])
 for p in root.glob('*.py'):compile(p.read_text(encoding='utf-8-sig'),str(p),'exec')
 ns={'args':SimpleNamespace(warmup_iters=924,peak_elr=.06)}
 exec(compile(ast.Module(body=[next(n for n in t.body if isinstance(n,ast.FunctionDef) and n.name=='shared_elr')],type_ignores=[]),'<schedule>','exec'),ns)
