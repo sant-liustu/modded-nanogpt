@@ -1,13 +1,38 @@
 from pathlib import Path
-import ast,json,hashlib,math,subprocess,sys,tempfile
+import ast,io,json,hashlib,math,subprocess,sys,tempfile,tokenize
 from types import SimpleNamespace
 root=Path(__file__).resolve().parent
 source=root/'train_intrinsic_pulse.py'
 t=ast.parse(source.read_text(encoding='utf-8'))
 provenance=json.loads((root/'provenance.json').read_text())
 allowed={'shared_elr','capture_training_state','restore_training_state'}
-actual={n.name:hashlib.sha256(ast.dump(n).encode()).hexdigest() for n in t.body if isinstance(n,(ast.FunctionDef,ast.ClassDef)) and n.name not in allowed}
-assert actual==provenance['inherited_definition_sha256']
+def definition_hash(text, node):
+    # Token names/text are independent of ast.dump's version-specific fields.
+    # Retain statement/indent boundaries and decorators, ignoring comments/formatting.
+    first = min([node.lineno] + [d.lineno for d in node.decorator_list])
+    segment = ''.join(text.splitlines(keepends=True)[first-1:node.end_lineno])
+    tokens = []
+    for token in tokenize.generate_tokens(io.StringIO(segment).readline):
+        if token.type in (tokenize.COMMENT, tokenize.NL, tokenize.ENDMARKER):
+            continue
+        value = '' if token.type in (tokenize.INDENT, tokenize.DEDENT, tokenize.NEWLINE) else token.string
+        tokens.append((tokenize.tok_name[token.type], value))
+    return hashlib.sha256(json.dumps(tokens, ensure_ascii=True, separators=(',', ':')).encode()).hexdigest()
+
+text=source.read_text(encoding='utf-8')
+actual={n.name:definition_hash(text,n) for n in t.body if isinstance(n,(ast.FunctionDef,ast.ClassDef)) and n.name not in allowed}
+expected=provenance['inherited_token_sha256']
+mismatches=sorted(k for k in actual.keys() | expected.keys() if actual.get(k)!=expected.get(k))
+assert not mismatches, 'Inherited source differs from reference: '+', '.join(mismatches)
+# Regression: Python3.10-style AST lacks type_params; identical source must still pass.
+legacy=ast.parse(text, feature_version=(3,10))
+for node in ast.walk(legacy):
+    if hasattr(node,'type_params'):delattr(node,'type_params')
+assert actual=={n.name:definition_hash(text,n) for n in legacy.body if isinstance(n,(ast.FunctionDef,ast.ClassDef)) and n.name not in allowed}
+a=ast.parse('@torch.no_grad()\ndef f():\n    return 1\n').body[0]
+base='@torch.no_grad()\ndef f():\n    return 1\n'
+assert definition_hash(base,a)!=definition_hash(base.replace('return 1','return 2'),a)
+assert definition_hash(base,a)!=definition_hash(base.replace('torch.no_grad','torch.enable_grad'),a)
 for p in root.glob('*.py'):compile(p.read_text(encoding='utf-8-sig'),str(p),'exec')
 ns={'args':SimpleNamespace(warmup_iters=924,peak_elr=.06)}
 exec(compile(ast.Module(body=[next(n for n in t.body if isinstance(n,ast.FunctionDef) and n.name=='shared_elr')],type_ignores=[]),'<schedule>','exec'),ns)

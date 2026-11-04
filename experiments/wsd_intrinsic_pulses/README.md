@@ -88,10 +88,12 @@ rank数、microbatch、compile设置、数据文件路径/大小/mtime及loader�
 python verify.py
 python verify_checkpoint.py
 
-verify.py检查24套实际CLI配置、全部调度及停止块、继承训练定义SHA256、
+verify.py检查24套实际CLI配置、全部调度及停止块、继承训练定义token SHA256、
 launcher同起点依赖、固定前缀每步验证和预算；不依赖历史源文件绝对路径。
 verify_checkpoint.py在tiny CUDA eager模型上测试24套受控迁移、切换实际矩阵LR、
 gamma LR、完整磁盘保存恢复后下一步loss/模型/optimizer/scheduler/RNG逐位一致，
 以及错误源码/调度/分叉点/分支/验证预算拒绝。loader使用合成测试对象。
 报告见verification.json及checkpoint_verification.json。
 未启动真实数据训练；正式尺寸DDP/compile及真实checkpoint兼容性尚未实测。
+
+验证器兼容Python3.10与3.12：继承代码使用包含装饰器和缩进边界的token哈希，避免ast.dump新增type_params字段造成误报。保留旧AST哈希供溯源；训练源码、checkpoint迁移及恢复校验均未改动。
