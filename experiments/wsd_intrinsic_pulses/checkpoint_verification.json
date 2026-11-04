@@ -1,0 +1,175 @@
+{
+  "status": "PASS",
+  "scope": "tiny CUDA eager synthetic:24 historical migrations, exact matrix ELR boundaries/gamma LR, complete disk checkpoint next update/model/optimizer/scheduler/RNG bitwise equality; negative provenance/fork/arm/validation checks; mocked loaders restore positions",
+  "torch": "2.5.1+cu124",
+  "cases": [
+    {
+      "fork_step": 5000,
+      "arm": "baseline",
+      "migration": "PASS",
+      "boundary_lr": "PASS",
+      "disk_resume_next_step": "bitwise PASS"
+    },
+    {
+      "fork_step": 5000,
+      "arm": "elr005",
+      "migration": "PASS",
+      "boundary_lr": "PASS",
+      "disk_resume_next_step": "bitwise PASS"
+    },
+    {
+      "fork_step": 5000,
+      "arm": "elr004",
+      "migration": "PASS",
+      "boundary_lr": "PASS",
+      "disk_resume_next_step": "bitwise PASS"
+    },
+    {
+      "fork_step": 5000,
+      "arm": "elr003",
+      "migration": "PASS",
+      "boundary_lr": "PASS",
+      "disk_resume_next_step": "bitwise PASS"
+    },
+    {
+      "fork_step": 5000,
+      "arm": "elr002",
+      "migration": "PASS",
+      "boundary_lr": "PASS",
+      "disk_resume_next_step": "bitwise PASS"
+    },
+    {
+      "fork_step": 5000,
+      "arm": "elr001",
+      "migration": "PASS",
+      "boundary_lr": "PASS",
+      "disk_resume_next_step": "bitwise PASS"
+    },
+    {
+      "fork_step": 10000,
+      "arm": "baseline",
+      "migration": "PASS",
+      "boundary_lr": "PASS",
+      "disk_resume_next_step": "bitwise PASS"
+    },
+    {
+      "fork_step": 10000,
+      "arm": "elr005",
+      "migration": "PASS",
+      "boundary_lr": "PASS",
+      "disk_resume_next_step": "bitwise PASS"
+    },
+    {
+      "fork_step": 10000,
+      "arm": "elr004",
+      "migration": "PASS",
+      "boundary_lr": "PASS",
+      "disk_resume_next_step": "bitwise PASS"
+    },
+    {
+      "fork_step": 10000,
+      "arm": "elr003",
+      "migration": "PASS",
+      "boundary_lr": "PASS",
+      "disk_resume_next_step": "bitwise PASS"
+    },
+    {
+      "fork_step": 10000,
+      "arm": "elr002",
+      "migration": "PASS",
+      "boundary_lr": "PASS",
+      "disk_resume_next_step": "bitwise PASS"
+    },
+    {
+      "fork_step": 10000,
+      "arm": "elr001",
+      "migration": "PASS",
+      "boundary_lr": "PASS",
+      "disk_resume_next_step": "bitwise PASS"
+    },
+    {
+      "fork_step": 15000,
+      "arm": "baseline",
+      "migration": "PASS",
+      "boundary_lr": "PASS",
+      "disk_resume_next_step": "bitwise PASS"
+    },
+    {
+      "fork_step": 15000,
+      "arm": "elr005",
+      "migration": "PASS",
+      "boundary_lr": "PASS",
+      "disk_resume_next_step": "bitwise PASS"
+    },
+    {
+      "fork_step": 15000,
+      "arm": "elr004",
+      "migration": "PASS",
+      "boundary_lr": "PASS",
+      "disk_resume_next_step": "bitwise PASS"
+    },
+    {
+      "fork_step": 15000,
+      "arm": "elr003",
+      "migration": "PASS",
+      "boundary_lr": "PASS",
+      "disk_resume_next_step": "bitwise PASS"
+    },
+    {
+      "fork_step": 15000,
+      "arm": "elr002",
+      "migration": "PASS",
+      "boundary_lr": "PASS",
+      "disk_resume_next_step": "bitwise PASS"
+    },
+    {
+      "fork_step": 15000,
+      "arm": "elr001",
+      "migration": "PASS",
+      "boundary_lr": "PASS",
+      "disk_resume_next_step": "bitwise PASS"
+    },
+    {
+      "fork_step": 16000,
+      "arm": "baseline",
+      "migration": "PASS",
+      "boundary_lr": "PASS",
+      "disk_resume_next_step": "bitwise PASS"
+    },
+    {
+      "fork_step": 16000,
+      "arm": "elr005",
+      "migration": "PASS",
+      "boundary_lr": "PASS",
+      "disk_resume_next_step": "bitwise PASS"
+    },
+    {
+      "fork_step": 16000,
+      "arm": "elr004",
+      "migration": "PASS",
+      "boundary_lr": "PASS",
+      "disk_resume_next_step": "bitwise PASS"
+    },
+    {
+      "fork_step": 16000,
+      "arm": "elr003",
+      "migration": "PASS",
+      "boundary_lr": "PASS",
+      "disk_resume_next_step": "bitwise PASS"
+    },
+    {
+      "fork_step": 16000,
+      "arm": "elr002",
+      "migration": "PASS",
+      "boundary_lr": "PASS",
+      "disk_resume_next_step": "bitwise PASS"
+    },
+    {
+      "fork_step": 16000,
+      "arm": "elr001",
+      "migration": "PASS",
+      "boundary_lr": "PASS",
+      "disk_resume_next_step": "bitwise PASS"
+    }
+  ]
+}

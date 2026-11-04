@@ -1,0 +1,222 @@
+{
+  "status": "PASS",
+  "scope": "unchanged model/optimizer/projection/loader functions; actual CLI setup and stop block all24 schedules; same-input launcher dependencies; initial/every-step fixed-prefix validation; describe budget",
+  "experiments": [
+    {
+      "fork_step": 5000,
+      "arm": "baseline",
+      "pulse_updates": 0,
+      "recovery_updates": 0,
+      "updates": 520,
+      "intrinsic_time": 31.2,
+      "stop": 5520
+    },
+    {
+      "fork_step": 5000,
+      "arm": "elr005",
+      "pulse_updates": 24,
+      "recovery_updates": 500,
+      "updates": 524,
+      "intrinsic_time": 31.2,
+      "stop": 5524
+    },
+    {
+      "fork_step": 5000,
+      "arm": "elr004",
+      "pulse_updates": 30,
+      "recovery_updates": 500,
+      "updates": 530,
+      "intrinsic_time": 31.2,
+      "stop": 5530
+    },
+    {
+      "fork_step": 5000,
+      "arm": "elr003",
+      "pulse_updates": 40,
+      "recovery_updates": 500,
+      "updates": 540,
+      "intrinsic_time": 31.2,
+      "stop": 5540
+    },
+    {
+      "fork_step": 5000,
+      "arm": "elr002",
+      "pulse_updates": 60,
+      "recovery_updates": 500,
+      "updates": 560,
+      "intrinsic_time": 31.2,
+      "stop": 5560
+    },
+    {
+      "fork_step": 5000,
+      "arm": "elr001",
+      "pulse_updates": 120,
+      "recovery_updates": 500,
+      "updates": 620,
+      "intrinsic_time": 31.2,
+      "stop": 5620
+    },
+    {
+      "fork_step": 10000,
+      "arm": "baseline",
+      "pulse_updates": 0,
+      "recovery_updates": 0,
+      "updates": 520,
+      "intrinsic_time": 31.2,
+      "stop": 10520
+    },
+    {
+      "fork_step": 10000,
+      "arm": "elr005",
+      "pulse_updates": 24,
+      "recovery_updates": 500,
+      "updates": 524,
+      "intrinsic_time": 31.2,
+      "stop": 10524
+    },
+    {
+      "fork_step": 10000,
+      "arm": "elr004",
+      "pulse_updates": 30,
+      "recovery_updates": 500,
+      "updates": 530,
+      "intrinsic_time": 31.2,
+      "stop": 10530
+    },
+    {
+      "fork_step": 10000,
+      "arm": "elr003",
+      "pulse_updates": 40,
+      "recovery_updates": 500,
+      "updates": 540,
+      "intrinsic_time": 31.2,
+      "stop": 10540
+    },
+    {
+      "fork_step": 10000,
+      "arm": "elr002",
+      "pulse_updates": 60,
+      "recovery_updates": 500,
+      "updates": 560,
+      "intrinsic_time": 31.2,
+      "stop": 10560
+    },
+    {
+      "fork_step": 10000,
+      "arm": "elr001",
+      "pulse_updates": 120,
+      "recovery_updates": 500,
+      "updates": 620,
+      "intrinsic_time": 31.2,
+      "stop": 10620
+    },
+    {
+      "fork_step": 15000,
+      "arm": "baseline",
+      "pulse_updates": 0,
+      "recovery_updates": 0,
+      "updates": 520,
+      "intrinsic_time": 31.2,
+      "stop": 15520
+    },
+    {
+      "fork_step": 15000,
+      "arm": "elr005",
+      "pulse_updates": 24,
+      "recovery_updates": 500,
+      "updates": 524,
+      "intrinsic_time": 31.2,
+      "stop": 15524
+    },
+    {
+      "fork_step": 15000,
+      "arm": "elr004",
+      "pulse_updates": 30,
+      "recovery_updates": 500,
+      "updates": 530,
+      "intrinsic_time": 31.2,
+      "stop": 15530
+    },
+    {
+      "fork_step": 15000,
+      "arm": "elr003",
+      "pulse_updates": 40,
+      "recovery_updates": 500,
+      "updates": 540,
+      "intrinsic_time": 31.2,
+      "stop": 15540
+    },
+    {
+      "fork_step": 15000,
+      "arm": "elr002",
+      "pulse_updates": 60,
+      "recovery_updates": 500,
+      "updates": 560,
+      "intrinsic_time": 31.2,
+      "stop": 15560
+    },
+    {
+      "fork_step": 15000,
+      "arm": "elr001",
+      "pulse_updates": 120,
+      "recovery_updates": 500,
+      "updates": 620,
+      "intrinsic_time": 31.2,
+      "stop": 15620
+    },
+    {
+      "fork_step": 16000,
+      "arm": "baseline",
+      "pulse_updates": 0,
+      "recovery_updates": 0,
+      "updates": 520,
+      "intrinsic_time": 31.2,
+      "stop": 16520
+    },
+    {
+      "fork_step": 16000,
+      "arm": "elr005",
+      "pulse_updates": 24,
+      "recovery_updates": 500,
+      "updates": 524,
+      "intrinsic_time": 31.2,
+      "stop": 16524
+    },
+    {
+      "fork_step": 16000,
+      "arm": "elr004",
+      "pulse_updates": 30,
+      "recovery_updates": 500,
+      "updates": 530,
+      "intrinsic_time": 31.2,
+      "stop": 16530
+    },
+    {
+      "fork_step": 16000,
+      "arm": "elr003",
+      "pulse_updates": 40,
+      "recovery_updates": 500,
+      "updates": 540,
+      "intrinsic_time": 31.2,
+      "stop": 16540
+    },
+    {
+      "fork_step": 16000,
+      "arm": "elr002",
+      "pulse_updates": 60,
+      "recovery_updates": 500,
+      "updates": 560,
+      "intrinsic_time": 31.2,
+      "stop": 16560
+    },
+    {
+      "fork_step": 16000,
+      "arm": "elr001",
+      "pulse_updates": 120,
+      "recovery_updates": 500,
+      "updates": 620,
+      "intrinsic_time": 31.2,
+      "stop": 16620
+    }
+  ]
+}
