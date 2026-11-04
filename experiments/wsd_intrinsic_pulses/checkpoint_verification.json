@@ -1,6 +1,6 @@
 {
   "status": "PASS",
-  "scope": "tiny CUDA eager synthetic:24 historical migrations, exact matrix ELR boundaries/gamma LR, complete disk checkpoint next update/model/optimizer/scheduler/RNG bitwise equality; negative provenance/fork/arm/validation checks; mocked loaders restore positions",
+  "scope": "tiny CUDA eager synthetic:24 historical migrations including normalized-newline16000 and previous-pulse sources, exact matrix ELR boundaries/gamma LR, complete disk checkpoint next update/model/optimizer/scheduler/RNG bitwise equality; negative provenance/fork/arm/validation checks; mocked loaders restore positions",
   "torch": "2.5.1+cu124",
   "cases": [
     {

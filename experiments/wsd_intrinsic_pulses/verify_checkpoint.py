@@ -50,13 +50,16 @@ for start in (5000,10000,15000,16000):
         ns['tensor_elr_schedule']={u:{n:ns['shared_elr'](u) for n,p in m.named_parameters() if p.ndim>=2} for u in (start+1,start+2,start+width,start+width+1)}
         # Migrate actual capture payload with pinned historical source/schedule identity.
         history=ns['capture_training_state'](start,x,x)
-        history['source_sha256']=provenance['original_source_sha256' if start!=16000 else 'shared16000_source_sha256']
+        history['source_sha256']=provenance['original_source_sha256' if start!=16000 else 'shared16000_runtime_source_sha256']
         history['schedule_sha256']=provenance['original_schedule_sha256' if start!=16000 else 'shared16000_schedule_sha256']
         if start==16000:history['probe_experiment']='stable'
         else:history.pop('probe_experiment')
         history.pop('probe_fork_step');history.pop('probe_val_tokens')
         before=ns['checkpoint_tree'](m.state_dict());step,batch=ns['restore_training_state'](history)
         assert step==start and equal(before,ns['checkpoint_tree'](m.state_dict())) and torch.equal(batch[0],x)
+        if start==16000:
+            historical_raw=ns['checkpoint_tree'](history);historical_raw['source_sha256']=provenance['shared16000_source_sha256']
+            ns['restore_training_state'](historical_raw)
         for key,bad in [('source_sha256','bad'),('schedule_sha256','bad'),('step',start-1)]:
             invalid=ns['checkpoint_tree'](history);invalid[key]=bad
             try:ns['restore_training_state'](invalid)
@@ -77,6 +80,8 @@ for start in (5000,10000,15000,16000):
         expected_model=ns['checkpoint_tree'](m.state_dict());expected_opts=ns['checkpoint_tree']([o.state_dict() for o in opts]);expected_sched=ns['checkpoint_tree']([o.state_dict() for o in scheds])
         expected_rng=(random.random(),float(np.random.rand()),torch.rand(1),torch.rand(1,device='cuda'))
         train.current_position=99;val.current_position=99;cli.fork_step=start+1
+        previous=ns['checkpoint_tree'](state);previous['source_sha256']=provenance['previous_pulse_runtime_source_sha256']
+        ns['restore_training_state'](previous)
         ns['restore_training_state'](state)
         assert train.current_position==val.current_position==7
         assert torch.equal(expected_loss,update(start+2))
@@ -89,5 +94,5 @@ for start in (5000,10000,15000,16000):
             except RuntimeError:pass
             else:raise AssertionError('accepted bad continuation '+key)
         report.append(dict(fork_step=start,arm=arm,migration='PASS',boundary_lr='PASS',disk_resume_next_step='bitwise PASS'))
-(root/'checkpoint_verification.json').write_text(json.dumps(dict(status='PASS',scope='tiny CUDA eager synthetic:24 historical migrations, exact matrix ELR boundaries/gamma LR, complete disk checkpoint next update/model/optimizer/scheduler/RNG bitwise equality; negative provenance/fork/arm/validation checks; mocked loaders restore positions',torch=str(torch.__version__),cases=report),indent=2))
+(root/'checkpoint_verification.json').write_text(json.dumps(dict(status='PASS',scope='tiny CUDA eager synthetic:24 historical migrations including normalized-newline16000 and previous-pulse sources, exact matrix ELR boundaries/gamma LR, complete disk checkpoint next update/model/optimizer/scheduler/RNG bitwise equality; negative provenance/fork/arm/validation checks; mocked loaders restore positions',torch=str(torch.__version__),cases=report),indent=2))
 print('PASS:24 tiny CUDA migrations, LR boundaries and bitwise next-update resume')

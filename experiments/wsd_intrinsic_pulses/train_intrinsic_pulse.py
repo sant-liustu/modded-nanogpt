@@ -892,10 +892,10 @@ def restore_training_state(state):
     if state['source_sha256'] == 'b8435caa509b958ef7bd1f4524629e059127818e2011e4ede58e38e8e89c1f41':
         if state['step'] != cli.stage_start or cli.stage_start not in (5000,10000,15000) or state['schedule_sha256'] != '38e74728f90116c44727d8da1985cde02668d1d7747bc30a699589640e7f18be' or 'probe_experiment' in state:
             raise RuntimeError('expected original stable checkpoint5000/10000/15000')
-    elif state['source_sha256'] == '92b8b365e80a7d738bd292014f9adbb67bc515358175b50060ad81956faac6c1':
+    elif state['source_sha256'] in ('92b8b365e80a7d738bd292014f9adbb67bc515358175b50060ad81956faac6c1', 'bf1ba81bad94b4dad48b10d441730286d10f7f1bf456f02f5db5ee8c32930e37'):
         if state['step'] != cli.stage_start or cli.stage_start != 16000 or state.get('probe_experiment') != 'stable' or state['schedule_sha256'] != '9e3a4b48e9c2de544e2c1c7f35775c80f910b39717eed85ac45645434961c387':
             raise RuntimeError('expected pinned shared-stable checkpoint16000')
-    elif state['source_sha256'] == hashlib.sha256(code.encode()).hexdigest():
+    elif state['source_sha256'] in (hashlib.sha256(code.encode()).hexdigest(), 'e1a00569595fcabf21baf7626739caaae32e03ae5e5b9a51bfe37c78a7f47de6'):
         if state.get('probe_experiment') != cli.experiment or state.get('probe_fork_step') != cli.stage_start or state['schedule_sha256'] != schedule_sha256 or state.get('probe_val_tokens') != cli.probe_val_tokens:
             raise RuntimeError('continuation checkpoint arm/fork/validation/schedule mismatch')
     else:
