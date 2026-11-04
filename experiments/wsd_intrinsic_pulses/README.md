@@ -100,5 +100,27 @@ gamma LR、完整磁盘保存恢复后下一步loss/模型/optimizer/scheduler/R
 保留装饰器、默认值、嵌套结构和f-string表达式；不依赖不同版本的tokenizer。
 原AST/token哈希仅留作历史溯源。回归覆盖全部继承定义的3.10式字段结构，
 以及f-string文字/表达式/格式、装饰器、默认值、缩进结构变化的拒绝。
-本地运行环境为Python3.12；尚未在真实3.10解释器运行本次修复。
-训练源码及checkpoint迁移/恢复校验未修改。
+已在真实CPython3.10.11和3.12.3交叉验证。3.10执行全部标准库检查
+（verify.py --static-only），3.12还执行依赖PyTorch的describe检查和tiny CUDA测试。
+完整结果见portability_verification.json。
+训练数学与调度未修改；checkpoint来源白名单补齐已核实的16k换行规范化源码哈希，
+并保留此前脉冲脚本版本的同分支恢复。其他配置/调度/分支/数据/运行环境校验仍严格。
+
+## 云端验证与兼容性
+
+建议在与旧checkpoint相同的PyTorch/CUDA环境执行：
+
+```bash
+python3 verify.py
+python3 verify_checkpoint.py
+```
+
+若当前解释器未安装PyTorch，先用python3 verify.py --static-only完成继承源码、
+24套调度/停止边界、每步验证和launcher检查；该模式明确跳过trainer describe，
+不构成CUDA/真实checkpoint恢复验证。训练入口不会自动调用verify.py，
+也不读取verification.json；它们是独立开发自检。不要删除训练恢复时的校验来绕过错误。
+
+16k来源兼容说明：旧脚本用文本模式读取自身源码后计算SHA256，换行会规范化。
+旧白名单只登记文件原始字节哈希92b8...，现在还接受其已核实的文本哈希bf1b...，
+两者只允许stable分支的step16000且须匹配既定schedule；任意其他来源仍拒绝。
+此前脉冲源码runtime哈希e1a0...只允许相同原分叉点/分支/调度/验证预算的恢复。

@@ -1,6 +1,9 @@
 from pathlib import Path
-import ast,json,hashlib,math,subprocess,sys,tempfile
+import argparse,ast,json,hashlib,math,subprocess,sys,tempfile
 from types import SimpleNamespace
+option_parser=argparse.ArgumentParser(description='Verify source, all24 schedules and launcher; optional dependency-free static mode')
+option_parser.add_argument('--static-only',action='store_true',help='run all stdlib checks without importing the torch-based trainer')
+verify_options=option_parser.parse_args()
 root=Path(__file__).resolve().parent
 source=root/'train_intrinsic_pulse.py'
 t=ast.parse(source.read_text(encoding='utf-8'))
@@ -93,7 +96,8 @@ with tempfile.TemporaryDirectory(dir=root) as tmp:
         arms=[j for j in jobs if j['fork_step']==step];assert len(arms)==6
         assert len({j['input_checkpoint'] for j in arms})==1
     assert subprocess.run(cmd+['--probe-val-tokens','1'],capture_output=True).returncode!=0
-budget=json.loads(subprocess.check_output([sys.executable,str(source),'--fork-step','5000','--experiment','elr001','--describe-only'],text=True))
-assert budget['continuation_updates']==620 and budget['validation_every']==1 and budget['validation_tokens']==1048576
-(root/'verification.json').write_text(json.dumps(dict(status='PASS',scope='unchanged model/optimizer/projection/loader functions; actual CLI setup and stop block all24 schedules; same-input launcher dependencies; initial/every-step fixed-prefix validation; describe budget',experiments=report),indent=2))
+if not verify_options.static_only:
+    budget=json.loads(subprocess.check_output([sys.executable,str(source),'--fork-step','5000','--experiment','elr001','--describe-only'],text=True))
+    assert budget['continuation_updates']==620 and budget['validation_every']==1 and budget['validation_tokens']==1048576
+(root/'verification.json').write_text(json.dumps(dict(status='PASS',python=sys.version,static_only=verify_options.static_only,describe_checked=not verify_options.static_only,scope='unchanged model/optimizer/projection/loader functions; actual CLI setup and stop block all24 schedules; same-input launcher dependencies; initial/every-step fixed-prefix validation; describe budget',experiments=report),indent=2))
 print('PASS:24 schedules/stop boundaries, source equivalence, launcher and validation')

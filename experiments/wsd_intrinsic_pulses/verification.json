@@ -1,5 +1,8 @@
 {
   "status": "PASS",
+  "python": "3.12.3 (tags/v3.12.3:f6650f9, Apr  9 2024, 14:05:25) [MSC v.1938 64 bit (AMD64)]",
+  "static_only": false,
+  "describe_checked": true,
   "scope": "unchanged model/optimizer/projection/loader functions; actual CLI setup and stop block all24 schedules; same-input launcher dependencies; initial/every-step fixed-prefix validation; describe budget",
   "experiments": [
     {

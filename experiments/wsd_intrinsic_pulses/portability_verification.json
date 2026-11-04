@@ -1,0 +1,23 @@
+{
+  "status": "PASS",
+  "inherited_definitions": 35,
+  "interpreters": [
+    {
+      "python": "3.10.11 (tags/v3.10.11:7d4cc5a, Apr  5 2023, 00:38:17) [MSC v.1929 64 bit (AMD64)]",
+      "status": "PASS",
+      "static_only": true,
+      "describe_checked": false,
+      "cases": 24,
+      "output": "PASS:24 schedules/stop boundaries, source equivalence, launcher and validation"
+    },
+    {
+      "python": "3.12.3 (tags/v3.12.3:f6650f9, Apr  9 2024, 14:05:25) [MSC v.1938 64 bit (AMD64)]",
+      "status": "PASS",
+      "static_only": false,
+      "describe_checked": true,
+      "cases": 24,
+      "output": "PASS:24 schedules/stop boundaries, source equivalence, launcher and validation"
+    }
+  ],
+  "note": "Real CPython3.10.11 and3.12.3;3.10 stdlib static checks,3.12 additionally imports torch trainer for describe; full-size DDP and actual user checkpoints untested"
+}
