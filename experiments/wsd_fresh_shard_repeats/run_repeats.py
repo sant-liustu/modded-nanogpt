@@ -1,5 +1,5 @@
 """Run20 paired continuations on20 distinct provably untouched shards."""
-import argparse,glob,json,subprocess,sys
+import argparse,glob,json,random,subprocess,sys
 from pathlib import Path
 from fresh_shards import audit_history,check_fresh_shard
 ROOT=Path(__file__).resolve().parent
@@ -9,10 +9,10 @@ def make_plan(state,a):
     if a.nproc_per_node!=world or a.device_batch_size!=B:raise ValueError('rank/microbatch must match the original checkpoint')
     if a.probe_val_tokens<=0 or a.probe_val_tokens%(B*world*state['train_loader']['T']):raise ValueError('invalid validation budget')
     if a.repeats<2:raise ValueError('at least2 pairs required')
-    required=(620*audit['gradient_accumulation']+1)*audit['global_microbatch_tokens']+1
-    eligible=[i for i in audit['unvisited_indices'] if audit['token_counts'][i]>=required]
+    eligible=list(audit['unvisited_indices'])
+    random.Random(getattr(a,'shard_seed',0)).shuffle(eligible)
     indices=a.fresh_shard_indices if a.fresh_shard_indices is not None else eligible[:a.repeats]
-    if len(indices)!=a.repeats or len(set(indices))!=len(indices):raise ValueError(f'need{a.repeats} distinct large enough untouched shards; only{len(eligible)} eligible; no automatic reuse')
+    if len(indices)!=a.repeats or len(set(indices))!=len(indices):raise ValueError(f'need{a.repeats} distinct remaining shards; only{len(eligible)} eligible; no automatic reuse')
     for i in indices:check_fresh_shard(state,i,620)
     out=a.output.resolve();checkpoint=a.resume.resolve();jobs=[]
     for rep,index in enumerate(indices):
@@ -20,13 +20,14 @@ def make_plan(state,a):
             name=f'rep{rep:03d}_shard{index:05d}_{arm}';log_root=out/'logs'/name
             command=[sys.executable,'-m','torch.distributed.run','--standalone',f'--nproc_per_node={world}',str(ROOT/'train_fresh_repeat.py'),'--experiment',arm,'--replicate-id',str(rep),'--fresh-shard-index',str(index),'--resume',str(checkpoint),'--checkpoint-dir',str(out/'checkpoints'/name),'--input-bin',a.input_bin,'--input-val-bin',a.input_val_bin,'--log-root',str(log_root),'--run-name',name,'--expected-world-size',str(world),'--device-batch-size',str(B),'--probe-val-tokens',str(a.probe_val_tokens)]
             jobs.append(dict(name=name,replicate_id=rep,fresh_shard_index=index,experiment=arm,log_root=str(log_root),input_checkpoint=str(checkpoint),command=command))
-    return dict(version=1,checkpoint=str(checkpoint),fork_step=16000,replicates=list(range(a.repeats)),selected_shard_indices=indices,validation_tokens=a.probe_val_tokens,history_audit=audit,jobs=jobs)
+    return dict(version=1,checkpoint=str(checkpoint),fork_step=16000,replicates=list(range(a.repeats)),selected_shard_indices=indices,shard_seed=getattr(a,'shard_seed',0),validation_tokens=a.probe_val_tokens,history_audit=audit,jobs=jobs)
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--resume',type=Path,required=True);p.add_argument('--input-bin',required=True);p.add_argument('--input-val-bin',required=True)
     p.add_argument('--output',type=Path,required=True);p.add_argument('--repeats',type=int,default=20)
     p.add_argument('--fresh-shard-indices',type=int,nargs='+')
+    p.add_argument('--shard-seed',type=int,default=0,help='shuffle only remaining shard list; keep tokens sequential')
     p.add_argument('--nproc-per-node',type=int,default=2);p.add_argument('--device-batch-size',type=int,default=64)
     p.add_argument('--probe-val-tokens',type=int,default=1048576);p.add_argument('--dry-run',action='store_true');a=p.parse_args()
     checkpoint=a.resume.resolve();manifest=json.loads((checkpoint/'complete.json').read_text());files=[f'rank{r:05d}.pt' for r in range(a.nproc_per_node)]

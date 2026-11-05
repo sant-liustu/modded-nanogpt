@@ -68,7 +68,7 @@ with tempfile.TemporaryDirectory(dir=root) as tmp:
     (checkpoint/'complete.json').write_text(json.dumps(dict(version=1,step=16000,world_size=1,files=['rank00000.pt'])))
     command=[sys.executable,str(root/'run_repeats.py'),'--resume',str(checkpoint),'--input-bin',pattern,'--input-val-bin',str(tmp/'val*.bin'),'--output',str(tmp/'out'),'--nproc-per-node','1','--device-batch-size','2','--probe-val-tokens','32','--dry-run']
     plan=json.loads(subprocess.check_output(command,text=True))
-    assert len(plan['jobs'])==40 and plan['history_audit']['excluded_indices']==[0] and plan['selected_shard_indices']==list(range(1,21))
+    assert len(plan['jobs'])==40 and plan['history_audit']['excluded_indices']==[0] and sorted(plan['selected_shard_indices'])==list(range(1,21))
 
     traces={};initial=[];report=[]
     for seed in range(1000,1020):
@@ -114,5 +114,5 @@ with tempfile.TemporaryDirectory(dir=root) as tmp:
     try:check_fresh_shard(used,0,620)
     except ValueError:pass
     else:raise AssertionError('used historical shard accepted')
-(root/'checkpoint_verification.json').write_text(json.dumps(dict(status='PASS',torch=str(torch.__version__),scope='40 tinyCUDA runs; actual historical16001-fetch replay and mmap checkpoint launcher dry-run;real sequential-shard loader/rank partition;20 distinct paired fresh shards;unchanged initial validation/globalRNG;actual initial reset and no-reset resume;LR switch and gamma;disk resume next loss/params/optimizers/schedulers/batch/cursor bitwise;wrongreplicate/used-shard rejection',cases=report),indent=2),encoding='utf-8')
+(root/'checkpoint_verification.json').write_text(json.dumps(dict(status='PASS',torch=str(torch.__version__),scope='40 tinyCUDA runs; metadata-only remaining suffix,shard shuffle and mmap checkpoint launcher dry-run;real sequential-shard loader/rank partition;20 distinct paired fresh shards;unchanged initial validation/globalRNG;actual initial reset and no-reset resume;LR switch and gamma;disk resume next loss/params/optimizers/schedulers/batch/cursor bitwise;wrongreplicate/used-shard rejection',cases=report),indent=2),encoding='utf-8')
 print('PASS:40 tinyCUDA paired migrations,actual untouched shards/ranks and bitwise resume')

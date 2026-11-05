@@ -1,7 +1,7 @@
 {
   "status": "PASS",
   "torch": "2.5.1+cu124",
-  "scope": "40 tinyCUDA runs; actual historical16001-fetch replay and mmap checkpoint launcher dry-run;real sequential-shard loader/rank partition;20 distinct paired fresh shards;unchanged initial validation/globalRNG;actual initial reset and no-reset resume;LR switch and gamma;disk resume next loss/params/optimizers/schedulers/batch/cursor bitwise;wrongreplicate/used-shard rejection",
+  "scope": "40 tinyCUDA runs; metadata-only remaining suffix,shard shuffle and mmap checkpoint launcher dry-run;real sequential-shard loader/rank partition;20 distinct paired fresh shards;unchanged initial validation/globalRNG;actual initial reset and no-reset resume;LR switch and gamma;disk resume next loss/params/optimizers/schedulers/batch/cursor bitwise;wrongreplicate/used-shard rejection",
   "cases": [
     {
       "seed": 1000,

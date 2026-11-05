@@ -24,3 +24,11 @@ Tests: source equivalence, cursor replay vs actual loader over boundaries/cycles
 corrupted history/capacity rejection,20 distinct shard plan/40 commands;actual
 CUDA sequential batches/rank partition, initial reset and bitwise resume;known
 paired statistics;realPython3.10/3.12 static tests. No formal training launched.
+
+
+## User-requested simplification
+Use the known sequential checkpoint current_shard and skip its entire prefix.
+Shuffle only the remaining shard indices with --shard-seed(default0);choose20.
+No historical microbatch replay, no extra file/header/signature scan, no per-shard
+length preflight. Retain metadata-only full-corpus-pass guard, original recovery
+checks and runtime no-wrap. Developer verification scripts are never called by launcher.

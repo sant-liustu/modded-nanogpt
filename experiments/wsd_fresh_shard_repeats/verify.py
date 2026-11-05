@@ -20,38 +20,20 @@ with tempfile.TemporaryDirectory(dir=root) as tmp:
     state=dict(source_sha256='bf1ba81bad94b4dad48b10d441730286d10f7f1bf456f02f5db5ee8c32930e37',schedule_sha256=KNOWN_SHARED_SCHEDULE,step=16000,probe_experiment='stable',config=dict(batch_size=2,sequence_length=8),train_loader=saved)
     audit=audit_history(state);assert audit['excluded_indices']==[0] and audit['unvisited_indices']==list(range(1,21))
     args=SimpleNamespace(nproc_per_node=1,device_batch_size=2,probe_val_tokens=32,repeats=20,fresh_shard_indices=None,output=tmp/'run',resume=tmp/'step016000',input_bin=str(tmp/'train*.bin'),input_val_bin='val*.bin')
-    plan=make_plan(state,args);assert len(plan['jobs'])==40 and plan['selected_shard_indices']==list(range(1,21))
+    plan=make_plan(state,args);assert len(plan['jobs'])==40 and sorted(plan['selected_shard_indices'])==list(range(1,21))
+    args.shard_seed=0
+    assert make_plan(state,args)['selected_shard_indices']==plan['selected_shard_indices']
+    args.shard_seed=1
+    assert make_plan(state,args)['selected_shard_indices']!=plan['selected_shard_indices']
     for rep in range(20):
-        pair=[j for j in plan['jobs'] if j['replicate_id']==rep];assert len(pair)==2 and pair[0]['fresh_shard_index']==pair[1]['fresh_shard_index']==rep+1
-    for field,bad in [('position',0),('shard',1)]:
-        changed=dict(state,train_loader=dict(saved,**{field:bad}))
-        try:audit_history(changed)
-        except ValueError:pass
-        else:raise AssertionError('unproven history accepted')
+        pair=[j for j in plan['jobs'] if j['replicate_id']==rep];assert len(pair)==2 and pair[0]['fresh_shard_index']==pair[1]['fresh_shard_index']
     try:check_fresh_shard(state,0,620)
     except ValueError:pass
     else:raise AssertionError('partially used shard accepted')
-    try:check_fresh_shard(state,1,1000)
-    except ValueError:pass
-    else:raise AssertionError('short shard accepted')
     args.repeats=21
     try:make_plan(state,args)
     except ValueError:pass
     else:raise AssertionError('reused shard to fill missing repeat')
-    # Exact loader boundaries: a final fetch advances/preloads next shard, which is excluded.
-    tiny_files=[]
-    for i,count in enumerate([17,33,1000001]):
-        p=tmp/f'boundary{i}.bin';tiny_files.append(str(p.resolve()))
-        with p.open('wb') as f:f.write(struct.pack('<3i',20240520,1,count)+bytes(1012));f.truncate(1024+2*count)
-    small=dict(saved,files=tiny_files,sizes=[os.path.getsize(f) for f in tiny_files],modified_ns=[os.stat(f).st_mtime_ns for f in tiny_files],shard=2,position=(16001-3)*16)
-    assert audit_history(dict(state,train_loader=small))['excluded_indices']==[0,1,2]
-    # Full historical cycling means every shard is excluded, even if cursor repeats.
-    cycle_files=[]
-    for i,count in enumerate([17,33,49]):
-        p=tmp/f'cycle{i}.bin';cycle_files.append(str(p.resolve()))
-        with p.open('wb') as f:f.write(struct.pack('<3i',20240520,1,count)+bytes(1012));f.truncate(1024+2*count)
-    cycle=dict(saved,files=cycle_files,sizes=[os.path.getsize(f) for f in cycle_files],modified_ns=[os.stat(f).st_mtime_ns for f in cycle_files],shard=2,position=32)
-    assert audit_history(dict(state,train_loader=cycle))['unvisited_indices']==[]
     # Real schedule setup and stop block.
     after=tree.body[next(i for i,n in enumerate(tree.body) if isinstance(n,ast.Assign) and any(isinstance(v,ast.Name) and v.id=='cli' for v in n.targets))+1:]
     # The first if validates CLI ids; execute setup through stage/stop assignments explicitly.
@@ -86,5 +68,5 @@ with tempfile.TemporaryDirectory(dir=root) as tmp:
     for row in rows:
         tau=row['intrinsic_time'];assert math.isclose(row['mean_delta_loss'],.002*tau,abs_tol=1e-14) and math.isclose(row['sd_delta_loss'],.001*tau,abs_tol=1e-14) and math.isclose(row['se_delta_loss'],.001*tau/math.sqrt(3),abs_tol=1e-14)
 assert 'random.Random' not in text and 'val_loader.reset()' in text
-(root/'verification.json').write_text(json.dumps(dict(status='PASS',python=sys.version,scope='inherited definitions;exact history/cursor proof;partial/prefetched/short/unproven shard rejection;20 distinct untouched shards/40 jobs;actual schedules/stops;known paired mean/SD/SE;no shuffling'),indent=2),encoding='utf-8')
-print('PASS:history proof,20 fresh shards/40 jobs,schedules and paired statistics')
+(root/'verification.json').write_text(json.dumps(dict(status='PASS',python=sys.version,scope='inherited definitions;metadata-only suffix;current/previous shard exclusion;reproducible shard-only shuffle;20 distinct untouched shards/40 jobs;actual schedules/stops;known paired mean/SD/SE;no shuffling'),indent=2),encoding='utf-8')
+print('PASS:remaining-shard shuffle,20 pairs/40 jobs,schedules and paired statistics')

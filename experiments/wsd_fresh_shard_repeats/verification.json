@@ -1,5 +1,5 @@
 {
   "status": "PASS",
   "python": "3.12.3 (tags/v3.12.3:f6650f9, Apr  9 2024, 14:05:25) [MSC v.1938 64 bit (AMD64)]",
-  "scope": "inherited definitions;exact history/cursor proof;partial/prefetched/short/unproven shard rejection;20 distinct untouched shards/40 jobs;actual schedules/stops;known paired mean/SD/SE;no shuffling"
+  "scope": "inherited definitions;metadata-only suffix;current/previous shard exclusion;reproducible shard-only shuffle;20 distinct untouched shards/40 jobs;actual schedules/stops;known paired mean/SD/SE;no shuffling"
 }

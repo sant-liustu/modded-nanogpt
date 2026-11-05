@@ -4,5 +4,5 @@
     "3.10.11 (tags/v3.10.11:7d4cc5a, Apr  5 2023, 00:38:17) [MSC v.1929 64 bit (AMD64)]",
     "3.12.3 (tags/v3.12.3:f6650f9, Apr  9 2024, 14:05:25) [MSC v.1938 64 bit (AMD64)]"
   ],
-  "checks": "stdlib history-proof/plans/stop-block/paired-statistics;CUDA checks usePython3.12"
+  "checks": "realPython3.10/3.12:metadata-only suffix and fixed-seed shard shuffle,plans/schedules/paired stats;40 tinyCUDA checks usePython3.12"
 }
