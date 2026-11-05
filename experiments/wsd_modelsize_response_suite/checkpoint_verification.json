@@ -1,0 +1,38 @@
+{
+  "status": "PASS",
+  "python": "3.12.3 (tags/v3.12.3:f6650f9, Apr  9 2024, 14:05:25) [MSC v.1938 64 bit (AMD64)]",
+  "torch": "2.5.1+cu124",
+  "models": [
+    {
+      "model": "w384_d12",
+      "full_meta_parameters": 40563072,
+      "tiny_migration_resume_cases": 56,
+      "status": "PASS"
+    },
+    {
+      "model": "w768_d6",
+      "full_meta_parameters": 81112320,
+      "tiny_migration_resume_cases": 56,
+      "status": "PASS"
+    },
+    {
+      "model": "w768_d12",
+      "full_meta_parameters": 123590400,
+      "tiny_migration_resume_cases": 56,
+      "status": "PASS"
+    },
+    {
+      "model": "w768_d24",
+      "full_meta_parameters": 208546560,
+      "tiny_migration_resume_cases": 56,
+      "status": "PASS"
+    },
+    {
+      "model": "w1536_d12",
+      "full_meta_parameters": 417047040,
+      "tiny_migration_resume_cases": 56,
+      "status": "PASS"
+    }
+  ],
+  "scope": "full meta parameter counts;280 tinyCUDA model-binding migrations/resumes;real data loader and actual initial/reset blocks;paired20 distinct shards/model;actual LR/gamma;disk resume next loss/params/Adam/schedulers/batch/cursor bitwise;wrongmode/model rejection;legacyw768 shared16k aliases;formal sizes/DDP/compile not run"
+}

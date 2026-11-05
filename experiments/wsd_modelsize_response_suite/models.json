@@ -1,0 +1,47 @@
+{
+  "w384_d12": {
+    "script": "train_w384_d12.py",
+    "width": 384,
+    "depth": 12,
+    "default_ranks": 1,
+    "default_device_batch": 128,
+    "original_source_sha256": "7d02690c42118775239e7ac29114115ce855ce6450444dc6b8036e61d45c8f48",
+    "original_source": "F:\\wsd_five_sizes_publish_20261103\\experiments\\wsd_five_sizes_stable15000\\train_fixednorm_w384.py"
+  },
+  "w768_d6": {
+    "script": "train_w768_d6.py",
+    "width": 768,
+    "depth": 6,
+    "default_ranks": 1,
+    "default_device_batch": 128,
+    "original_source_sha256": "1b842fce635b1439f55fb9aebad942f25738939850bbb7a53048ff3b5a80f7b3",
+    "original_source": "F:\\wsd_five_sizes_publish_20261103\\experiments\\wsd_five_sizes_stable15000\\train_fixednorm_w768_d6.py"
+  },
+  "w768_d12": {
+    "script": "train_w768_d12.py",
+    "width": 768,
+    "depth": 12,
+    "default_ranks": 2,
+    "default_device_batch": 64,
+    "original_source_sha256": "b8435caa509b958ef7bd1f4524629e059127818e2011e4ede58e38e8e89c1f41",
+    "original_source": "F:\\wsd_five_sizes_publish_20261103\\experiments\\wsd_five_sizes_stable15000\\train_fixednorm_w768.py"
+  },
+  "w768_d24": {
+    "script": "train_w768_d24.py",
+    "width": 768,
+    "depth": 24,
+    "default_ranks": 4,
+    "default_device_batch": 32,
+    "original_source_sha256": "2846fe93d91a0a7d1d189a16047165ac844a78448c7b232df59932bced5e99e5",
+    "original_source": "F:\\wsd_five_sizes_publish_20261103\\experiments\\wsd_five_sizes_stable15000\\train_fixednorm_w768_d24.py"
+  },
+  "w1536_d12": {
+    "script": "train_w1536_d12.py",
+    "width": 1536,
+    "depth": 12,
+    "default_ranks": 4,
+    "default_device_batch": 32,
+    "original_source_sha256": "5cdf4c53c766bb8be192a6a26f97b74a75c17dc178e3830f21b1017905e27dd0",
+    "original_source": "F:\\wsd_five_sizes_publish_20261103\\experiments\\wsd_five_sizes_stable15000\\train_fixednorm_w1536.py"
+  }
+}

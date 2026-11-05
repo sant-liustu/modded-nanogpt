@@ -1,0 +1,39 @@
+{
+  "status": "PASS",
+  "python": "3.12.3 (tags/v3.12.3:f6650f9, Apr  9 2024, 14:05:25) [MSC v.1938 64 bit (AMD64)]",
+  "model_cases": [
+    {
+      "model": "w384_d12",
+      "cases": 25,
+      "default_ranks": 1,
+      "status": "PASS"
+    },
+    {
+      "model": "w768_d6",
+      "cases": 25,
+      "default_ranks": 1,
+      "status": "PASS"
+    },
+    {
+      "model": "w768_d12",
+      "cases": 25,
+      "default_ranks": 2,
+      "status": "PASS"
+    },
+    {
+      "model": "w768_d24",
+      "cases": 25,
+      "default_ranks": 4,
+      "status": "PASS"
+    },
+    {
+      "model": "w1536_d12",
+      "cases": 25,
+      "default_ranks": 4,
+      "status": "PASS"
+    }
+  ],
+  "full_suite_jobs": 275,
+  "missing_all16000_jobs": 280,
+  "scope": "all model configurations,125 actual schedule/stop cases,shared16k hash,20 shard selection,scope/dedup/dependencies and inherited definitions"
+}
