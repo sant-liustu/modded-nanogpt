@@ -121,3 +121,17 @@ python verify_checkpoint.py
 CUDA验证覆盖5模型真实meta参数量、280次tiny模型来源迁移/恢复、wrong-model拒绝、
 旧w768/d12 shared16k兼容、真实loader取数和20对数据身份、实际LR/gamma及下一步逐位恢复。
 这是本地小模型与规划检查；真实用户checkpoint和正式尺寸DDP/compile未实测，未启动正式训练。
+
+## w768/d12再跑40次：只换shard seed
+
+上一批默认--shard-seed0；新入口默认--shard-seed1，仍是20对/40次续训。
+同一checkpoint、val、ELR与训练步数不变，只改变剩余shard列表的随机排列。
+不排除上一批选过的shard，因此两批可能重叠；单批内部仍取20个不同shard。
+若seed1已经使用过，可显式--shard-seed2或其他未使用seed。
+
+```bash
+CUDA_VISIBLE_DEVICES=0,1 python run_more40_w768.py --config checkpoints.json --output outputs/w768_repeats_seed1 --dry-run
+```
+
+删掉--dry-run开始。配置中的w768/d12应填已有shared16k路径，输出目录换新。
+此入口仅给原run_suite.py加默认选项，不更改trainer或checkpoint兼容性。
