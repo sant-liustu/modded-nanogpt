@@ -1,0 +1,207 @@
+{
+  "status": "PASS",
+  "torch": "2.5.1+cu124",
+  "scope": "40 tinyCUDA runs; actual historical16001-fetch replay and mmap checkpoint launcher dry-run;real sequential-shard loader/rank partition;20 distinct paired fresh shards;unchanged initial validation/globalRNG;actual initial reset and no-reset resume;LR switch and gamma;disk resume next loss/params/optimizers/schedulers/batch/cursor bitwise;wrongreplicate/used-shard rejection",
+  "cases": [
+    {
+      "seed": 1000,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 1000,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 1001,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 1001,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 1002,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 1002,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 1003,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 1003,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 1004,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 1004,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 1005,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 1005,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 1006,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 1006,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 1007,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 1007,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 1008,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 1008,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 1009,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 1009,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 1010,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 1010,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 1011,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 1011,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 1012,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 1012,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 1013,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 1013,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 1014,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 1014,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 1015,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 1015,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 1016,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 1016,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 1017,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 1017,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 1018,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 1018,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 1019,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 1019,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    }
+  ]
+}
