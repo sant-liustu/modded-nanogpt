@@ -1,10 +1,21 @@
 """Plan/run the five-model time,amplitude and fresh-shard response experiments."""
-import argparse,hashlib,json,os,subprocess,sys
+import argparse,hashlib,json,os,random,subprocess,sys
 from pathlib import Path
 ROOT=Path(__file__).resolve().parent
 MODELS=json.loads((ROOT/'models.json').read_text())
 
-def make_plan(config,output,phases,selected,load_info,repeats=20,shard_seed=0,val_tokens=1048576):
+def additional_positions(info,seed,excluded_seeds,repeats):
+    suffix=list(range(info['train_shard']+1,len(info['train_files'])))
+    used=set()
+    for oldseed in excluded_seeds:
+        previous=suffix.copy();random.Random(oldseed).shuffle(previous)
+        used.update(previous[:repeats])
+    order=suffix.copy();random.Random(seed).shuffle(order)
+    positions=[i for i,index in enumerate(order) if index not in used][:repeats]
+    if len(positions)!=repeats:raise ValueError('not enough remaining shards after excluding previous seed selections')
+    return positions,{i:order[i] for i in positions},sorted(used)
+
+def make_plan(config,output,phases,selected,load_info,repeats=20,shard_seed=0,val_tokens=1048576,exclude_shard_seeds=None):
     output=Path(output).resolve();jobs=[];repeat_manifests={};summary={}
     if repeats<2:raise ValueError('at least2 paired repeats required')
     if val_tokens<=0:raise ValueError('validation budget must be positive')
@@ -19,6 +30,11 @@ def make_plan(config,output,phases,selected,load_info,repeats=20,shard_seed=0,va
             if 15000 not in paths:raise ValueError(key+': need15000 to prepare missing16000')
             paths[16000]=output/key/'checkpoints'/'prepare16000'/'step016000'
             infos[16000]=infos[15000]
+        positions=list(range(repeats));planned_shards={};excluded_shards=[];fresh_count=repeats
+        if exclude_shard_seeds and 'repeats' in phases:
+            if prepare:raise ValueError('seed exclusion needs an existing shared16000 checkpoint;prepare it first')
+            positions,planned_shards,excluded_shards=additional_positions(infos[16000],shard_seed,exclude_shard_seeds,repeats)
+            fresh_count=max(positions)+1
         model_jobs=[];dedup={}
         def job(step,arm,purpose,rep=-1):
             mode='fresh' if rep>=0 else 'historical';identity=(step,arm,rep)
@@ -29,8 +45,8 @@ def make_plan(config,output,phases,selected,load_info,repeats=20,shard_seed=0,va
             name=('prepare16000' if arm=='stable' else (f'rep{rep:03d}_{arm}' if rep>=0 else f'fork{step:06d}_{arm}'))
             log_root=output/key/('repeats' if rep>=0 else 'probes')/'logs'/name
             command=[sys.executable,'-m','torch.distributed.run','--standalone',f'--nproc_per_node={ranks}',str(ROOT/MODELS[key]['script']),'--fork-step',str(step),'--experiment',arm,'--resume',str(paths[step]),'--checkpoint-dir',str(output/key/'checkpoints'/name),'--input-bin',entry.get('input_bin',info['input_bin']),'--input-val-bin',entry.get('input_val_bin',info['input_val_bin']),'--expected-world-size',str(ranks),'--device-batch-size',str(micro),'--compile-model',str(info['compile_model']),'--probe-val-tokens',str(val_tokens),'--log-root',str(log_root),'--run-name',name]
-            if rep>=0:command+=['--fresh-replicate',str(rep),'--fresh-repeats',str(repeats),'--shard-seed',str(shard_seed)]
-            record=dict(model=key,name=name,experiment=arm,fork_step=step,suite_mode=mode,replicate_id=rep,fresh_shard_index=None,log_root=str(log_root),input_checkpoint=str(paths[step]),purposes=[purpose],ranks=ranks,cuda_visible_count=info.get('cuda_visible_count',ranks),command=command)
+            if rep>=0:command+=['--fresh-replicate',str(rep),'--fresh-repeats',str(fresh_count),'--shard-seed',str(shard_seed)]
+            record=dict(model=key,name=name,experiment=arm,fork_step=step,suite_mode=mode,replicate_id=rep,fresh_shard_index=planned_shards.get(rep),log_root=str(log_root),input_checkpoint=str(paths[step]),purposes=[purpose],ranks=ranks,cuda_visible_count=info.get('cuda_visible_count',ranks),command=command)
             dedup[identity]=record;model_jobs.append(record);return record
         if prepare:job(15000,'stable','prepare')
         if 'time' in phases:
@@ -40,10 +56,10 @@ def make_plan(config,output,phases,selected,load_info,repeats=20,shard_seed=0,va
         if 'amplitude' in phases:
             for arm in ('baseline','elr005','elr004','elr003','elr002','elr001'):job(16000,arm,'amplitude')
         if 'repeats' in phases:
-            for rep in range(repeats):
+            for rep in positions:
                 for arm in ('baseline','elr001'):job(16000,arm,'repeats',rep)
             fresh=[j for j in model_jobs if j['suite_mode']=='fresh']
-            repeat_manifests[key]=dict(version=1,checkpoint=str(paths[16000]),fork_step=16000,replicates=list(range(repeats)),validation_tokens=val_tokens,shard_seed=shard_seed,jobs=fresh)
+            repeat_manifests[key]=dict(version=1,checkpoint=str(paths[16000]),fork_step=16000,replicates=positions,excluded_shard_seeds=exclude_shard_seeds or [],excluded_previous_shard_indices=excluded_shards,validation_tokens=val_tokens,shard_seed=shard_seed,jobs=fresh)
         summary[key]=dict(prepare=int(prepare),historical=sum(j['suite_mode']=='historical' and j['experiment']!='stable' for j in model_jobs),fresh=sum(j['suite_mode']=='fresh' for j in model_jobs),total=len(model_jobs))
         jobs.extend(model_jobs)
     return dict(version=1,phases=phases,models=summary,jobs=jobs,repeat_manifests=repeat_manifests)
@@ -63,14 +79,15 @@ def checkpoint_info(path,key,step):
         if state['source_sha256'] not in allowed or state.get('probe_experiment')!='stable' or state['schedule_sha256']!='9e3a4b48e9c2de544e2c1c7f35775c80f910b39717eed85ac45645434961c387':raise ValueError('16000 must be a constant-ELR shared stable checkpoint')
     elif state['source_sha256']!=spec['original_source_sha256'] or state['schedule_sha256']!='38e74728f90116c44727d8da1985cde02668d1d7747bc30a699589640e7f18be':
         raise ValueError('expected this model original stable checkpoint')
-    cfg=state['config'];return dict(ranks=ranks,device_batch_size=cfg['device_batch_size'],compile_model=cfg['compile_model'],input_bin=cfg['input_bin'],input_val_bin=cfg['input_val_bin'],cuda_visible_count=len(state['rng']['cuda']))
+    cfg=state['config'];return dict(ranks=ranks,device_batch_size=cfg['device_batch_size'],compile_model=cfg['compile_model'],input_bin=cfg['input_bin'],input_val_bin=cfg['input_val_bin'],cuda_visible_count=len(state['rng']['cuda']),train_shard=state['train_loader']['shard'],train_files=state['train_loader']['files'])
 
 def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--config',type=Path,required=True);p.add_argument('--output',type=Path,required=True)
     p.add_argument('--phase',choices=['all','prepare','time','amplitude','repeats'],default='all');p.add_argument('--models',nargs='+',choices=list(MODELS))
     p.add_argument('--repeats',type=int,default=20);p.add_argument('--shard-seed',type=int,default=0);p.add_argument('--probe-val-tokens',type=int,default=1048576);p.add_argument('--dry-run',action='store_true')
+    p.add_argument('--exclude-shard-seed',type=int,nargs='+',help='exclude the previous20-pair shard selections of these seeds at this same16000 checkpoint')
     a=p.parse_args();config=json.loads(a.config.read_text());selected=a.models or list(config['models']);phases=['time','amplitude','repeats'] if a.phase=='all' else [a.phase]
-    plan=make_plan(config,a.output,phases,selected,checkpoint_info,a.repeats,a.shard_seed,a.probe_val_tokens)
+    plan=make_plan(config,a.output,phases,selected,checkpoint_info,a.repeats,a.shard_seed,a.probe_val_tokens,a.exclude_shard_seed)
     if a.dry_run:print(json.dumps(plan,indent=2));return
     output=a.output.resolve()
     if output.exists():p.error('choose a fresh output root')
@@ -89,7 +106,9 @@ def main():
         if job['suite_mode']=='fresh':
             metas=list(Path(job['log_root']).rglob('fresh_shard_metadata.json'))
             if len(metas)!=1:raise RuntimeError('expected exactly one fresh data metadata file')
-            job['fresh_shard_index']=json.loads(metas[0].read_text())['fresh_shard']['index']
+            actual_index=json.loads(metas[0].read_text())['fresh_shard']['index']
+            if job['fresh_shard_index'] is not None and job['fresh_shard_index']!=actual_index:raise RuntimeError('planned/runtime shard mismatch')
+            job['fresh_shard_index']=actual_index
             manifest=plan['repeat_manifests'][job['model']]
             (output/job['model']/'repeats'/'manifest.json').write_text(json.dumps(manifest,indent=2),encoding='utf-8')
     for key in plan['repeat_manifests']:subprocess.run([sys.executable,str(ROOT/'aggregate_pairs.py'),'--run-root',str(output/key/'repeats')],check=True)

@@ -67,6 +67,26 @@ with tempfile.TemporaryDirectory(dir=root) as tmp:
         assert all(j['input_checkpoint']==expected for j in jobs if j['fork_step']==16000)
     time_only=make_plan(config,tmp/'time',['time'],['w768_d12'],info);assert len(time_only['jobs'])==13
     amp=make_plan(config,tmp/'amp',['amplitude'],['w768_d12'],info);assert len(amp['jobs'])==7
+    # New seed1 batch excludes all20 shards selected by seed0,without trainer changes.
+    def extra_info(path,key,step):
+        return dict(info(path,key,step),train_shard=20,train_files=[str(i) for i in range(100)])
+    extra_config=dict(models={'w768_d12':dict(checkpoints={'16000':'/mock/shared16000'})})
+    extra=make_plan(extra_config,tmp/'extra',['repeats'],['w768_d12'],extra_info,20,1,1048576,[0])
+    manifest=extra['repeat_manifests']['w768_d12'];jobs=manifest['jobs']
+    assert len(jobs)==40 and len(manifest['replicates'])==20
+    selected={j['fresh_shard_index'] for j in jobs}
+    assert len(selected)==20 and not(selected & set(manifest['excluded_previous_shard_indices']))
+    assert len(manifest['excluded_previous_shard_indices'])==20
+    from run_suite import additional_positions
+    try:additional_positions(dict(train_shard=0,train_files=list(range(30))),1,[0],20)
+    except ValueError:pass
+    else:raise AssertionError('reused old shards when too few remain')
+    for job in jobs:
+        c=job['command'];rep=int(c[c.index('--fresh-replicate')+1]);total=int(c[c.index('--fresh-repeats')+1])
+        assert 0<=rep<total and total==max(manifest['replicates'])+1
+        cli.fresh_replicate=rep;cli.fresh_repeats=total;cli.shard_seed=1
+        expected,_=ns['select_fresh_shard'](fake)
+        assert expected['index']==job['fresh_shard_index']
     # Exact recovery alignment for every amplitude, with known analytic delta.
     from collect_recovery import collect
     run=tmp/'recovery';run.mkdir();probe_jobs=[]

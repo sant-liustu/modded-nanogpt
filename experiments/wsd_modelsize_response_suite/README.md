@@ -122,16 +122,17 @@ CUDA验证覆盖5模型真实meta参数量、280次tiny模型来源迁移/恢复
 旧w768/d12 shared16k兼容、真实loader取数和20对数据身份、实际LR/gamma及下一步逐位恢复。
 这是本地小模型与规划检查；真实用户checkpoint和正式尺寸DDP/compile未实测，未启动正式训练。
 
-## w768/d12再跑40次：只换shard seed
+## w768/d12再跑40次：seed1排除上一批seed0的shard
 
-上一批默认--shard-seed0；新入口默认--shard-seed1，仍是20对/40次续训。
-同一checkpoint、val、ELR与训练步数不变，只改变剩余shard列表的随机排列。
-不排除上一批选过的shard，因此两批可能重叠；单批内部仍取20个不同shard。
-若seed1已经使用过，可显式--shard-seed2或其他未使用seed。
+新入口默认seed1，并排除同一个16k checkpoint下seed0之前20对选中的shard。
+再取20个不同shard，仍是20对/40次续训。训练代码与checkpoint兼容性不变。
 
 ```bash
 CUDA_VISIBLE_DEVICES=0,1 python run_more40_w768.py --config checkpoints.json --output outputs/w768_repeats_seed1 --dry-run
 ```
 
-删掉--dry-run开始。配置中的w768/d12应填已有shared16k路径，输出目录换新。
-此入口仅给原run_suite.py加默认选项，不更改trainer或checkpoint兼容性。
+删掉--dry-run开始。配置中填已有shared16k路径，输出目录换新。
+如果上一批用的不是seed0，显式传--exclude-shard-seed对应seed；也可列多个seed。
+这一排除基于同一checkpoint、相同数据列表以及上一批20对的默认随机选法。
+手工指定过shard时不要用seed推断排除，应保留实际shard清单另行指定。
+manifest记录排除seed、排除shard和本批选择；不重放历史、不改token、不重新预训练。
