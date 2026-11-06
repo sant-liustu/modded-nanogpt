@@ -373,7 +373,7 @@ if len(set(cli.mix_shards))!=2:
     parser.error('mix-shards must be two different indices')
 cli.pulse_elr = dict(stable=.06,baseline=.06,elr005=.05,elr004=.04,elr003=.03,elr002=.02,elr001=.01)[cli.experiment]
 cli.pulse_updates = dict(stable=0,baseline=0,elr005=24,elr004=30,elr003=40,elr002=60,elr001=120)[cli.experiment]
-cli.stop_step = cli.stage_start + (1000 if cli.experiment=='stable' else (520 if cli.experiment=='baseline' else cli.pulse_updates+500))
+cli.stop_step = cli.stage_start + (1000 if cli.experiment=='stable' else (320 if cli.experiment=='baseline' else cli.pulse_updates+300))
 if cli.eval_every <= 0 or cli.probe_val_tokens <= 0:
     parser.error('evaluation interval and token count must be positive')
 if not cli.describe_only and cli.resume is None:
@@ -406,8 +406,8 @@ scaling_budget = dict(width=args.model_width, depth=args.model_depth,
 scaling_budget.update(experiment=cli.experiment, fork_step=cli.stage_start,
     pulse_elr=cli.pulse_elr, pulse_updates=cli.pulse_updates,
     pulse_intrinsic_width=(0.0 if cli.experiment in ('baseline','stable') else 1.2),
-    recovery_updates=(0 if cli.experiment in ('baseline','stable') else 500),
-    continuation_updates=cli.stop_step-cli.stage_start, continuation_intrinsic_time=(60.0 if cli.experiment=='stable' else 31.2),suite_mode=cli.suite_mode,mix_seed=cli.mix_seed,mix_shards=cli.mix_shards,
+    recovery_updates=(0 if cli.experiment in ('baseline','stable') else 300),
+    continuation_updates=cli.stop_step-cli.stage_start, continuation_intrinsic_time=(60.0 if cli.experiment=='stable' else 19.2),suite_mode=cli.suite_mode,mix_seed=cli.mix_seed,mix_shards=cli.mix_shards,
     stop_step=cli.stop_step, continuation_tokens=(cli.stop_step-cli.stage_start)*tokens_per_update,
     checkpoint_updates=([cli.stage_start+cli.pulse_updates,cli.stop_step] if cli.pulse_updates else [cli.stop_step]),
     validation_every=1, validation_tokens=cli.probe_val_tokens)
@@ -1004,8 +1004,8 @@ if cli.resume:
             raise RuntimeError('full corpus pass reached; no unused suffix')
         if any(index<=current for index in cli.mix_shards):raise RuntimeError('pool must follow the checkpoint current shard')
         train_loader.start_mix(cli.mix_shards,cli.mix_seed)
-        needed=((620*accum)+1)*train_loader.B*train_loader.num_processes
-        if len(train_loader.mix_order)<needed:raise RuntimeError('two-shard context pool too small for paired620-step protocol')
+        needed=((420*accum)+1)*train_loader.B*train_loader.num_processes
+        if len(train_loader.mix_order)<needed:raise RuntimeError('two-shard context pool too small for paired420-step protocol')
         x,y=train_loader.next_batch()
     if master_process:
         (Path(logdir)/'mix_data_metadata.json').write_text(json.dumps(dict(
