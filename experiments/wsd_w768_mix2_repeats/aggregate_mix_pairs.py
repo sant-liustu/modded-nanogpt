@@ -33,7 +33,7 @@ def aggregate(root):
                 if not math.isclose(row['intrinsic_time'],expected_tau,abs_tol=1e-9):raise ValueError('intrinsic time mismatch')
                 if i in rows and not math.isclose(rows[i]['val_loss'],row['val_loss'],rel_tol=0,abs_tol=1e-7):raise ValueError('conflicting duplicate/resume point')
                 rows[i]=row
-        last=320 if arm=='baseline' else 420
+        last=270 if arm=='baseline' else 370
         if set(rows)!=set(range(last+1)):raise ValueError('incomplete branch: '+job['name'])
         curves[key]=rows;starts[key]=rows[0]['val_loss']
     if len({fingerprints[(seed,'baseline')] for seed in seeds})!=len(seeds):raise ValueError('duplicate mixed context streams across repeats')
@@ -43,7 +43,7 @@ def aggregate(root):
         if not math.isclose(starts[(seed,'baseline')],starts[(seed,'elr001')],rel_tol=0,abs_tol=1e-6):raise ValueError('paired initial validation losses differ')
     initial=list(starts.values())
     if max(initial)-min(initial)>1e-6:raise ValueError('repeats do not start at the same measured checkpoint')
-    for i in range(321):
+    for i in range(271):
         pulse_i=6*i if i<=20 else 120+(i-20)
         deltas=[];baselines=[];pulses=[]
         for seed in seeds:
@@ -56,7 +56,7 @@ def aggregate(root):
     for name,rows in [('per_pair_delta.csv',per_pair),('mean_delta.csv',summary)]:
         with (out/name).open('w',newline='',encoding='utf-8') as f:
             writer=csv.DictWriter(f,fieldnames=list(rows[0]));writer.writeheader();writer.writerows(rows)
-    (out/'summary.json').write_text(json.dumps(dict(pairs=len(seeds),grid_points=321,delta_sign='pulse minus baseline',alignment='exact intrinsic time: baseline i, pulse6i throughi20 theni+100',uncertainty='sample SD and SE across paired repeats; normal95 is descriptive pointwise, not simultaneous',validation_tokens=plan['validation_tokens'],conditional_on='one shared stable16000 checkpoint; mixed-two-shard shuffled-context trajectories;separate protocol from old sequential repeats'),indent=2),encoding='utf-8')
+    (out/'summary.json').write_text(json.dumps(dict(pairs=len(seeds),grid_points=271,delta_sign='pulse minus baseline',alignment='exact intrinsic time: baseline i, pulse6i throughi20 theni+100',uncertainty='sample SD and SE across paired repeats; normal95 is descriptive pointwise, not simultaneous',validation_tokens=plan['validation_tokens'],conditional_on='one shared stable16000 checkpoint; mixed-two-shard shuffled-context trajectories;separate protocol from old sequential repeats'),indent=2),encoding='utf-8')
     return summary
 
 def main():

@@ -3,7 +3,7 @@
 User asks for many more trajectories and explicitly proposes loading two shards
 and shuffling. Replace prior single-shard sequential protocol with a separate
 mixed-pool experiment. Keep original shared16000 weights/Adam/schedulers/RNG,
-fixed matrix RMS and gamma.0018. Baseline.06*320; pulse.01*120+.06*300.
+fixed matrix RMS and gamma.0018. Baseline.06*270; pulse.01*120+.06*250.
 Fixed same validation prefix every update,default1048576 tokens.
 
 Each pair uses a distinct data seed (default2000..2139). Pick two different shards

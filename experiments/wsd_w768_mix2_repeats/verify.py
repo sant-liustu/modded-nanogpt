@@ -33,13 +33,13 @@ setup=tree.body[next(i for i,n in enumerate(tree.body) if isinstance(n,ast.Assig
 assignments=[n for n in setup if isinstance(n,ast.Assign) and any(isinstance(v,ast.Attribute) and v.attr in ('stage_start','suite_mode','pulse_elr','pulse_updates','stop_step') for v in n.targets)]
 fun=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='shared_elr')
 loop=next(n for n in tree.body if isinstance(n,ast.For) and isinstance(n.target,ast.Name) and n.target.id=='step');save=next(n for n in loop.body if isinstance(n,ast.If) and isinstance(n.test,ast.Name) and n.test.id=='save_checkpoint')
-for arm,width,total in [('baseline',0,320),('elr001',120,420)]:
+for arm,width,total in [('baseline',0,270),('elr001',120,370)]:
     cli=SimpleNamespace(fork_step=16000,experiment=arm,stop_after_save=False,save_at=None)
     ctx=dict(cli=cli,args=SimpleNamespace(warmup_iters=924,peak_elr=.06))
     exec(compile(ast.Module(body=assignments+[fun],type_ignores=[]),'<actual-schedule>','exec'),ctx)
     values=[ctx['shared_elr'](u) for u in range(16001,cli.stop_step+1)]
-    assert values==[.01]*width+[.06]*(total-width) and math.isclose(sum(values),19.2)
-    updates=[];saved=[];ctx.update(x=None,y=None,checkpoints=({16120,16420} if width else {16320}),updates=updates,save_fork_checkpoint=lambda step,x,y:saved.append(step))
+    assert values==[.01]*width+[.06]*(total-width) and math.isclose(sum(values),16.2)
+    updates=[];saved=[];ctx.update(x=None,y=None,checkpoints=({16120,16370} if width else {16270}),updates=updates,save_fork_checkpoint=lambda step,x,y:saved.append(step))
     test=ast.For(target=ast.Name(id='step',ctx=ast.Store()),iter=ast.parse(f'range(16000,{cli.stop_step+2})',mode='eval').body,body=ast.parse('save_checkpoint=step in checkpoints').body+[save]+[next(n for n in loop.body if isinstance(n,ast.If) and isinstance(n.test,ast.Compare) and ast.unparse(n.test)=='step == cli.stop_step')]+ast.parse('updates.append(step+1)').body,orelse=[])
     exec(compile(ast.fix_missing_locations(ast.Module(body=[test],type_ignores=[])),'<actual-stop>','exec'),ctx)
     assert updates==list(range(16001,cli.stop_step+1)) and saved==sorted(ctx['checkpoints'])
@@ -55,7 +55,7 @@ with tempfile.TemporaryDirectory(dir=root) as tmp:
             synthetic['jobs'].append(dict(name=name,replicate_id=seed,experiment=arm,mix_shards=[21,22]))
             (log/'mix_data_metadata.json').write_text(json.dumps(dict(replicate_id=seed,fork_step=16000,mix_shards=[21,22],context_order_sha256=str(seed),context_length=1024)))
             rows=[]
-            for i in range((320 if arm=='baseline' else 420)+1):
+            for i in range((270 if arm=='baseline' else 370)+1):
                 tau=.06*i if arm=='baseline' else .01*min(i,120)+.06*max(i-120,0)
                 rows.append(dict(replicate_id=seed,experiment=arm,fork_step=16000,mix_shards=[21,22],val_tokens=1048576,step=16000+i,branch_step=i,intrinsic_time=tau,val_loss=3-.001*tau+(seed*.001*tau if arm=='elr001' else 0)))
             (log/'probe_metrics.jsonl').write_text('\n'.join(json.dumps(r) for r in rows))
@@ -64,5 +64,5 @@ with tempfile.TemporaryDirectory(dir=root) as tmp:
     stats=aggregate(out)
     for r in stats:
         t=r['intrinsic_time'];assert math.isclose(r['mean_delta_loss'],.002*t,abs_tol=1e-14) and math.isclose(r['sd_delta_loss'],.001*t,abs_tol=1e-14) and math.isclose(r['se_delta_loss'],.001*t/math.sqrt(3),abs_tol=1e-14)
-(root/'verification.json').write_text(json.dumps(dict(status='PASS',python=sys.version,recovery_updates=300,baseline_updates=320,pulse_updates=420,total_intrinsic_time=19.2,context_order_fingerprints=digests,scope='inherited model/optimizer/ELR;140 deterministic unique context permutations;280 paired commands;actual schedules/stops;known mixed-protocol delta mean/SD/SE'),indent=2),encoding='utf-8')
+(root/'verification.json').write_text(json.dumps(dict(status='PASS',python=sys.version,recovery_updates=250,baseline_updates=270,pulse_updates=370,total_intrinsic_time=16.2,context_order_fingerprints=digests,scope='inherited model/optimizer/ELR;140 deterministic unique context permutations;280 paired commands;actual schedules/stops;known mixed-protocol delta mean/SD/SE'),indent=2),encoding='utf-8')
 print('PASS:140 context permutations,280-run plan,ELR/stops and paired statistics')

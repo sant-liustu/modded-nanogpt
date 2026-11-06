@@ -1,8 +1,8 @@
 # w768/d12：140对、280次两shard混合重复
 
 从同一个shared-stable16000完整checkpoint出发，新增140对（280次）续训：
-- baseline：ELR0.06恒定320步。
-- elr001：ELR0.01跑120步，再恢复0.06跑300步。
+- baseline：ELR0.06恒定270步。
+- elr001：ELR0.01跑120步，再恢复0.06跑250步。
 
 保留模型、Adam moments、scheduler、固定初始矩阵RMS、gamma LR0.0018及模型RNG。
 默认2卡/每卡B64/全局B128；launcher从真实checkpoint读取运行设置。
@@ -32,7 +32,7 @@ shard之后的训练shard；可显式固定两份shard，让所有组共享这�
 从本目录在云端、保持原checkpoint的PyTorch/CUDA环境执行：
 
 ```bash
-CUDA_VISIBLE_DEVICES=0,1 python run_mix2.py --resume /runs/shared/step016000 --output outputs/w768_mix140_300 --dry-run
+CUDA_VISIBLE_DEVICES=0,1 python run_mix2.py --resume /runs/shared/step016000 --output outputs/w768_mix140_250 --dry-run
 ```
 
 去掉--dry-run开始140对/280次续训，顺序复用两张GPU。无需手填训练/验证glob和microbatch，
@@ -42,7 +42,7 @@ launcher直接读取checkpoint原配置。default --pairs140 --seed-start2000。
 固定两份未训练shard（index要大于checkpoint当前shard）：
 
 ```bash
-CUDA_VISIBLE_DEVICES=0,1 python run_mix2.py --resume /runs/shared/step016000 --output outputs/w768_fixedpool140_300 --pool-shards 23 24 --dry-run
+CUDA_VISIBLE_DEVICES=0,1 python run_mix2.py --resume /runs/shared/step016000 --output outputs/w768_fixedpool140_250 --pool-shards 23 24 --dry-run
 ```
 
 默认仅保存loss、数据计划和汇总，不给280个短分支保存大批模型文件。
@@ -77,11 +77,11 @@ logs/<seed_arm>/<UUID>/mix_data_metadata.json记录池和排列指纹；probe_me
 完成后自动运行：
 
 ```bash
-python aggregate_mix_pairs.py --run-root outputs/w768_mix140_300
+python aggregate_mix_pairs.py --run-root outputs/w768_mix140_250
 ```
 
 先逐对计算pulse-minus-baseline delta，再对140个delta取均值、sampleSD、SE。
-共同tau网格0:.06:19.2，321点；baseline第i步对应pulse第6i步(i<=20)，之后第i+100步。
+共同tau网格0:.06:16.2，271点；baseline第i步对应pulse第6i步(i<=20)，之后第i+100步。
 精确整数步对齐，不插值。输出aggregate/per_pair_delta.csv、mean_delta.csv、summary.json。
 拒绝缺失/冲突/非有限点、组内不同排列、跨组重复完整轨迹、初始val不一致等数据错误。
 
@@ -100,4 +100,4 @@ Tiny CUDA：实际context/label连续性、最后窗口不跨shard、rank划分�
 逐位一致，初始val和全局RNG不变，三种历史shared16k来源及真实mmap规划。
 未读取用户真实checkpoint，未在云端Linux3.10.16或正式尺寸DDP/compile上运行。
 
-本版恢复段为300步，基线320步、脉冲420步，总tau19.2。使用新输出目录，勿与旧500步版日志混用；旧版分支checkpoint需用生成它的原代码恢复。
+本版恢复段为250步，基线270步、脉冲370步，总tau16.2。使用新输出目录，勿与旧版本日志混用；旧版分支checkpoint需用生成它的原代码恢复。

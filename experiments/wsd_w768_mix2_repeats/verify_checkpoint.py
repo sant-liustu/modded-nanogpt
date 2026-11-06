@@ -63,7 +63,7 @@ with tempfile.TemporaryDirectory(dir=root) as tmp:
     assert len(set(stream_hashes))==140
     train=loader(pattern,2,8,0,1);val=loader(str(tmp/'val*.bin'),2,8,0,1)
     train.current_position=16000*16;oldx,oldy=train.next_batch()
-    cli=SimpleNamespace(branch='fanin_fixed',fork_step=16000,stage_start=16000,experiment='baseline',suite_mode='mix2',mix_seed=2000,mix_shards=[1,2],pulse_elr=.06,pulse_updates=0,stop_step=16320,probe_val_tokens=32)
+    cli=SimpleNamespace(branch='fanin_fixed',fork_step=16000,stage_start=16000,experiment='baseline',suite_mode='mix2',mix_seed=2000,mix_shards=[1,2],pulse_elr=.06,pulse_updates=0,stop_step=16270,probe_val_tokens=32)
     ns.update(raw_model=m,optimizers=opts,schedulers=scheds,fixed_norm_state=fixed,train_loader=train,val_loader=val,device='cuda',project_fixed_rms=ns['project_fixed_rms_eager'],cli=cli,schedule_sha256='synthetic',rmsnorm_gamma_param_ids={id(p) for n,p in m.named_parameters() if ns['is_rmsnorm_gamma_name'](n)},fixed_rms_by_id={},tensor_name_by_id={id(p):n for n,p in m.named_parameters()},master_process=False)
     history=ns['capture_training_state'](16000,oldx,oldy);history['probe_experiment']='stable';history['schedule_sha256']='9e3a4b48e9c2de544e2c1c7f35775c80f910b39717eed85ac45645434961c387'
     allowed=[json.loads((root/'provenance.json').read_text())['parent_runtime_sha256'],'bf1ba81bad94b4dad48b10d441730286d10f7f1bf456f02f5db5ee8c32930e37','92b8b365e80a7d738bd292014f9adbb67bc515358175b50060ad81956faac6c1']
@@ -75,7 +75,7 @@ with tempfile.TemporaryDirectory(dir=root) as tmp:
     for seed in range(2000,2140):
         shards=random.Random(seed^0x51A2).sample([1,2,3,4],2)
         for arm,width,eta in [('baseline',0,.06),('elr001',120,.01)]:
-            cli.fork_step=16000;cli.experiment=arm;cli.mix_seed=seed;cli.mix_shards=shards;cli.pulse_updates=width;cli.pulse_elr=eta;cli.stop_step=16320 if arm=='baseline' else 16420
+            cli.fork_step=16000;cli.experiment=arm;cli.mix_seed=seed;cli.mix_shards=shards;cli.pulse_updates=width;cli.pulse_elr=eta;cli.stop_step=16270 if arm=='baseline' else 16370
             history['source_sha256']=allowed[(seed-2000)%3];_,(ns['x'],ns['y'])=ns['restore_training_state'](history)
             before=(random.getstate(),np.random.get_state(),torch.get_rng_state().clone(),torch.cuda.get_rng_state_all())
             ns['payload']=history;exec(init_code,ns)

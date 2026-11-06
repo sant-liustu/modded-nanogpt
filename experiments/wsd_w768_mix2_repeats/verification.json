@@ -1,10 +1,10 @@
 {
   "status": "PASS",
   "python": "3.12.3 (tags/v3.12.3:f6650f9, Apr  9 2024, 14:05:25) [MSC v.1938 64 bit (AMD64)]",
-  "recovery_updates": 300,
-  "baseline_updates": 320,
-  "pulse_updates": 420,
-  "total_intrinsic_time": 19.2,
+  "recovery_updates": 250,
+  "baseline_updates": 270,
+  "pulse_updates": 370,
+  "total_intrinsic_time": 16.2,
   "context_order_fingerprints": [
     "d906fa751e7070805243b1f2542707e8d52c9ab3d6b436871ae3487ad26ed24b",
     "1563521ea3d762db82828a6fac4cfbc81e8d3e43f040efeb463ab5c12f8d8faf",
