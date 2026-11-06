@@ -1,0 +1,9 @@
+{
+  "status": "PASS",
+  "real_python_versions": [
+    "3.10.11 (tags/v3.10.11:7d4cc5a, Apr  5 2023, 00:38:17) [MSC v.1929 64 bit (AMD64)]",
+    "3.12.3 (tags/v3.12.3:f6650f9, Apr  9 2024, 14:05:25) [MSC v.1938 64 bit (AMD64)]"
+  ],
+  "same140context_orders": true,
+  "scope": "both save/metrics-only stopping,140 permutations,280-job plan and paired stats;CUDA tests on3.12,not cloudLinux3.10.16"
+}
