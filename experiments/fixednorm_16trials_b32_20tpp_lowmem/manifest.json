@@ -1,0 +1,183 @@
+{
+  "source_commit": "2ee78cf",
+  "source_script": "F:\\fixednorm_sgd_polyak_publish_20261108\\experiments\\fixednorm_polyak1_nesterov7_b64_20tpp_lowmem\\train_nesterov_elr0p12_beta0p9.py",
+  "source_sha256": "75c5c0a2816feb979d7746db1d2d28b1c2739d1b99a0afad1d536166557e69d3",
+  "batch": 32,
+  "microbatch": 32,
+  "parameter_count": 123590400,
+  "train_tokens": 2471808000,
+  "tokens_per_parameter": 20,
+  "schedule": "warmup_constant",
+  "warmup_fraction": 0.05,
+  "updates": 75434,
+  "gradient_clipping": {
+    "max_norm": 50.0,
+    "norm_type": 2.0,
+    "scope": "all_trainable_parameters"
+  },
+  "loss_chunk_tokens": 1024,
+  "jobs": [
+    {
+      "id": "sgd_b32_elr0p03_beta0p0",
+      "script": "train_sgd_b32_elr0p03_beta0p0.py",
+      "optimizer": "sgd",
+      "effective_lr": 0.03,
+      "momentum": 0.0,
+      "actual_peak_lr": 0.03,
+      "momentum_definition": "none",
+      "sha256": "870760be303f56ee4c62b7cc05fd015e787d6508ba46e025ef07068d112e2dca"
+    },
+    {
+      "id": "sgd_b32_elr0p06_beta0p0",
+      "script": "train_sgd_b32_elr0p06_beta0p0.py",
+      "optimizer": "sgd",
+      "effective_lr": 0.06,
+      "momentum": 0.0,
+      "actual_peak_lr": 0.06,
+      "momentum_definition": "none",
+      "sha256": "67c08e87b7563662cab44c8fe9e0a74f174a8b5e13451dd909b6f0e67882ca36"
+    },
+    {
+      "id": "sgd_b32_elr0p12_beta0p0",
+      "script": "train_sgd_b32_elr0p12_beta0p0.py",
+      "optimizer": "sgd",
+      "effective_lr": 0.12,
+      "momentum": 0.0,
+      "actual_peak_lr": 0.12,
+      "momentum_definition": "none",
+      "sha256": "4a9128ad6a93e65dd09141e58a1c8645dddad59481ea912cf7da0b1110a7044a"
+    },
+    {
+      "id": "sgd_b32_elr0p24_beta0p0",
+      "script": "train_sgd_b32_elr0p24_beta0p0.py",
+      "optimizer": "sgd",
+      "effective_lr": 0.24,
+      "momentum": 0.0,
+      "actual_peak_lr": 0.24,
+      "momentum_definition": "none",
+      "sha256": "5e612647f9c2cbb94c650e1a69f42cd0b3d7ddd0fe58bea3713a5b9e652c467f"
+    },
+    {
+      "id": "sgd_b32_elr0p48_beta0p0",
+      "script": "train_sgd_b32_elr0p48_beta0p0.py",
+      "optimizer": "sgd",
+      "effective_lr": 0.48,
+      "momentum": 0.0,
+      "actual_peak_lr": 0.48,
+      "momentum_definition": "none",
+      "sha256": "ef7d82e6d93add187a3988037608a365bc4fca5f34b6a800a4e249eed479a264"
+    },
+    {
+      "id": "polyak_b32_elr0p06_beta0p9",
+      "script": "train_polyak_b32_elr0p06_beta0p9.py",
+      "optimizer": "polyak",
+      "effective_lr": 0.06,
+      "momentum": 0.9,
+      "actual_peak_lr": 0.005999999999999998,
+      "momentum_definition": "projected_base_parameter_difference",
+      "sha256": "bb35904e6fe4b2619c9761e2f398468540a893cd4ed229d5bec4d5f7c39b030e"
+    },
+    {
+      "id": "polyak_b32_elr0p12_beta0p9",
+      "script": "train_polyak_b32_elr0p12_beta0p9.py",
+      "optimizer": "polyak",
+      "effective_lr": 0.12,
+      "momentum": 0.9,
+      "actual_peak_lr": 0.011999999999999997,
+      "momentum_definition": "projected_base_parameter_difference",
+      "sha256": "68ac5aa316b020d1f6887877c04259a5bd694ce0eee034366a371c0e18fc5edc"
+    },
+    {
+      "id": "polyak_b32_elr0p24_beta0p9",
+      "script": "train_polyak_b32_elr0p24_beta0p9.py",
+      "optimizer": "polyak",
+      "effective_lr": 0.24,
+      "momentum": 0.9,
+      "actual_peak_lr": 0.023999999999999994,
+      "momentum_definition": "projected_base_parameter_difference",
+      "sha256": "64d0ae54480774a51680a0e3ba0436003aadbeec181054b5b00ae720ada3fc22"
+    },
+    {
+      "id": "polyak_b32_elr0p48_beta0p9",
+      "script": "train_polyak_b32_elr0p48_beta0p9.py",
+      "optimizer": "polyak",
+      "effective_lr": 0.48,
+      "momentum": 0.9,
+      "actual_peak_lr": 0.04799999999999999,
+      "momentum_definition": "projected_base_parameter_difference",
+      "sha256": "7171435718d3558c4c31008fc042bf19f45654fe285fc29c81837606f8aecbf5"
+    },
+    {
+      "id": "nesterov_b32_elr0p12_beta0p9",
+      "script": "train_nesterov_b32_elr0p12_beta0p9.py",
+      "optimizer": "nesterov",
+      "effective_lr": 0.12,
+      "momentum": 0.9,
+      "actual_peak_lr": 0.011999999999999997,
+      "momentum_definition": "projected_base_parameter_difference",
+      "sha256": "4d18fb88f89f62c05f9b224381268cb0d964c2fd5d8cc610a5be56cc91fc7423"
+    },
+    {
+      "id": "nesterov_b32_elr0p24_beta0p9",
+      "script": "train_nesterov_b32_elr0p24_beta0p9.py",
+      "optimizer": "nesterov",
+      "effective_lr": 0.24,
+      "momentum": 0.9,
+      "actual_peak_lr": 0.023999999999999994,
+      "momentum_definition": "projected_base_parameter_difference",
+      "sha256": "a091dea583a43b4ab2bca6c4615e7af400c215e0d217b01f831299a2a34f91b4"
+    },
+    {
+      "id": "nesterov_b32_elr0p48_beta0p9",
+      "script": "train_nesterov_b32_elr0p48_beta0p9.py",
+      "optimizer": "nesterov",
+      "effective_lr": 0.48,
+      "momentum": 0.9,
+      "actual_peak_lr": 0.04799999999999999,
+      "momentum_definition": "projected_base_parameter_difference",
+      "sha256": "d9c93ba77ab8e40e71ca34228afd51aa79a075f2ccbf036210c200e702961405"
+    },
+    {
+      "id": "nesterov_b32_elr0p96_beta0p9",
+      "script": "train_nesterov_b32_elr0p96_beta0p9.py",
+      "optimizer": "nesterov",
+      "effective_lr": 0.96,
+      "momentum": 0.9,
+      "actual_peak_lr": 0.09599999999999997,
+      "momentum_definition": "projected_base_parameter_difference",
+      "sha256": "edca0e67b5b09032a7e5e1ed1314b076c0032c817dd82195af898742f49e94db"
+    },
+    {
+      "id": "nesterov_b32_elr1p92_beta0p9",
+      "script": "train_nesterov_b32_elr1p92_beta0p9.py",
+      "optimizer": "nesterov",
+      "effective_lr": 1.92,
+      "momentum": 0.9,
+      "actual_peak_lr": 0.19199999999999995,
+      "momentum_definition": "projected_base_parameter_difference",
+      "sha256": "02c080db0b982b968ee893ce1448a21530d42c844825281efdd22410195e3c0f"
+    },
+    {
+      "id": "nesterov_b32_elr0p96_beta0p98",
+      "script": "train_nesterov_b32_elr0p96_beta0p98.py",
+      "optimizer": "nesterov",
+      "effective_lr": 0.96,
+      "momentum": 0.98,
+      "actual_peak_lr": 0.019200000000000016,
+      "momentum_definition": "projected_base_parameter_difference",
+      "sha256": "ec261fc17e787f5d7e2745e8149df0388194c206309682023f8f23be8f7db689"
+    },
+    {
+      "id": "nesterov_b32_elr1p92_beta0p98",
+      "script": "train_nesterov_b32_elr1p92_beta0p98.py",
+      "optimizer": "nesterov",
+      "effective_lr": 1.92,
+      "momentum": 0.98,
+      "actual_peak_lr": 0.03840000000000003,
+      "momentum_definition": "projected_base_parameter_difference",
+      "sha256": "12cbfd556bce4beee0a5e2e87a67887fd97dfce858d3e6e4e1c1e6b63501e64b"
+    }
+  ],
+  "warmup_updates": 3772,
+  "last_update_tokens": 19456
+}
