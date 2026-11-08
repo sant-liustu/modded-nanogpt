@@ -1,0 +1,19 @@
+{
+  "train_polyak_elr0p48_beta0p9.py": "c2b076ff2daf08a3dbb5f477c81ad4a0761ed719c7bf4621cb5df17fb7f9e5ed",
+  "train_nesterov_elr0p12_beta0p9.py": "5a1576b730f56cf11130316dafd36e88769e1b740309ffed69330b049e139fa0",
+  "train_nesterov_elr0p24_beta0p9.py": "740e60918003d732ecc6ada011eacc775b7183d1eec9bad49dee287f00461f29",
+  "train_nesterov_elr0p48_beta0p9.py": "111d5340d10719185021ed6768b0ec700e43b4ce629d7b54fd0f0402ab364e1e",
+  "train_nesterov_elr0p96_beta0p9.py": "40b0ca442229e8d15965c691417fd766943f32463208b2c229ebfc6c7359a842",
+  "train_nesterov_elr1p92_beta0p9.py": "b9c0dfebe6e50e3c6723d30f2abc03abe02315a9200699c87d64ddcb960a7433",
+  "train_nesterov_elr0p96_beta0p98.py": "56eac54fc7942892bfa597d18804a50f8572cfed0959e856daff74b19952f68e",
+  "train_nesterov_elr1p92_beta0p98.py": "e660849710ad619c774256c1cea0ef8c1830752279acad4ce5927700d2c425a6",
+  "manifest.json": "28d19c15f7962f3088c358406e991cd180cf6089af8d7ce54060b6190f038ff5",
+  "launch_8.py": "31325ba41a97abbb6112e207ec9d6b2b60dfc85b8126aa3b8b4bdcbfc1be8ab9",
+  ".gitattributes": "1b28c4cb59d09e0ca8e8c8d57fe0d507cad3afcca2712ab6d125b04269153e4c",
+  "README.md": "ce0d2a83de068221f5f360980dd52b8bd72ffebf14f18836a63f29b1f7ee7fdf",
+  "verify_8.py": "f17df7b6e10c49175bf1ce834f3df08667469b92502ee9c2e5a0a627e2ad8cdf",
+  "verification.json": "f1b5b9f13388e9dbc884bbab9e406e96d7f49e5d3ce5dd8272b38358e6146560",
+  "checks.diff": "942eeca1b3e0b60b63400b852dceabecd7f8be132b138096a09e052319a0aed4",
+  "tests/train_polyak.py": "df135deac6ad3d17cf4ef58d1e4d5f190f399c82bd92dae42680f16bc678ea1f",
+  "tests/train_nesterov.py": "d3068bbee2528bee9503a29b5ba06d0d58fccbdbdc6c4e11b459132f6b2dd605"
+}
