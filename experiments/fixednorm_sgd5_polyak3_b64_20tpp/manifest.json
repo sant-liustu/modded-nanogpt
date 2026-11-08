@@ -1,0 +1,98 @@
+{
+  "source_directory": "F:\\fixednorm_three_optimizers_20tpp_20261108",
+  "source_hashes": {
+    "sgd": "593d0ddf23366944f859d88ea788e4933628cebab8a262a7853e2b0f709567fb",
+    "polyak": "c34b03e9d3cf2e07d47306b1923276acba460a723d41f2ac9eeaac5f085d3413"
+  },
+  "batch": 64,
+  "microbatch": 64,
+  "tokens_per_parameter": 20,
+  "warmup_fraction": 0.05,
+  "schedule": "warmup_constant",
+  "parameter_count": 123590400,
+  "train_tokens": 2471808000,
+  "updates": 37717,
+  "warmup_updates": 1886,
+  "jobs": [
+    {
+      "id": "sgd_elr0p03",
+      "script": "train_sgd_elr0p03.py",
+      "optimizer": "sgd",
+      "effective_lr": 0.03,
+      "momentum": 0.0,
+      "actual_peak_lr": 0.03,
+      "default_gpu": 0,
+      "sha256": "6b15e516f7b968b8a2c76ee13255b5bc28d4c049414f70bffeb51d6df24a199e"
+    },
+    {
+      "id": "sgd_elr0p06",
+      "script": "train_sgd_elr0p06.py",
+      "optimizer": "sgd",
+      "effective_lr": 0.06,
+      "momentum": 0.0,
+      "actual_peak_lr": 0.06,
+      "default_gpu": 1,
+      "sha256": "8a6c9f7532441d539cb01d7c90a82666b4598f0be4acff85a0950dd26a88e61e"
+    },
+    {
+      "id": "sgd_elr0p12",
+      "script": "train_sgd_elr0p12.py",
+      "optimizer": "sgd",
+      "effective_lr": 0.12,
+      "momentum": 0.0,
+      "actual_peak_lr": 0.12,
+      "default_gpu": 2,
+      "sha256": "20131450d71a80f2e1359a2371e60f50daf81d21230edc1b1e6d5dd4f6aec3a9"
+    },
+    {
+      "id": "sgd_elr0p24",
+      "script": "train_sgd_elr0p24.py",
+      "optimizer": "sgd",
+      "effective_lr": 0.24,
+      "momentum": 0.0,
+      "actual_peak_lr": 0.24,
+      "default_gpu": 3,
+      "sha256": "b1b870bbc64092f47ab8ef11e91d256131a268e9cf00b0f7c961f27f97957fa3"
+    },
+    {
+      "id": "sgd_elr0p48",
+      "script": "train_sgd_elr0p48.py",
+      "optimizer": "sgd",
+      "effective_lr": 0.48,
+      "momentum": 0.0,
+      "actual_peak_lr": 0.48,
+      "default_gpu": 4,
+      "sha256": "4af8985281007784ee7dcab54291a2309d4d793f6d1730568fddf27f81a3a826"
+    },
+    {
+      "id": "polyak_elr0p06",
+      "script": "train_polyak_elr0p06.py",
+      "optimizer": "polyak",
+      "effective_lr": 0.06,
+      "momentum": 0.9,
+      "actual_peak_lr": 0.005999999999999998,
+      "default_gpu": 5,
+      "sha256": "4401fd6bd237168a2fed6896e9a1b36f78e7fc5a45450590f5c7833b17287066"
+    },
+    {
+      "id": "polyak_elr0p12",
+      "script": "train_polyak_elr0p12.py",
+      "optimizer": "polyak",
+      "effective_lr": 0.12,
+      "momentum": 0.9,
+      "actual_peak_lr": 0.011999999999999997,
+      "default_gpu": 6,
+      "sha256": "9a692c8b8b15398562bebde79cde85b2183c5b70a58cea0f6addcf1ba579b9ec"
+    },
+    {
+      "id": "polyak_elr0p24",
+      "script": "train_polyak_elr0p24.py",
+      "optimizer": "polyak",
+      "effective_lr": 0.24,
+      "momentum": 0.9,
+      "actual_peak_lr": 0.023999999999999994,
+      "default_gpu": 7,
+      "sha256": "95e32257592cf799f9c46a52fca81503359e19ddf81c6edfc7cd94d3f5ebe90c"
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "train_sgd_elr0p03.py": "6b15e516f7b968b8a2c76ee13255b5bc28d4c049414f70bffeb51d6df24a199e",
+  "train_sgd_elr0p06.py": "8a6c9f7532441d539cb01d7c90a82666b4598f0be4acff85a0950dd26a88e61e",
+  "train_sgd_elr0p12.py": "20131450d71a80f2e1359a2371e60f50daf81d21230edc1b1e6d5dd4f6aec3a9",
+  "train_sgd_elr0p24.py": "b1b870bbc64092f47ab8ef11e91d256131a268e9cf00b0f7c961f27f97957fa3",
+  "train_sgd_elr0p48.py": "4af8985281007784ee7dcab54291a2309d4d793f6d1730568fddf27f81a3a826",
+  "train_polyak_elr0p06.py": "4401fd6bd237168a2fed6896e9a1b36f78e7fc5a45450590f5c7833b17287066",
+  "train_polyak_elr0p12.py": "9a692c8b8b15398562bebde79cde85b2183c5b70a58cea0f6addcf1ba579b9ec",
+  "train_polyak_elr0p24.py": "95e32257592cf799f9c46a52fca81503359e19ddf81c6edfc7cd94d3f5ebe90c",
+  "manifest.json": "0583b74458e85590c3a9c3ac2ced56b89737102734a72b796c83d09a62ebd66b",
+  "launch_8.py": "31325ba41a97abbb6112e207ec9d6b2b60dfc85b8126aa3b8b4bdcbfc1be8ab9",
+  "README.md": "d6245c481ae56511130045a919396f050c8a5091bcb8397bf23caa0bebce7ff1",
+  "verify_8.py": "4b59352fa43d60bad5860552fa21dc688b92ec72bd9ebef7350ffa060507ef87",
+  "verification.json": "ff8bd6008c296a9728c25cb968bf7714d27198f64308605638f7f46ddeea5a82",
+  "checks.diff": "e370609e90f4e899ae081be902912be78f7ad3c93decc5ba04e127ba6ec5c4f0",
+  "tests\\train_sgd.py": "7fe422d3463cde9a26fe8de29fbebe9472cc15818fe541a1a0a4e3a833a9d61a",
+  "tests\\train_polyak.py": "445b777340897005efa9a6728c9153d2ca795e5d55c4f8f53259305f55bfba22",
+  ".gitattributes": "1b28c4cb59d09e0ca8e8c8d57fe0d507cad3afcca2712ab6d125b04269153e4c"
+}

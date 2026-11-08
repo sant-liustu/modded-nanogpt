@@ -1,0 +1,81 @@
+{
+  "python": "3.12.3 (tags/v3.12.3:f6650f9, Apr  9 2024, 14:05:25) [MSC v.1938 64 bit (AMD64)]",
+  "torch": "2.5.1+cu124",
+  "jobs": [
+    {
+      "id": "sgd_elr0p03",
+      "device": "cuda",
+      "peak_actual_lr": 0.03,
+      "tiny_three_steps_finite": true,
+      "optimizer_restore_next_step_bitwise": true,
+      "norm_max_relative_error": 1.189600984385919e-07,
+      "only_parser_changed_from_template": true
+    },
+    {
+      "id": "sgd_elr0p06",
+      "device": "cuda",
+      "peak_actual_lr": 0.06,
+      "tiny_three_steps_finite": true,
+      "optimizer_restore_next_step_bitwise": true,
+      "norm_max_relative_error": 1.1620392903477494e-07,
+      "only_parser_changed_from_template": true
+    },
+    {
+      "id": "sgd_elr0p12",
+      "device": "cuda",
+      "peak_actual_lr": 0.12,
+      "tiny_three_steps_finite": true,
+      "optimizer_restore_next_step_bitwise": true,
+      "norm_max_relative_error": 1.229833270777192e-07,
+      "only_parser_changed_from_template": true
+    },
+    {
+      "id": "sgd_elr0p24",
+      "device": "cuda",
+      "peak_actual_lr": 0.24,
+      "tiny_three_steps_finite": true,
+      "optimizer_restore_next_step_bitwise": true,
+      "norm_max_relative_error": 1.1684590828231478e-07,
+      "only_parser_changed_from_template": true
+    },
+    {
+      "id": "sgd_elr0p48",
+      "device": "cuda",
+      "peak_actual_lr": 0.48,
+      "tiny_three_steps_finite": true,
+      "optimizer_restore_next_step_bitwise": true,
+      "norm_max_relative_error": 1.1684590828231478e-07,
+      "only_parser_changed_from_template": true
+    },
+    {
+      "id": "polyak_elr0p06",
+      "device": "cuda",
+      "peak_actual_lr": 0.005999999999999998,
+      "tiny_three_steps_finite": true,
+      "optimizer_restore_next_step_bitwise": true,
+      "norm_max_relative_error": 1.1528302445995564e-07,
+      "only_parser_changed_from_template": true
+    },
+    {
+      "id": "polyak_elr0p12",
+      "device": "cuda",
+      "peak_actual_lr": 0.011999999999999997,
+      "tiny_three_steps_finite": true,
+      "optimizer_restore_next_step_bitwise": true,
+      "norm_max_relative_error": 1.1528302445995564e-07,
+      "only_parser_changed_from_template": true
+    },
+    {
+      "id": "polyak_elr0p24",
+      "device": "cuda",
+      "peak_actual_lr": 0.023999999999999994,
+      "tiny_three_steps_finite": true,
+      "optimizer_restore_next_step_bitwise": true,
+      "norm_max_relative_error": 6.14916635388596e-08,
+      "only_parser_changed_from_template": true
+    }
+  ],
+  "eight_gpu_launcher_dry_run": true,
+  "default768_batch64_training_or_memory_tested": false,
+  "cloud_linux_python310_training_tested": false
+}

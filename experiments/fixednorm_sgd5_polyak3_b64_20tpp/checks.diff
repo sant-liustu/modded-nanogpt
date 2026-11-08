@@ -1,0 +1,152 @@
+--- template/sgd.py
++++ train_sgd_elr0p03.py
+@@ -576,13 +576,13 @@
+     p=argparse.ArgumentParser()
+     p.add_argument('--train',default='F:/datasets/fineweb10B-gpt2/raw/fineweb_train_*.bin')
+     p.add_argument('--val',default='F:/datasets/fineweb10B-gpt2/raw/fineweb_val_*.bin')
+-    p.add_argument('--output',required=True)
++    p.add_argument('--output',default='runs/sgd_elr0p03')
+     p.add_argument('--arm',choices=['fixed'],default='fixed')
+     for flag,default in [('vocab-size',50304),('batch',64),('context',1024),('width',768),('layers',12),('heads',6),('seed',0),('validation-contexts',256),('validation-batch-size',32),('eval-every',500),('checkpoint-every',1000),('dense-window',0),('dense-every',20)]:
+         p.add_argument('--'+flag,type=int,default=default)
+     p.add_argument('--microbatch',type=int,default=64)
+-    p.add_argument('--effective-lr',type=float,default=.015,help='eta/(1-beta); distinct from RMSNorm gamma')
+-    p.add_argument('--momentum',type=float,default=0.0)
++    p.add_argument('--effective-lr',type=float,choices=[0.03],default=0.03,help='Fixed eta/(1-beta) for this trial; distinct from RMSNorm gamma')
++    p.add_argument('--momentum',type=float,choices=[0.0],default=0.0)
+     p.add_argument('--warmup-fraction',type=float,default=.05)
+     p.add_argument('--device',choices=['cpu','cuda'],default='cuda')
+     p.add_argument('--preflight',action='store_true')
+--- template/sgd.py
++++ train_sgd_elr0p06.py
+@@ -576,13 +576,13 @@
+     p=argparse.ArgumentParser()
+     p.add_argument('--train',default='F:/datasets/fineweb10B-gpt2/raw/fineweb_train_*.bin')
+     p.add_argument('--val',default='F:/datasets/fineweb10B-gpt2/raw/fineweb_val_*.bin')
+-    p.add_argument('--output',required=True)
++    p.add_argument('--output',default='runs/sgd_elr0p06')
+     p.add_argument('--arm',choices=['fixed'],default='fixed')
+     for flag,default in [('vocab-size',50304),('batch',64),('context',1024),('width',768),('layers',12),('heads',6),('seed',0),('validation-contexts',256),('validation-batch-size',32),('eval-every',500),('checkpoint-every',1000),('dense-window',0),('dense-every',20)]:
+         p.add_argument('--'+flag,type=int,default=default)
+     p.add_argument('--microbatch',type=int,default=64)
+-    p.add_argument('--effective-lr',type=float,default=.015,help='eta/(1-beta); distinct from RMSNorm gamma')
+-    p.add_argument('--momentum',type=float,default=0.0)
++    p.add_argument('--effective-lr',type=float,choices=[0.06],default=0.06,help='Fixed eta/(1-beta) for this trial; distinct from RMSNorm gamma')
++    p.add_argument('--momentum',type=float,choices=[0.0],default=0.0)
+     p.add_argument('--warmup-fraction',type=float,default=.05)
+     p.add_argument('--device',choices=['cpu','cuda'],default='cuda')
+     p.add_argument('--preflight',action='store_true')
+--- template/sgd.py
++++ train_sgd_elr0p12.py
+@@ -576,13 +576,13 @@
+     p=argparse.ArgumentParser()
+     p.add_argument('--train',default='F:/datasets/fineweb10B-gpt2/raw/fineweb_train_*.bin')
+     p.add_argument('--val',default='F:/datasets/fineweb10B-gpt2/raw/fineweb_val_*.bin')
+-    p.add_argument('--output',required=True)
++    p.add_argument('--output',default='runs/sgd_elr0p12')
+     p.add_argument('--arm',choices=['fixed'],default='fixed')
+     for flag,default in [('vocab-size',50304),('batch',64),('context',1024),('width',768),('layers',12),('heads',6),('seed',0),('validation-contexts',256),('validation-batch-size',32),('eval-every',500),('checkpoint-every',1000),('dense-window',0),('dense-every',20)]:
+         p.add_argument('--'+flag,type=int,default=default)
+     p.add_argument('--microbatch',type=int,default=64)
+-    p.add_argument('--effective-lr',type=float,default=.015,help='eta/(1-beta); distinct from RMSNorm gamma')
+-    p.add_argument('--momentum',type=float,default=0.0)
++    p.add_argument('--effective-lr',type=float,choices=[0.12],default=0.12,help='Fixed eta/(1-beta) for this trial; distinct from RMSNorm gamma')
++    p.add_argument('--momentum',type=float,choices=[0.0],default=0.0)
+     p.add_argument('--warmup-fraction',type=float,default=.05)
+     p.add_argument('--device',choices=['cpu','cuda'],default='cuda')
+     p.add_argument('--preflight',action='store_true')
+--- template/sgd.py
++++ train_sgd_elr0p24.py
+@@ -576,13 +576,13 @@
+     p=argparse.ArgumentParser()
+     p.add_argument('--train',default='F:/datasets/fineweb10B-gpt2/raw/fineweb_train_*.bin')
+     p.add_argument('--val',default='F:/datasets/fineweb10B-gpt2/raw/fineweb_val_*.bin')
+-    p.add_argument('--output',required=True)
++    p.add_argument('--output',default='runs/sgd_elr0p24')
+     p.add_argument('--arm',choices=['fixed'],default='fixed')
+     for flag,default in [('vocab-size',50304),('batch',64),('context',1024),('width',768),('layers',12),('heads',6),('seed',0),('validation-contexts',256),('validation-batch-size',32),('eval-every',500),('checkpoint-every',1000),('dense-window',0),('dense-every',20)]:
+         p.add_argument('--'+flag,type=int,default=default)
+     p.add_argument('--microbatch',type=int,default=64)
+-    p.add_argument('--effective-lr',type=float,default=.015,help='eta/(1-beta); distinct from RMSNorm gamma')
+-    p.add_argument('--momentum',type=float,default=0.0)
++    p.add_argument('--effective-lr',type=float,choices=[0.24],default=0.24,help='Fixed eta/(1-beta) for this trial; distinct from RMSNorm gamma')
++    p.add_argument('--momentum',type=float,choices=[0.0],default=0.0)
+     p.add_argument('--warmup-fraction',type=float,default=.05)
+     p.add_argument('--device',choices=['cpu','cuda'],default='cuda')
+     p.add_argument('--preflight',action='store_true')
+--- template/sgd.py
++++ train_sgd_elr0p48.py
+@@ -576,13 +576,13 @@
+     p=argparse.ArgumentParser()
+     p.add_argument('--train',default='F:/datasets/fineweb10B-gpt2/raw/fineweb_train_*.bin')
+     p.add_argument('--val',default='F:/datasets/fineweb10B-gpt2/raw/fineweb_val_*.bin')
+-    p.add_argument('--output',required=True)
++    p.add_argument('--output',default='runs/sgd_elr0p48')
+     p.add_argument('--arm',choices=['fixed'],default='fixed')
+     for flag,default in [('vocab-size',50304),('batch',64),('context',1024),('width',768),('layers',12),('heads',6),('seed',0),('validation-contexts',256),('validation-batch-size',32),('eval-every',500),('checkpoint-every',1000),('dense-window',0),('dense-every',20)]:
+         p.add_argument('--'+flag,type=int,default=default)
+     p.add_argument('--microbatch',type=int,default=64)
+-    p.add_argument('--effective-lr',type=float,default=.015,help='eta/(1-beta); distinct from RMSNorm gamma')
+-    p.add_argument('--momentum',type=float,default=0.0)
++    p.add_argument('--effective-lr',type=float,choices=[0.48],default=0.48,help='Fixed eta/(1-beta) for this trial; distinct from RMSNorm gamma')
++    p.add_argument('--momentum',type=float,choices=[0.0],default=0.0)
+     p.add_argument('--warmup-fraction',type=float,default=.05)
+     p.add_argument('--device',choices=['cpu','cuda'],default='cuda')
+     p.add_argument('--preflight',action='store_true')
+--- template/polyak.py
++++ train_polyak_elr0p06.py
+@@ -576,13 +576,13 @@
+     p=argparse.ArgumentParser()
+     p.add_argument('--train',default='F:/datasets/fineweb10B-gpt2/raw/fineweb_train_*.bin')
+     p.add_argument('--val',default='F:/datasets/fineweb10B-gpt2/raw/fineweb_val_*.bin')
+-    p.add_argument('--output',required=True)
++    p.add_argument('--output',default='runs/polyak_elr0p06')
+     p.add_argument('--arm',choices=['fixed'],default='fixed')
+     for flag,default in [('vocab-size',50304),('batch',64),('context',1024),('width',768),('layers',12),('heads',6),('seed',0),('validation-contexts',256),('validation-batch-size',32),('eval-every',500),('checkpoint-every',1000),('dense-window',0),('dense-every',20)]:
+         p.add_argument('--'+flag,type=int,default=default)
+     p.add_argument('--microbatch',type=int,default=64)
+-    p.add_argument('--effective-lr',type=float,default=.015,help='eta/(1-beta); distinct from RMSNorm gamma')
+-    p.add_argument('--momentum',type=float,default=0.9)
++    p.add_argument('--effective-lr',type=float,choices=[0.06],default=0.06,help='Fixed eta/(1-beta) for this trial; distinct from RMSNorm gamma')
++    p.add_argument('--momentum',type=float,choices=[0.9],default=0.9)
+     p.add_argument('--warmup-fraction',type=float,default=.05)
+     p.add_argument('--device',choices=['cpu','cuda'],default='cuda')
+     p.add_argument('--preflight',action='store_true')
+--- template/polyak.py
++++ train_polyak_elr0p12.py
+@@ -576,13 +576,13 @@
+     p=argparse.ArgumentParser()
+     p.add_argument('--train',default='F:/datasets/fineweb10B-gpt2/raw/fineweb_train_*.bin')
+     p.add_argument('--val',default='F:/datasets/fineweb10B-gpt2/raw/fineweb_val_*.bin')
+-    p.add_argument('--output',required=True)
++    p.add_argument('--output',default='runs/polyak_elr0p12')
+     p.add_argument('--arm',choices=['fixed'],default='fixed')
+     for flag,default in [('vocab-size',50304),('batch',64),('context',1024),('width',768),('layers',12),('heads',6),('seed',0),('validation-contexts',256),('validation-batch-size',32),('eval-every',500),('checkpoint-every',1000),('dense-window',0),('dense-every',20)]:
+         p.add_argument('--'+flag,type=int,default=default)
+     p.add_argument('--microbatch',type=int,default=64)
+-    p.add_argument('--effective-lr',type=float,default=.015,help='eta/(1-beta); distinct from RMSNorm gamma')
+-    p.add_argument('--momentum',type=float,default=0.9)
++    p.add_argument('--effective-lr',type=float,choices=[0.12],default=0.12,help='Fixed eta/(1-beta) for this trial; distinct from RMSNorm gamma')
++    p.add_argument('--momentum',type=float,choices=[0.9],default=0.9)
+     p.add_argument('--warmup-fraction',type=float,default=.05)
+     p.add_argument('--device',choices=['cpu','cuda'],default='cuda')
+     p.add_argument('--preflight',action='store_true')
+--- template/polyak.py
++++ train_polyak_elr0p24.py
+@@ -576,13 +576,13 @@
+     p=argparse.ArgumentParser()
+     p.add_argument('--train',default='F:/datasets/fineweb10B-gpt2/raw/fineweb_train_*.bin')
+     p.add_argument('--val',default='F:/datasets/fineweb10B-gpt2/raw/fineweb_val_*.bin')
+-    p.add_argument('--output',required=True)
++    p.add_argument('--output',default='runs/polyak_elr0p24')
+     p.add_argument('--arm',choices=['fixed'],default='fixed')
+     for flag,default in [('vocab-size',50304),('batch',64),('context',1024),('width',768),('layers',12),('heads',6),('seed',0),('validation-contexts',256),('validation-batch-size',32),('eval-every',500),('checkpoint-every',1000),('dense-window',0),('dense-every',20)]:
+         p.add_argument('--'+flag,type=int,default=default)
+     p.add_argument('--microbatch',type=int,default=64)
+-    p.add_argument('--effective-lr',type=float,default=.015,help='eta/(1-beta); distinct from RMSNorm gamma')
+-    p.add_argument('--momentum',type=float,default=0.9)
++    p.add_argument('--effective-lr',type=float,choices=[0.24],default=0.24,help='Fixed eta/(1-beta) for this trial; distinct from RMSNorm gamma')
++    p.add_argument('--momentum',type=float,choices=[0.9],default=0.9)
+     p.add_argument('--warmup-fraction',type=float,default=.05)
+     p.add_argument('--device',choices=['cpu','cuda'],default='cuda')
+     p.add_argument('--preflight',action='store_true')
