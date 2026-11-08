@@ -1,0 +1,58 @@
+--- b32_template/train_sgd_b32_elr0p24_beta0p0.py
++++ train_sgd_b32_elr0p06_beta0p0.py
+@@ -617 +617 @@
+-    p.add_argument('--output',default='runs_b32/sgd_b32_elr0p24_beta0p0')
++    p.add_argument('--output',default='runs_sgd_polyak8_b32/sgd_b32_elr0p06_beta0p0')
+@@ -623 +623 @@
+-    p.add_argument('--effective-lr',type=float,choices=[0.24],default=0.24,help='Fixed eta/(1-beta) for this trial; distinct from RMSNorm gamma')
++    p.add_argument('--effective-lr',type=float,choices=[0.06],default=0.06,help='Fixed eta/(1-beta) for this trial; distinct from RMSNorm gamma')
+--- b32_template/train_sgd_b32_elr0p24_beta0p0.py
++++ train_sgd_b32_elr0p12_beta0p0.py
+@@ -617 +617 @@
+-    p.add_argument('--output',default='runs_b32/sgd_b32_elr0p24_beta0p0')
++    p.add_argument('--output',default='runs_sgd_polyak8_b32/sgd_b32_elr0p12_beta0p0')
+@@ -623 +623 @@
+-    p.add_argument('--effective-lr',type=float,choices=[0.24],default=0.24,help='Fixed eta/(1-beta) for this trial; distinct from RMSNorm gamma')
++    p.add_argument('--effective-lr',type=float,choices=[0.12],default=0.12,help='Fixed eta/(1-beta) for this trial; distinct from RMSNorm gamma')
+--- b32_template/train_sgd_b32_elr0p24_beta0p0.py
++++ train_sgd_b32_elr0p24_beta0p0.py
+@@ -617 +617 @@
+-    p.add_argument('--output',default='runs_b32/sgd_b32_elr0p24_beta0p0')
++    p.add_argument('--output',default='runs_sgd_polyak8_b32/sgd_b32_elr0p24_beta0p0')
+--- b32_template/train_sgd_b32_elr0p24_beta0p0.py
++++ train_sgd_b32_elr0p48_beta0p0.py
+@@ -617 +617 @@
+-    p.add_argument('--output',default='runs_b32/sgd_b32_elr0p24_beta0p0')
++    p.add_argument('--output',default='runs_sgd_polyak8_b32/sgd_b32_elr0p48_beta0p0')
+@@ -623 +623 @@
+-    p.add_argument('--effective-lr',type=float,choices=[0.24],default=0.24,help='Fixed eta/(1-beta) for this trial; distinct from RMSNorm gamma')
++    p.add_argument('--effective-lr',type=float,choices=[0.48],default=0.48,help='Fixed eta/(1-beta) for this trial; distinct from RMSNorm gamma')
+--- b32_template/train_polyak_b32_elr0p24_beta0p9.py
++++ train_polyak_b32_elr0p24_beta0p9.py
+@@ -617 +617 @@
+-    p.add_argument('--output',default='runs_b32/polyak_b32_elr0p24_beta0p9')
++    p.add_argument('--output',default='runs_sgd_polyak8_b32/polyak_b32_elr0p24_beta0p9')
+--- b32_template/train_polyak_b32_elr0p24_beta0p9.py
++++ train_polyak_b32_elr0p48_beta0p9.py
+@@ -617 +617 @@
+-    p.add_argument('--output',default='runs_b32/polyak_b32_elr0p24_beta0p9')
++    p.add_argument('--output',default='runs_sgd_polyak8_b32/polyak_b32_elr0p48_beta0p9')
+@@ -623 +623 @@
+-    p.add_argument('--effective-lr',type=float,choices=[0.24],default=0.24,help='Fixed eta/(1-beta) for this trial; distinct from RMSNorm gamma')
++    p.add_argument('--effective-lr',type=float,choices=[0.48],default=0.48,help='Fixed eta/(1-beta) for this trial; distinct from RMSNorm gamma')
+--- b32_template/train_polyak_b32_elr0p24_beta0p9.py
++++ train_polyak_b32_elr0p96_beta0p9.py
+@@ -617 +617 @@
+-    p.add_argument('--output',default='runs_b32/polyak_b32_elr0p24_beta0p9')
++    p.add_argument('--output',default='runs_sgd_polyak8_b32/polyak_b32_elr0p96_beta0p9')
+@@ -623 +623 @@
+-    p.add_argument('--effective-lr',type=float,choices=[0.24],default=0.24,help='Fixed eta/(1-beta) for this trial; distinct from RMSNorm gamma')
++    p.add_argument('--effective-lr',type=float,choices=[0.96],default=0.96,help='Fixed eta/(1-beta) for this trial; distinct from RMSNorm gamma')
+--- b32_template/train_polyak_b32_elr0p24_beta0p9.py
++++ train_polyak_b32_elr1p92_beta0p9.py
+@@ -617 +617 @@
+-    p.add_argument('--output',default='runs_b32/polyak_b32_elr0p24_beta0p9')
++    p.add_argument('--output',default='runs_sgd_polyak8_b32/polyak_b32_elr1p92_beta0p9')
+@@ -623 +623 @@
+-    p.add_argument('--effective-lr',type=float,choices=[0.24],default=0.24,help='Fixed eta/(1-beta) for this trial; distinct from RMSNorm gamma')
++    p.add_argument('--effective-lr',type=float,choices=[1.92],default=1.92,help='Fixed eta/(1-beta) for this trial; distinct from RMSNorm gamma')

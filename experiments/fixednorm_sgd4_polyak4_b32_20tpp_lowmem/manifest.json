@@ -1,0 +1,102 @@
+{
+  "source_commit": "da3b87c",
+  "batch": 32,
+  "microbatch": 32,
+  "parameter_count": 123590400,
+  "train_tokens": 2471808000,
+  "tokens_per_parameter": 20,
+  "schedule": "warmup_constant",
+  "warmup_fraction": 0.05,
+  "updates": 75434,
+  "gradient_clipping": {
+    "max_norm": 50.0,
+    "norm_type": 2.0,
+    "scope": "all_trainable_parameters"
+  },
+  "loss_chunk_tokens": 1024,
+  "jobs": [
+    {
+      "id": "sgd_b32_elr0p06_beta0p0",
+      "script": "train_sgd_b32_elr0p06_beta0p0.py",
+      "optimizer": "sgd",
+      "effective_lr": 0.06,
+      "momentum": 0.0,
+      "actual_peak_lr": 0.06,
+      "momentum_definition": "none",
+      "sha256": "75142c8910bad9b07b6f8d0d94d5fa5cfc02d4b3b2e64dc78185f0e7a7607083"
+    },
+    {
+      "id": "sgd_b32_elr0p12_beta0p0",
+      "script": "train_sgd_b32_elr0p12_beta0p0.py",
+      "optimizer": "sgd",
+      "effective_lr": 0.12,
+      "momentum": 0.0,
+      "actual_peak_lr": 0.12,
+      "momentum_definition": "none",
+      "sha256": "236806c2018f0b02463e126050c37d7b658f5558e2cf9e983d43abd402503600"
+    },
+    {
+      "id": "sgd_b32_elr0p24_beta0p0",
+      "script": "train_sgd_b32_elr0p24_beta0p0.py",
+      "optimizer": "sgd",
+      "effective_lr": 0.24,
+      "momentum": 0.0,
+      "actual_peak_lr": 0.24,
+      "momentum_definition": "none",
+      "sha256": "afbb2148bf349fcf741fc409e53b99b6ad98593a79620978cff6c8d2cc1cb62b"
+    },
+    {
+      "id": "sgd_b32_elr0p48_beta0p0",
+      "script": "train_sgd_b32_elr0p48_beta0p0.py",
+      "optimizer": "sgd",
+      "effective_lr": 0.48,
+      "momentum": 0.0,
+      "actual_peak_lr": 0.48,
+      "momentum_definition": "none",
+      "sha256": "98241ddd2455bf1e7967cdf11b38ecf2d0b19b2a7e75c824f8c3d000b6dfde09"
+    },
+    {
+      "id": "polyak_b32_elr0p24_beta0p9",
+      "script": "train_polyak_b32_elr0p24_beta0p9.py",
+      "optimizer": "polyak",
+      "effective_lr": 0.24,
+      "momentum": 0.9,
+      "actual_peak_lr": 0.023999999999999994,
+      "momentum_definition": "projected_base_parameter_difference",
+      "sha256": "71c8efc86deef1d118ac3c2dce817f5e912350ccc5348d3162a413da8869c5c1"
+    },
+    {
+      "id": "polyak_b32_elr0p48_beta0p9",
+      "script": "train_polyak_b32_elr0p48_beta0p9.py",
+      "optimizer": "polyak",
+      "effective_lr": 0.48,
+      "momentum": 0.9,
+      "actual_peak_lr": 0.04799999999999999,
+      "momentum_definition": "projected_base_parameter_difference",
+      "sha256": "63afd27face1a01bcc51796d7f4366503ba9e7d6e0de3f71909b6ff2f87f69e0"
+    },
+    {
+      "id": "polyak_b32_elr0p96_beta0p9",
+      "script": "train_polyak_b32_elr0p96_beta0p9.py",
+      "optimizer": "polyak",
+      "effective_lr": 0.96,
+      "momentum": 0.9,
+      "actual_peak_lr": 0.09599999999999997,
+      "momentum_definition": "projected_base_parameter_difference",
+      "sha256": "11479a1d425eb340a6094710cc6b130f84984a8582acf05b610c7622c3459edb"
+    },
+    {
+      "id": "polyak_b32_elr1p92_beta0p9",
+      "script": "train_polyak_b32_elr1p92_beta0p9.py",
+      "optimizer": "polyak",
+      "effective_lr": 1.92,
+      "momentum": 0.9,
+      "actual_peak_lr": 0.19199999999999995,
+      "momentum_definition": "projected_base_parameter_difference",
+      "sha256": "ad07ec1303f8430239756c2817c165efdaa2bff0113b784bf87ec04bd085ab09"
+    }
+  ],
+  "warmup_updates": 3772,
+  "last_update_tokens": 19456,
+  "source_directory": "F:\\fixednorm_sgd_polyak_publish_20261108\\experiments\\fixednorm_16trials_b32_20tpp_lowmem"
+}

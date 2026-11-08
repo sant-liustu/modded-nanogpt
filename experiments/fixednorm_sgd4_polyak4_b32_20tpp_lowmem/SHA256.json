@@ -1,0 +1,20 @@
+{
+  "train_sgd_b32_elr0p06_beta0p0.py": "75142c8910bad9b07b6f8d0d94d5fa5cfc02d4b3b2e64dc78185f0e7a7607083",
+  "train_sgd_b32_elr0p12_beta0p0.py": "236806c2018f0b02463e126050c37d7b658f5558e2cf9e983d43abd402503600",
+  "train_sgd_b32_elr0p24_beta0p0.py": "afbb2148bf349fcf741fc409e53b99b6ad98593a79620978cff6c8d2cc1cb62b",
+  "train_sgd_b32_elr0p48_beta0p0.py": "98241ddd2455bf1e7967cdf11b38ecf2d0b19b2a7e75c824f8c3d000b6dfde09",
+  "train_polyak_b32_elr0p24_beta0p9.py": "71c8efc86deef1d118ac3c2dce817f5e912350ccc5348d3162a413da8869c5c1",
+  "train_polyak_b32_elr0p48_beta0p9.py": "63afd27face1a01bcc51796d7f4366503ba9e7d6e0de3f71909b6ff2f87f69e0",
+  "train_polyak_b32_elr0p96_beta0p9.py": "11479a1d425eb340a6094710cc6b130f84984a8582acf05b610c7622c3459edb",
+  "train_polyak_b32_elr1p92_beta0p9.py": "ad07ec1303f8430239756c2817c165efdaa2bff0113b784bf87ec04bd085ab09",
+  "manifest.json": "f193a2ac5267ba41ef0b7173c195b7e19c852df63a0cc79cbf8be1866e94a96a",
+  ".gitattributes": "1b28c4cb59d09e0ca8e8c8d57fe0d507cad3afcca2712ab6d125b04269153e4c",
+  "README.md": "740b96fb2aa5f425bd5aa090ebaa719a37d1016e972312898bbe60b89bfb892f",
+  "launch.py": "9c6a6a249c52d670fab896a8f76b7bbf9bbf4b590c630ba4ddd04e01d25bb2bb",
+  "probe_memory.py": "1d0a6477f74decf37923e957b511ba0e7e537f807d7b14b4c5bc0631a829e43b",
+  "verify_8.py": "1615b0d1eb2346c4956854983e9756cfb40d9cd6b47d779f8c7caf344138cc8b",
+  "verification.json": "1b3b97717b699bb2e9b697fb9725b03ff6e57abc2ac70f66850703330c7950ff",
+  "checks.diff": "12ec316db3bbab6481cd5bce16ab2d1da6ef10934902c636705c817863109f1e",
+  "tests/train_sgd.py": "75142c8910bad9b07b6f8d0d94d5fa5cfc02d4b3b2e64dc78185f0e7a7607083",
+  "tests/train_polyak.py": "71c8efc86deef1d118ac3c2dce817f5e912350ccc5348d3162a413da8869c5c1"
+}
