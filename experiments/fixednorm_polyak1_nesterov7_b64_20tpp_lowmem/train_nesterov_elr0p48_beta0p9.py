@@ -221,7 +221,7 @@ class GPT(nn.Module):
 OPTIMIZER = 'nesterov'
 
 class MomentumOptimizer(torch.optim.Optimizer):
-    """Unnormalized heavy-ball or explicit lookahead NAG; fixednorm is external."""
+    """Unnormalized momentum; NAG explicitly uses consecutive base parameter differences."""
     def __init__(self, groups, lr, momentum):
         super().__init__(groups, dict(lr=lr, momentum=momentum))
         self.at_lookahead = False
@@ -249,11 +249,14 @@ class MomentumOptimizer(torch.optim.Optimizer):
                     previous.copy_(p)
                     p.add_(delta)
                 else:
-                    if 'velocity' not in state:
-                        state['velocity'] = torch.zeros_like(p)
-                    velocity = state['velocity']
-                    velocity.mul_(group['momentum']).add_(p.grad, alpha=-group['lr'])
-                    p.add_(velocity)
+                    if 'previous_parameter' not in state:
+                        state['previous_parameter'] = p.detach().clone()
+                    previous = state['previous_parameter']
+                    # Same d_t used in lookahead, after exact base restoration.
+                    delta = (p - previous).mul_(group['momentum'])
+                    delta.add_(p.grad, alpha=-group['lr'])
+                    previous.copy_(p)
+                    p.add_(delta)
 
     @contextlib.contextmanager
     def lookahead(self):
@@ -265,10 +268,12 @@ class MomentumOptimizer(torch.optim.Optimizer):
                 for group in self.param_groups:
                     for p in group['params']:
                         state = self.state[p]
-                        if 'velocity' not in state:
-                            state['velocity'] = torch.zeros_like(p)
+                        if 'previous_parameter' not in state:
+                            state['previous_parameter'] = p.detach().clone()
                         self._base[p] = p.detach().clone()
-                        p.add_(state['velocity'], alpha=group['momentum'])
+                        # theta_t and theta_{t-1} are completed projected base states.
+                        displacement = p - state['previous_parameter']
+                        p.add_(displacement, alpha=group['momentum'])
             yield
         finally:
             with torch.no_grad():
@@ -514,6 +519,7 @@ def run(args):
     contract['model_sha256']=hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
     contract['policy']='fixednorm_all_parameters_'+OPTIMIZER+'_embedded_fanin_warmup_constant_20tpp_head_checkpoint_v4'
     contract['optimizer']=OPTIMIZER
+    contract['momentum_definition']='projected_base_parameter_difference'
     contract['gradient_clipping']=dict(max_norm=50.0,norm_type=2.0,scope='all_trainable_parameters')
     contract['training_sha256']=hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
     out=Path(args.output);out.mkdir(parents=True,exist_ok=True)

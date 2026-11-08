@@ -29,7 +29,7 @@
       },
       "tiny_three_steps_finite": true,
       "optimizer_restore_next_step_bitwise": true,
-      "norm_max_relative_error": 1.1645513364744176e-07,
+      "norm_max_relative_error": 1.1684590828231478e-07,
       "matches_clipped_template_except_parser": true
     },
     {
@@ -59,7 +59,7 @@
       },
       "tiny_three_steps_finite": true,
       "optimizer_restore_next_step_bitwise": true,
-      "norm_max_relative_error": 1.189600984385919e-07,
+      "norm_max_relative_error": 1.1645513375846406e-07,
       "matches_clipped_template_except_parser": true
     },
     {
@@ -89,7 +89,7 @@
       },
       "tiny_three_steps_finite": true,
       "optimizer_restore_next_step_bitwise": true,
-      "norm_max_relative_error": 1.1684590828231478e-07,
+      "norm_max_relative_error": 1.189600984385919e-07,
       "matches_clipped_template_except_parser": true
     },
     {
@@ -104,7 +104,7 @@
       },
       "tiny_three_steps_finite": true,
       "optimizer_restore_next_step_bitwise": true,
-      "norm_max_relative_error": 1.189600984385919e-07,
+      "norm_max_relative_error": 1.1528302445995564e-07,
       "matches_clipped_template_except_parser": true
     },
     {
@@ -119,7 +119,7 @@
       },
       "tiny_three_steps_finite": true,
       "optimizer_restore_next_step_bitwise": true,
-      "norm_max_relative_error": 0.0,
+      "norm_max_relative_error": 1.1684590828231478e-07,
       "matches_clipped_template_except_parser": true
     }
   ],

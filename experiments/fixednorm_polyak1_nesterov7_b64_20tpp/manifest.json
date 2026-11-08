@@ -34,7 +34,8 @@
       "momentum": 0.9,
       "actual_peak_lr": 0.011999999999999997,
       "default_gpu": 1,
-      "sha256": "5a1576b730f56cf11130316dafd36e88769e1b740309ffed69330b049e139fa0"
+      "sha256": "401ce3a684b753df7f158c5f66c4067ff4c40b57a296de62a92763ae507fcf63",
+      "momentum_definition": "projected_base_parameter_difference"
     },
     {
       "id": "nesterov_elr0p24_beta0p9",
@@ -44,7 +45,8 @@
       "momentum": 0.9,
       "actual_peak_lr": 0.023999999999999994,
       "default_gpu": 2,
-      "sha256": "740e60918003d732ecc6ada011eacc775b7183d1eec9bad49dee287f00461f29"
+      "sha256": "ee0e4bf30cddbb1fbd5f58683bcf04d3552cd4a26bffb03f7d2e5f056578eee4",
+      "momentum_definition": "projected_base_parameter_difference"
     },
     {
       "id": "nesterov_elr0p48_beta0p9",
@@ -54,7 +56,8 @@
       "momentum": 0.9,
       "actual_peak_lr": 0.04799999999999999,
       "default_gpu": 3,
-      "sha256": "111d5340d10719185021ed6768b0ec700e43b4ce629d7b54fd0f0402ab364e1e"
+      "sha256": "1e836cf29d4d0efde547f6b2f0090f4cd1e6b151defd04d05f2b0cfc6a49b548",
+      "momentum_definition": "projected_base_parameter_difference"
     },
     {
       "id": "nesterov_elr0p96_beta0p9",
@@ -64,7 +67,8 @@
       "momentum": 0.9,
       "actual_peak_lr": 0.09599999999999997,
       "default_gpu": 4,
-      "sha256": "40b0ca442229e8d15965c691417fd766943f32463208b2c229ebfc6c7359a842"
+      "sha256": "7c0b21009b23aac69aa2921a5a83cb5c9bae423c2b1332b4e72d3658a104263c",
+      "momentum_definition": "projected_base_parameter_difference"
     },
     {
       "id": "nesterov_elr1p92_beta0p9",
@@ -74,7 +78,8 @@
       "momentum": 0.9,
       "actual_peak_lr": 0.19199999999999995,
       "default_gpu": 5,
-      "sha256": "b9c0dfebe6e50e3c6723d30f2abc03abe02315a9200699c87d64ddcb960a7433"
+      "sha256": "ee6d920c50174ce22f553d48bd23f019e7643d87760f64fa33275f50feb40c43",
+      "momentum_definition": "projected_base_parameter_difference"
     },
     {
       "id": "nesterov_elr0p96_beta0p98",
@@ -84,7 +89,8 @@
       "momentum": 0.98,
       "actual_peak_lr": 0.019200000000000016,
       "default_gpu": 6,
-      "sha256": "56eac54fc7942892bfa597d18804a50f8572cfed0959e856daff74b19952f68e"
+      "sha256": "511adba7cdd4851f0ad772eec0a5d7de051c85cf6586b9d177f882f6ff4f6de0",
+      "momentum_definition": "projected_base_parameter_difference"
     },
     {
       "id": "nesterov_elr1p92_beta0p98",
@@ -94,7 +100,8 @@
       "momentum": 0.98,
       "actual_peak_lr": 0.03840000000000003,
       "default_gpu": 7,
-      "sha256": "e660849710ad619c774256c1cea0ef8c1830752279acad4ce5927700d2c425a6"
+      "sha256": "44ddfa49a9711a8c70ba14b4beb810f2be5ae336c23edcb0489b72407d8f9157",
+      "momentum_definition": "projected_base_parameter_difference"
     }
   ]
 }

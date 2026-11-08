@@ -1,0 +1,217 @@
+--- raw_velocity/train_nesterov_elr0p12_beta0p9.py
++++ parameter_difference/train_nesterov_elr0p12_beta0p9.py
+@@ -198 +198 @@
+-    """Unnormalized heavy-ball or explicit lookahead NAG; fixednorm is external."""
++    """Unnormalized momentum; NAG explicitly uses consecutive base parameter differences."""
+@@ -226,5 +226,8 @@
+-                    if 'velocity' not in state:
+-                        state['velocity'] = torch.zeros_like(p)
+-                    velocity = state['velocity']
+-                    velocity.mul_(group['momentum']).add_(p.grad, alpha=-group['lr'])
+-                    p.add_(velocity)
++                    if 'previous_parameter' not in state:
++                        state['previous_parameter'] = p.detach().clone()
++                    previous = state['previous_parameter']
++                    # Same d_t used in lookahead, after exact base restoration.
++                    delta = (p - previous).mul_(group['momentum'])
++                    delta.add_(p.grad, alpha=-group['lr'])
++                    previous.copy_(p)
++                    p.add_(delta)
+@@ -242,2 +245,2 @@
+-                        if 'velocity' not in state:
+-                            state['velocity'] = torch.zeros_like(p)
++                        if 'previous_parameter' not in state:
++                            state['previous_parameter'] = p.detach().clone()
+@@ -245 +248,3 @@
+-                        p.add_(state['velocity'], alpha=group['momentum'])
++                        # theta_t and theta_{t-1} are completed projected base states.
++                        displacement = p - state['previous_parameter']
++                        p.add_(displacement, alpha=group['momentum'])
+@@ -488,0 +494 @@
++    contract['momentum_definition']='projected_base_parameter_difference'
+--- raw_velocity/train_nesterov_elr0p24_beta0p9.py
++++ parameter_difference/train_nesterov_elr0p24_beta0p9.py
+@@ -198 +198 @@
+-    """Unnormalized heavy-ball or explicit lookahead NAG; fixednorm is external."""
++    """Unnormalized momentum; NAG explicitly uses consecutive base parameter differences."""
+@@ -226,5 +226,8 @@
+-                    if 'velocity' not in state:
+-                        state['velocity'] = torch.zeros_like(p)
+-                    velocity = state['velocity']
+-                    velocity.mul_(group['momentum']).add_(p.grad, alpha=-group['lr'])
+-                    p.add_(velocity)
++                    if 'previous_parameter' not in state:
++                        state['previous_parameter'] = p.detach().clone()
++                    previous = state['previous_parameter']
++                    # Same d_t used in lookahead, after exact base restoration.
++                    delta = (p - previous).mul_(group['momentum'])
++                    delta.add_(p.grad, alpha=-group['lr'])
++                    previous.copy_(p)
++                    p.add_(delta)
+@@ -242,2 +245,2 @@
+-                        if 'velocity' not in state:
+-                            state['velocity'] = torch.zeros_like(p)
++                        if 'previous_parameter' not in state:
++                            state['previous_parameter'] = p.detach().clone()
+@@ -245 +248,3 @@
+-                        p.add_(state['velocity'], alpha=group['momentum'])
++                        # theta_t and theta_{t-1} are completed projected base states.
++                        displacement = p - state['previous_parameter']
++                        p.add_(displacement, alpha=group['momentum'])
+@@ -488,0 +494 @@
++    contract['momentum_definition']='projected_base_parameter_difference'
+--- raw_velocity/train_nesterov_elr0p48_beta0p9.py
++++ parameter_difference/train_nesterov_elr0p48_beta0p9.py
+@@ -198 +198 @@
+-    """Unnormalized heavy-ball or explicit lookahead NAG; fixednorm is external."""
++    """Unnormalized momentum; NAG explicitly uses consecutive base parameter differences."""
+@@ -226,5 +226,8 @@
+-                    if 'velocity' not in state:
+-                        state['velocity'] = torch.zeros_like(p)
+-                    velocity = state['velocity']
+-                    velocity.mul_(group['momentum']).add_(p.grad, alpha=-group['lr'])
+-                    p.add_(velocity)
++                    if 'previous_parameter' not in state:
++                        state['previous_parameter'] = p.detach().clone()
++                    previous = state['previous_parameter']
++                    # Same d_t used in lookahead, after exact base restoration.
++                    delta = (p - previous).mul_(group['momentum'])
++                    delta.add_(p.grad, alpha=-group['lr'])
++                    previous.copy_(p)
++                    p.add_(delta)
+@@ -242,2 +245,2 @@
+-                        if 'velocity' not in state:
+-                            state['velocity'] = torch.zeros_like(p)
++                        if 'previous_parameter' not in state:
++                            state['previous_parameter'] = p.detach().clone()
+@@ -245 +248,3 @@
+-                        p.add_(state['velocity'], alpha=group['momentum'])
++                        # theta_t and theta_{t-1} are completed projected base states.
++                        displacement = p - state['previous_parameter']
++                        p.add_(displacement, alpha=group['momentum'])
+@@ -488,0 +494 @@
++    contract['momentum_definition']='projected_base_parameter_difference'
+--- raw_velocity/train_nesterov_elr0p96_beta0p9.py
++++ parameter_difference/train_nesterov_elr0p96_beta0p9.py
+@@ -198 +198 @@
+-    """Unnormalized heavy-ball or explicit lookahead NAG; fixednorm is external."""
++    """Unnormalized momentum; NAG explicitly uses consecutive base parameter differences."""
+@@ -226,5 +226,8 @@
+-                    if 'velocity' not in state:
+-                        state['velocity'] = torch.zeros_like(p)
+-                    velocity = state['velocity']
+-                    velocity.mul_(group['momentum']).add_(p.grad, alpha=-group['lr'])
+-                    p.add_(velocity)
++                    if 'previous_parameter' not in state:
++                        state['previous_parameter'] = p.detach().clone()
++                    previous = state['previous_parameter']
++                    # Same d_t used in lookahead, after exact base restoration.
++                    delta = (p - previous).mul_(group['momentum'])
++                    delta.add_(p.grad, alpha=-group['lr'])
++                    previous.copy_(p)
++                    p.add_(delta)
+@@ -242,2 +245,2 @@
+-                        if 'velocity' not in state:
+-                            state['velocity'] = torch.zeros_like(p)
++                        if 'previous_parameter' not in state:
++                            state['previous_parameter'] = p.detach().clone()
+@@ -245 +248,3 @@
+-                        p.add_(state['velocity'], alpha=group['momentum'])
++                        # theta_t and theta_{t-1} are completed projected base states.
++                        displacement = p - state['previous_parameter']
++                        p.add_(displacement, alpha=group['momentum'])
+@@ -488,0 +494 @@
++    contract['momentum_definition']='projected_base_parameter_difference'
+--- raw_velocity/train_nesterov_elr1p92_beta0p9.py
++++ parameter_difference/train_nesterov_elr1p92_beta0p9.py
+@@ -198 +198 @@
+-    """Unnormalized heavy-ball or explicit lookahead NAG; fixednorm is external."""
++    """Unnormalized momentum; NAG explicitly uses consecutive base parameter differences."""
+@@ -226,5 +226,8 @@
+-                    if 'velocity' not in state:
+-                        state['velocity'] = torch.zeros_like(p)
+-                    velocity = state['velocity']
+-                    velocity.mul_(group['momentum']).add_(p.grad, alpha=-group['lr'])
+-                    p.add_(velocity)
++                    if 'previous_parameter' not in state:
++                        state['previous_parameter'] = p.detach().clone()
++                    previous = state['previous_parameter']
++                    # Same d_t used in lookahead, after exact base restoration.
++                    delta = (p - previous).mul_(group['momentum'])
++                    delta.add_(p.grad, alpha=-group['lr'])
++                    previous.copy_(p)
++                    p.add_(delta)
+@@ -242,2 +245,2 @@
+-                        if 'velocity' not in state:
+-                            state['velocity'] = torch.zeros_like(p)
++                        if 'previous_parameter' not in state:
++                            state['previous_parameter'] = p.detach().clone()
+@@ -245 +248,3 @@
+-                        p.add_(state['velocity'], alpha=group['momentum'])
++                        # theta_t and theta_{t-1} are completed projected base states.
++                        displacement = p - state['previous_parameter']
++                        p.add_(displacement, alpha=group['momentum'])
+@@ -488,0 +494 @@
++    contract['momentum_definition']='projected_base_parameter_difference'
+--- raw_velocity/train_nesterov_elr0p96_beta0p98.py
++++ parameter_difference/train_nesterov_elr0p96_beta0p98.py
+@@ -198 +198 @@
+-    """Unnormalized heavy-ball or explicit lookahead NAG; fixednorm is external."""
++    """Unnormalized momentum; NAG explicitly uses consecutive base parameter differences."""
+@@ -226,5 +226,8 @@
+-                    if 'velocity' not in state:
+-                        state['velocity'] = torch.zeros_like(p)
+-                    velocity = state['velocity']
+-                    velocity.mul_(group['momentum']).add_(p.grad, alpha=-group['lr'])
+-                    p.add_(velocity)
++                    if 'previous_parameter' not in state:
++                        state['previous_parameter'] = p.detach().clone()
++                    previous = state['previous_parameter']
++                    # Same d_t used in lookahead, after exact base restoration.
++                    delta = (p - previous).mul_(group['momentum'])
++                    delta.add_(p.grad, alpha=-group['lr'])
++                    previous.copy_(p)
++                    p.add_(delta)
+@@ -242,2 +245,2 @@
+-                        if 'velocity' not in state:
+-                            state['velocity'] = torch.zeros_like(p)
++                        if 'previous_parameter' not in state:
++                            state['previous_parameter'] = p.detach().clone()
+@@ -245 +248,3 @@
+-                        p.add_(state['velocity'], alpha=group['momentum'])
++                        # theta_t and theta_{t-1} are completed projected base states.
++                        displacement = p - state['previous_parameter']
++                        p.add_(displacement, alpha=group['momentum'])
+@@ -488,0 +494 @@
++    contract['momentum_definition']='projected_base_parameter_difference'
+--- raw_velocity/train_nesterov_elr1p92_beta0p98.py
++++ parameter_difference/train_nesterov_elr1p92_beta0p98.py
+@@ -198 +198 @@
+-    """Unnormalized heavy-ball or explicit lookahead NAG; fixednorm is external."""
++    """Unnormalized momentum; NAG explicitly uses consecutive base parameter differences."""
+@@ -226,5 +226,8 @@
+-                    if 'velocity' not in state:
+-                        state['velocity'] = torch.zeros_like(p)
+-                    velocity = state['velocity']
+-                    velocity.mul_(group['momentum']).add_(p.grad, alpha=-group['lr'])
+-                    p.add_(velocity)
++                    if 'previous_parameter' not in state:
++                        state['previous_parameter'] = p.detach().clone()
++                    previous = state['previous_parameter']
++                    # Same d_t used in lookahead, after exact base restoration.
++                    delta = (p - previous).mul_(group['momentum'])
++                    delta.add_(p.grad, alpha=-group['lr'])
++                    previous.copy_(p)
++                    p.add_(delta)
+@@ -242,2 +245,2 @@
+-                        if 'velocity' not in state:
+-                            state['velocity'] = torch.zeros_like(p)
++                        if 'previous_parameter' not in state:
++                            state['previous_parameter'] = p.detach().clone()
+@@ -245 +248,3 @@
+-                        p.add_(state['velocity'], alpha=group['momentum'])
++                        # theta_t and theta_{t-1} are completed projected base states.
++                        displacement = p - state['previous_parameter']
++                        p.add_(displacement, alpha=group['momentum'])
+@@ -488,0 +494 @@
++    contract['momentum_definition']='projected_base_parameter_difference'

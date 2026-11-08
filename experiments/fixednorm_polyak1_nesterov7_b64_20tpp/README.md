@@ -24,9 +24,15 @@ seed0；相同训练数据顺序。每500步及warmup结束/最终验证，共78
 每次固定262144验证targets。梯度全局L2裁剪50，包含gamma，日志记录裁剪前范数。
 参数FP32，CUDA BF16 autocast；不自动下载、重复训练数据或扩大搜索范围。
 
-Nesterov显式前瞻：y=theta+beta*v，在同一个y完成完整梯度累积，精确恢复base后
-检查/裁剪梯度，再v=beta*v-eta*g、theta+=v，最后投影矩阵。前瞻点和velocity不投影。
-训练loss在lookahead测量；验证在投影后的base测量。Polyak保留参数差分公式。
+Nesterov现在显式使用d_t=theta_t-theta_{t-1}，两者都是已完成更新/投影的base参数。
+初始theta_{-1}=theta_0。先y=theta_t+beta*d_t，在同一y完成完整梯度累积，
+精确恢复base、全局clip50，再theta_raw=theta_t+beta*d_t-eta*g(y)，最后投影矩阵。
+前瞻点不额外投影。不再保存或递推raw velocity。保存的previous_parameter在正式
+更新前写入theta_t，checkpoint携带该状态。一维gamma使用同样的参数差分但不投影。
+Polyak已经使用相同的d_t定义，本次未修改Polyak训练脚本。
+训练loss在lookahead测量；验证在投影后的base测量。
+旧velocity版本checkpoint不能直接恢复；source/config变化需用新输出目录。
+
 
 ## 八卡运行（Linux，在本目录）
 

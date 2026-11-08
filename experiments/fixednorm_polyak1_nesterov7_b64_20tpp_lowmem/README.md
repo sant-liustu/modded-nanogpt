@@ -1,7 +1,7 @@
 # 第二批8组：保持batch64/microbatch64的输出层显存优化
 
 与原第二批的8个LR/beta配置一致，仍为20TPP、5%warmup后constant、clip50。
-模型参数、初始化、Transformer forward、优化器公式和fixednorm规则不变。
+本次输出层优化保留模型参数、初始化、Transformer forward和fixednorm规则。
 新增loss_chunk_tokens属性不增加参数；训练循环在forward前设定此属性。
 
 ## 原始显存峰值与修改
@@ -59,3 +59,19 @@ verify_8.py验证所有8组的多块checkpoint训练、裁剪50、optimizer恢�
 启动映射。详见verification.json、lowmem_verification.json与完整memory.diff。
 Windows/Python3.12/PyTorch2.5.1的tiny CUDA检查，不等于Linux/Python3.10或
 完整模型在80G卡上已通过；未启动正式训练。
+
+## Nesterov参数差分修正（两种显存版本同步）
+
+所有7个Nesterov入口现在显式计算d_t=theta_t-theta_{t-1}，使用已投影base参数。
+前瞻y=theta_t+beta*d_t；完整backward后恢复theta_t、clip50，再更新
+raw=theta_t+beta*d_t-eta*g(y)，最后投影矩阵。初始previous_parameter=theta_0。
+previous_parameter在step里、原地更新前保存当前base；不再递推raw velocity。
+一维gamma也使用同一个参数差分定义，但仍不投影。前瞻点不投影。
+Polyak已使用该定义，本次没有修改Polyak训练文件。
+旧velocity checkpoint不兼容，本次不做自动转换。
+
+verify_displacement.py独立核对原版和lowmem共14个Nesterov文件：变化LR下的
+投影二次目标、多microbatch同一前瞻、clip50、previous base状态、异常恢复、
+恢复后下一步逐位一致，并明确检测与raw velocity规则不同。
+结果见displacement_verification.json，完整本次差异见parameter_difference.diff。
+该验证脚本跨两个实验目录读取文件；打包独立下载时仅在Git仓库布局下运行该跨目录检查。
