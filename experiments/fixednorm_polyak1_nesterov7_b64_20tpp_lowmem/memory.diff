@@ -1,0 +1,360 @@
+--- reference/train_polyak_elr0p48_beta0p9.py
++++ lowmem/train_polyak_elr0p48_beta0p9.py
+@@ -13,0 +14 @@
++from torch.utils.checkpoint import checkpoint
+@@ -137,0 +139 @@
++        self.loss_chunk_tokens = 1024
+@@ -163,0 +166,22 @@
++    def chunked_lm_loss(self, hidden, targets):
++        # Keep Transformer batch intact; rematerialize only head/CE token chunks.
++        flat_hidden = hidden.reshape(-1, hidden.size(-1))
++        flat_targets = targets.reshape(-1)
++        valid = (flat_targets != -1).sum()
++        total = hidden.new_zeros((), dtype=torch.float32)
++
++        def chunk_loss(x, weight, y):
++            logits = F.linear(x, weight) / self.width_multiplier
++            return F.cross_entropy(logits.float(), y, ignore_index=-1, reduction='sum')
++
++        for start in range(0, flat_targets.numel(), self.loss_chunk_tokens):
++            stop = start + self.loss_chunk_tokens
++            values = (flat_hidden[start:stop], self.lm_head.weight, flat_targets[start:stop])
++            if self.training and torch.is_grad_enabled():
++                part = checkpoint(chunk_loss, *values, use_reentrant=False,
++                                  preserve_rng_state=False)
++            else:
++                part = chunk_loss(*values)
++            total = total + part
++        return total / valid
++
+@@ -171,0 +196,2 @@
++        if targets is not None and not return_logits and self.loss_chunk_tokens > 0:
++            return None, self.chunked_lm_loss(x, targets)
+@@ -469,0 +496,2 @@
++    if args.loss_chunk_tokens < 0:
++        raise ValueError('loss chunk tokens must be nonnegative; 0 selects reference full logits')
+@@ -487 +515 @@
+-    contract['policy']='fixednorm_all_parameters_'+OPTIMIZER+'_embedded_fanin_warmup_constant_20tpp_v3'
++    contract['policy']='fixednorm_all_parameters_'+OPTIMIZER+'_embedded_fanin_warmup_constant_20tpp_head_checkpoint_v4'
+@@ -504,0 +533 @@
++    model.loss_chunk_tokens = args.loss_chunk_tokens
+@@ -582 +611 @@
+-    p.add_argument('--output',default='runs/polyak_elr0p48_beta0p9')
++    p.add_argument('--output',default='runs_lowmem/polyak_elr0p48_beta0p9')
+@@ -586,0 +616 @@
++    p.add_argument('--loss-chunk-tokens',type=int,default=1024,help='Head/CE token chunk; 0 uses reference full logits')
+--- reference/train_nesterov_elr0p12_beta0p9.py
++++ lowmem/train_nesterov_elr0p12_beta0p9.py
+@@ -13,0 +14 @@
++from torch.utils.checkpoint import checkpoint
+@@ -137,0 +139 @@
++        self.loss_chunk_tokens = 1024
+@@ -163,0 +166,22 @@
++    def chunked_lm_loss(self, hidden, targets):
++        # Keep Transformer batch intact; rematerialize only head/CE token chunks.
++        flat_hidden = hidden.reshape(-1, hidden.size(-1))
++        flat_targets = targets.reshape(-1)
++        valid = (flat_targets != -1).sum()
++        total = hidden.new_zeros((), dtype=torch.float32)
++
++        def chunk_loss(x, weight, y):
++            logits = F.linear(x, weight) / self.width_multiplier
++            return F.cross_entropy(logits.float(), y, ignore_index=-1, reduction='sum')
++
++        for start in range(0, flat_targets.numel(), self.loss_chunk_tokens):
++            stop = start + self.loss_chunk_tokens
++            values = (flat_hidden[start:stop], self.lm_head.weight, flat_targets[start:stop])
++            if self.training and torch.is_grad_enabled():
++                part = checkpoint(chunk_loss, *values, use_reentrant=False,
++                                  preserve_rng_state=False)
++            else:
++                part = chunk_loss(*values)
++            total = total + part
++        return total / valid
++
+@@ -171,0 +196,2 @@
++        if targets is not None and not return_logits and self.loss_chunk_tokens > 0:
++            return None, self.chunked_lm_loss(x, targets)
+@@ -469,0 +496,2 @@
++    if args.loss_chunk_tokens < 0:
++        raise ValueError('loss chunk tokens must be nonnegative; 0 selects reference full logits')
+@@ -487 +515 @@
+-    contract['policy']='fixednorm_all_parameters_'+OPTIMIZER+'_embedded_fanin_warmup_constant_20tpp_v3'
++    contract['policy']='fixednorm_all_parameters_'+OPTIMIZER+'_embedded_fanin_warmup_constant_20tpp_head_checkpoint_v4'
+@@ -504,0 +533 @@
++    model.loss_chunk_tokens = args.loss_chunk_tokens
+@@ -582 +611 @@
+-    p.add_argument('--output',default='runs/nesterov_elr0p12_beta0p9')
++    p.add_argument('--output',default='runs_lowmem/nesterov_elr0p12_beta0p9')
+@@ -586,0 +616 @@
++    p.add_argument('--loss-chunk-tokens',type=int,default=1024,help='Head/CE token chunk; 0 uses reference full logits')
+--- reference/train_nesterov_elr0p24_beta0p9.py
++++ lowmem/train_nesterov_elr0p24_beta0p9.py
+@@ -13,0 +14 @@
++from torch.utils.checkpoint import checkpoint
+@@ -137,0 +139 @@
++        self.loss_chunk_tokens = 1024
+@@ -163,0 +166,22 @@
++    def chunked_lm_loss(self, hidden, targets):
++        # Keep Transformer batch intact; rematerialize only head/CE token chunks.
++        flat_hidden = hidden.reshape(-1, hidden.size(-1))
++        flat_targets = targets.reshape(-1)
++        valid = (flat_targets != -1).sum()
++        total = hidden.new_zeros((), dtype=torch.float32)
++
++        def chunk_loss(x, weight, y):
++            logits = F.linear(x, weight) / self.width_multiplier
++            return F.cross_entropy(logits.float(), y, ignore_index=-1, reduction='sum')
++
++        for start in range(0, flat_targets.numel(), self.loss_chunk_tokens):
++            stop = start + self.loss_chunk_tokens
++            values = (flat_hidden[start:stop], self.lm_head.weight, flat_targets[start:stop])
++            if self.training and torch.is_grad_enabled():
++                part = checkpoint(chunk_loss, *values, use_reentrant=False,
++                                  preserve_rng_state=False)
++            else:
++                part = chunk_loss(*values)
++            total = total + part
++        return total / valid
++
+@@ -171,0 +196,2 @@
++        if targets is not None and not return_logits and self.loss_chunk_tokens > 0:
++            return None, self.chunked_lm_loss(x, targets)
+@@ -469,0 +496,2 @@
++    if args.loss_chunk_tokens < 0:
++        raise ValueError('loss chunk tokens must be nonnegative; 0 selects reference full logits')
+@@ -487 +515 @@
+-    contract['policy']='fixednorm_all_parameters_'+OPTIMIZER+'_embedded_fanin_warmup_constant_20tpp_v3'
++    contract['policy']='fixednorm_all_parameters_'+OPTIMIZER+'_embedded_fanin_warmup_constant_20tpp_head_checkpoint_v4'
+@@ -504,0 +533 @@
++    model.loss_chunk_tokens = args.loss_chunk_tokens
+@@ -582 +611 @@
+-    p.add_argument('--output',default='runs/nesterov_elr0p24_beta0p9')
++    p.add_argument('--output',default='runs_lowmem/nesterov_elr0p24_beta0p9')
+@@ -586,0 +616 @@
++    p.add_argument('--loss-chunk-tokens',type=int,default=1024,help='Head/CE token chunk; 0 uses reference full logits')
+--- reference/train_nesterov_elr0p48_beta0p9.py
++++ lowmem/train_nesterov_elr0p48_beta0p9.py
+@@ -13,0 +14 @@
++from torch.utils.checkpoint import checkpoint
+@@ -137,0 +139 @@
++        self.loss_chunk_tokens = 1024
+@@ -163,0 +166,22 @@
++    def chunked_lm_loss(self, hidden, targets):
++        # Keep Transformer batch intact; rematerialize only head/CE token chunks.
++        flat_hidden = hidden.reshape(-1, hidden.size(-1))
++        flat_targets = targets.reshape(-1)
++        valid = (flat_targets != -1).sum()
++        total = hidden.new_zeros((), dtype=torch.float32)
++
++        def chunk_loss(x, weight, y):
++            logits = F.linear(x, weight) / self.width_multiplier
++            return F.cross_entropy(logits.float(), y, ignore_index=-1, reduction='sum')
++
++        for start in range(0, flat_targets.numel(), self.loss_chunk_tokens):
++            stop = start + self.loss_chunk_tokens
++            values = (flat_hidden[start:stop], self.lm_head.weight, flat_targets[start:stop])
++            if self.training and torch.is_grad_enabled():
++                part = checkpoint(chunk_loss, *values, use_reentrant=False,
++                                  preserve_rng_state=False)
++            else:
++                part = chunk_loss(*values)
++            total = total + part
++        return total / valid
++
+@@ -171,0 +196,2 @@
++        if targets is not None and not return_logits and self.loss_chunk_tokens > 0:
++            return None, self.chunked_lm_loss(x, targets)
+@@ -469,0 +496,2 @@
++    if args.loss_chunk_tokens < 0:
++        raise ValueError('loss chunk tokens must be nonnegative; 0 selects reference full logits')
+@@ -487 +515 @@
+-    contract['policy']='fixednorm_all_parameters_'+OPTIMIZER+'_embedded_fanin_warmup_constant_20tpp_v3'
++    contract['policy']='fixednorm_all_parameters_'+OPTIMIZER+'_embedded_fanin_warmup_constant_20tpp_head_checkpoint_v4'
+@@ -504,0 +533 @@
++    model.loss_chunk_tokens = args.loss_chunk_tokens
+@@ -582 +611 @@
+-    p.add_argument('--output',default='runs/nesterov_elr0p48_beta0p9')
++    p.add_argument('--output',default='runs_lowmem/nesterov_elr0p48_beta0p9')
+@@ -586,0 +616 @@
++    p.add_argument('--loss-chunk-tokens',type=int,default=1024,help='Head/CE token chunk; 0 uses reference full logits')
+--- reference/train_nesterov_elr0p96_beta0p9.py
++++ lowmem/train_nesterov_elr0p96_beta0p9.py
+@@ -13,0 +14 @@
++from torch.utils.checkpoint import checkpoint
+@@ -137,0 +139 @@
++        self.loss_chunk_tokens = 1024
+@@ -163,0 +166,22 @@
++    def chunked_lm_loss(self, hidden, targets):
++        # Keep Transformer batch intact; rematerialize only head/CE token chunks.
++        flat_hidden = hidden.reshape(-1, hidden.size(-1))
++        flat_targets = targets.reshape(-1)
++        valid = (flat_targets != -1).sum()
++        total = hidden.new_zeros((), dtype=torch.float32)
++
++        def chunk_loss(x, weight, y):
++            logits = F.linear(x, weight) / self.width_multiplier
++            return F.cross_entropy(logits.float(), y, ignore_index=-1, reduction='sum')
++
++        for start in range(0, flat_targets.numel(), self.loss_chunk_tokens):
++            stop = start + self.loss_chunk_tokens
++            values = (flat_hidden[start:stop], self.lm_head.weight, flat_targets[start:stop])
++            if self.training and torch.is_grad_enabled():
++                part = checkpoint(chunk_loss, *values, use_reentrant=False,
++                                  preserve_rng_state=False)
++            else:
++                part = chunk_loss(*values)
++            total = total + part
++        return total / valid
++
+@@ -171,0 +196,2 @@
++        if targets is not None and not return_logits and self.loss_chunk_tokens > 0:
++            return None, self.chunked_lm_loss(x, targets)
+@@ -469,0 +496,2 @@
++    if args.loss_chunk_tokens < 0:
++        raise ValueError('loss chunk tokens must be nonnegative; 0 selects reference full logits')
+@@ -487 +515 @@
+-    contract['policy']='fixednorm_all_parameters_'+OPTIMIZER+'_embedded_fanin_warmup_constant_20tpp_v3'
++    contract['policy']='fixednorm_all_parameters_'+OPTIMIZER+'_embedded_fanin_warmup_constant_20tpp_head_checkpoint_v4'
+@@ -504,0 +533 @@
++    model.loss_chunk_tokens = args.loss_chunk_tokens
+@@ -582 +611 @@
+-    p.add_argument('--output',default='runs/nesterov_elr0p96_beta0p9')
++    p.add_argument('--output',default='runs_lowmem/nesterov_elr0p96_beta0p9')
+@@ -586,0 +616 @@
++    p.add_argument('--loss-chunk-tokens',type=int,default=1024,help='Head/CE token chunk; 0 uses reference full logits')
+--- reference/train_nesterov_elr1p92_beta0p9.py
++++ lowmem/train_nesterov_elr1p92_beta0p9.py
+@@ -13,0 +14 @@
++from torch.utils.checkpoint import checkpoint
+@@ -137,0 +139 @@
++        self.loss_chunk_tokens = 1024
+@@ -163,0 +166,22 @@
++    def chunked_lm_loss(self, hidden, targets):
++        # Keep Transformer batch intact; rematerialize only head/CE token chunks.
++        flat_hidden = hidden.reshape(-1, hidden.size(-1))
++        flat_targets = targets.reshape(-1)
++        valid = (flat_targets != -1).sum()
++        total = hidden.new_zeros((), dtype=torch.float32)
++
++        def chunk_loss(x, weight, y):
++            logits = F.linear(x, weight) / self.width_multiplier
++            return F.cross_entropy(logits.float(), y, ignore_index=-1, reduction='sum')
++
++        for start in range(0, flat_targets.numel(), self.loss_chunk_tokens):
++            stop = start + self.loss_chunk_tokens
++            values = (flat_hidden[start:stop], self.lm_head.weight, flat_targets[start:stop])
++            if self.training and torch.is_grad_enabled():
++                part = checkpoint(chunk_loss, *values, use_reentrant=False,
++                                  preserve_rng_state=False)
++            else:
++                part = chunk_loss(*values)
++            total = total + part
++        return total / valid
++
+@@ -171,0 +196,2 @@
++        if targets is not None and not return_logits and self.loss_chunk_tokens > 0:
++            return None, self.chunked_lm_loss(x, targets)
+@@ -469,0 +496,2 @@
++    if args.loss_chunk_tokens < 0:
++        raise ValueError('loss chunk tokens must be nonnegative; 0 selects reference full logits')
+@@ -487 +515 @@
+-    contract['policy']='fixednorm_all_parameters_'+OPTIMIZER+'_embedded_fanin_warmup_constant_20tpp_v3'
++    contract['policy']='fixednorm_all_parameters_'+OPTIMIZER+'_embedded_fanin_warmup_constant_20tpp_head_checkpoint_v4'
+@@ -504,0 +533 @@
++    model.loss_chunk_tokens = args.loss_chunk_tokens
+@@ -582 +611 @@
+-    p.add_argument('--output',default='runs/nesterov_elr1p92_beta0p9')
++    p.add_argument('--output',default='runs_lowmem/nesterov_elr1p92_beta0p9')
+@@ -586,0 +616 @@
++    p.add_argument('--loss-chunk-tokens',type=int,default=1024,help='Head/CE token chunk; 0 uses reference full logits')
+--- reference/train_nesterov_elr0p96_beta0p98.py
++++ lowmem/train_nesterov_elr0p96_beta0p98.py
+@@ -13,0 +14 @@
++from torch.utils.checkpoint import checkpoint
+@@ -137,0 +139 @@
++        self.loss_chunk_tokens = 1024
+@@ -163,0 +166,22 @@
++    def chunked_lm_loss(self, hidden, targets):
++        # Keep Transformer batch intact; rematerialize only head/CE token chunks.
++        flat_hidden = hidden.reshape(-1, hidden.size(-1))
++        flat_targets = targets.reshape(-1)
++        valid = (flat_targets != -1).sum()
++        total = hidden.new_zeros((), dtype=torch.float32)
++
++        def chunk_loss(x, weight, y):
++            logits = F.linear(x, weight) / self.width_multiplier
++            return F.cross_entropy(logits.float(), y, ignore_index=-1, reduction='sum')
++
++        for start in range(0, flat_targets.numel(), self.loss_chunk_tokens):
++            stop = start + self.loss_chunk_tokens
++            values = (flat_hidden[start:stop], self.lm_head.weight, flat_targets[start:stop])
++            if self.training and torch.is_grad_enabled():
++                part = checkpoint(chunk_loss, *values, use_reentrant=False,
++                                  preserve_rng_state=False)
++            else:
++                part = chunk_loss(*values)
++            total = total + part
++        return total / valid
++
+@@ -171,0 +196,2 @@
++        if targets is not None and not return_logits and self.loss_chunk_tokens > 0:
++            return None, self.chunked_lm_loss(x, targets)
+@@ -469,0 +496,2 @@
++    if args.loss_chunk_tokens < 0:
++        raise ValueError('loss chunk tokens must be nonnegative; 0 selects reference full logits')
+@@ -487 +515 @@
+-    contract['policy']='fixednorm_all_parameters_'+OPTIMIZER+'_embedded_fanin_warmup_constant_20tpp_v3'
++    contract['policy']='fixednorm_all_parameters_'+OPTIMIZER+'_embedded_fanin_warmup_constant_20tpp_head_checkpoint_v4'
+@@ -504,0 +533 @@
++    model.loss_chunk_tokens = args.loss_chunk_tokens
+@@ -582 +611 @@
+-    p.add_argument('--output',default='runs/nesterov_elr0p96_beta0p98')
++    p.add_argument('--output',default='runs_lowmem/nesterov_elr0p96_beta0p98')
+@@ -586,0 +616 @@
++    p.add_argument('--loss-chunk-tokens',type=int,default=1024,help='Head/CE token chunk; 0 uses reference full logits')
+--- reference/train_nesterov_elr1p92_beta0p98.py
++++ lowmem/train_nesterov_elr1p92_beta0p98.py
+@@ -13,0 +14 @@
++from torch.utils.checkpoint import checkpoint
+@@ -137,0 +139 @@
++        self.loss_chunk_tokens = 1024
+@@ -163,0 +166,22 @@
++    def chunked_lm_loss(self, hidden, targets):
++        # Keep Transformer batch intact; rematerialize only head/CE token chunks.
++        flat_hidden = hidden.reshape(-1, hidden.size(-1))
++        flat_targets = targets.reshape(-1)
++        valid = (flat_targets != -1).sum()
++        total = hidden.new_zeros((), dtype=torch.float32)
++
++        def chunk_loss(x, weight, y):
++            logits = F.linear(x, weight) / self.width_multiplier
++            return F.cross_entropy(logits.float(), y, ignore_index=-1, reduction='sum')
++
++        for start in range(0, flat_targets.numel(), self.loss_chunk_tokens):
++            stop = start + self.loss_chunk_tokens
++            values = (flat_hidden[start:stop], self.lm_head.weight, flat_targets[start:stop])
++            if self.training and torch.is_grad_enabled():
++                part = checkpoint(chunk_loss, *values, use_reentrant=False,
++                                  preserve_rng_state=False)
++            else:
++                part = chunk_loss(*values)
++            total = total + part
++        return total / valid
++
+@@ -171,0 +196,2 @@
++        if targets is not None and not return_logits and self.loss_chunk_tokens > 0:
++            return None, self.chunked_lm_loss(x, targets)
+@@ -469,0 +496,2 @@
++    if args.loss_chunk_tokens < 0:
++        raise ValueError('loss chunk tokens must be nonnegative; 0 selects reference full logits')
+@@ -487 +515 @@
+-    contract['policy']='fixednorm_all_parameters_'+OPTIMIZER+'_embedded_fanin_warmup_constant_20tpp_v3'
++    contract['policy']='fixednorm_all_parameters_'+OPTIMIZER+'_embedded_fanin_warmup_constant_20tpp_head_checkpoint_v4'
+@@ -504,0 +533 @@
++    model.loss_chunk_tokens = args.loss_chunk_tokens
+@@ -582 +611 @@
+-    p.add_argument('--output',default='runs/nesterov_elr1p92_beta0p98')
++    p.add_argument('--output',default='runs_lowmem/nesterov_elr1p92_beta0p98')
+@@ -586,0 +616 @@
++    p.add_argument('--loss-chunk-tokens',type=int,default=1024,help='Head/CE token chunk; 0 uses reference full logits')

@@ -1,0 +1,43 @@
+{
+  "equivalence": [
+    {
+      "device": "cpu",
+      "bfloat16_autocast": false,
+      "batch": 64,
+      "context": 16,
+      "reference_loss": 5.554390907287598,
+      "chunked_loss": 5.5543904304504395,
+      "gradient_relative_l2_error": 1.3261912101825146e-07,
+      "masked_validation": true,
+      "inference_equal": true
+    },
+    {
+      "device": "cuda",
+      "bfloat16_autocast": true,
+      "batch": 64,
+      "context": 16,
+      "reference_loss": 5.554403305053711,
+      "chunked_loss": 5.554403305053711,
+      "gradient_relative_l2_error": 0.0029009582940489054,
+      "masked_validation": true,
+      "inference_equal": true
+    }
+  ],
+  "head_memory": {
+    "tokens": 2048,
+    "vocab": 50304,
+    "width": 128,
+    "head_only": true,
+    "measurements": {
+      "0": {
+        "loss": 10.847367286682129,
+        "incremental_peak_bytes": 1252819968
+      },
+      "128": {
+        "loss": 10.847368240356445,
+        "incremental_peak_bytes": 104105472
+      }
+    },
+    "full_w768_batch64_peak_memory_tested": false
+  }
+}
