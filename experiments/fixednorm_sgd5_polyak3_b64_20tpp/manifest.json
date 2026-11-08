@@ -22,7 +22,7 @@
       "momentum": 0.0,
       "actual_peak_lr": 0.03,
       "default_gpu": 0,
-      "sha256": "6b15e516f7b968b8a2c76ee13255b5bc28d4c049414f70bffeb51d6df24a199e"
+      "sha256": "cd5419d82a69b90f51efd56f2098b714d2f52e344718821eab4dfa6f5bedfef5"
     },
     {
       "id": "sgd_elr0p06",
@@ -32,7 +32,7 @@
       "momentum": 0.0,
       "actual_peak_lr": 0.06,
       "default_gpu": 1,
-      "sha256": "8a6c9f7532441d539cb01d7c90a82666b4598f0be4acff85a0950dd26a88e61e"
+      "sha256": "c23e5339ea69ba3b7e004596570260d7ca44c880cdcfab592bf454e2554e8f95"
     },
     {
       "id": "sgd_elr0p12",
@@ -42,7 +42,7 @@
       "momentum": 0.0,
       "actual_peak_lr": 0.12,
       "default_gpu": 2,
-      "sha256": "20131450d71a80f2e1359a2371e60f50daf81d21230edc1b1e6d5dd4f6aec3a9"
+      "sha256": "e53b101c2b23362b420fb2648bfe380bd436638d7ddb708e1a5a209c234ad1c3"
     },
     {
       "id": "sgd_elr0p24",
@@ -52,7 +52,7 @@
       "momentum": 0.0,
       "actual_peak_lr": 0.24,
       "default_gpu": 3,
-      "sha256": "b1b870bbc64092f47ab8ef11e91d256131a268e9cf00b0f7c961f27f97957fa3"
+      "sha256": "740f10184c54eec60a82323fe5834793117974c55619508a507aada675ee474f"
     },
     {
       "id": "sgd_elr0p48",
@@ -62,7 +62,7 @@
       "momentum": 0.0,
       "actual_peak_lr": 0.48,
       "default_gpu": 4,
-      "sha256": "4af8985281007784ee7dcab54291a2309d4d793f6d1730568fddf27f81a3a826"
+      "sha256": "7da45ba98cd2c61e85a54616c340cb53ded1b50aed8b5b2396231dbc4c170b30"
     },
     {
       "id": "polyak_elr0p06",
@@ -72,7 +72,7 @@
       "momentum": 0.9,
       "actual_peak_lr": 0.005999999999999998,
       "default_gpu": 5,
-      "sha256": "4401fd6bd237168a2fed6896e9a1b36f78e7fc5a45450590f5c7833b17287066"
+      "sha256": "2023d41fd022004d213421084f10f7e1b223241b73329b4e0553b60539bf4ad4"
     },
     {
       "id": "polyak_elr0p12",
@@ -82,7 +82,7 @@
       "momentum": 0.9,
       "actual_peak_lr": 0.011999999999999997,
       "default_gpu": 6,
-      "sha256": "9a692c8b8b15398562bebde79cde85b2183c5b70a58cea0f6addcf1ba579b9ec"
+      "sha256": "d45d2e8148580da9dfe6fed2fab8a85bb912fdfae6a9fea8d0683ba0e6886625"
     },
     {
       "id": "polyak_elr0p24",
@@ -92,7 +92,12 @@
       "momentum": 0.9,
       "actual_peak_lr": 0.023999999999999994,
       "default_gpu": 7,
-      "sha256": "95e32257592cf799f9c46a52fca81503359e19ddf81c6edfc7cd94d3f5ebe90c"
+      "sha256": "df135deac6ad3d17cf4ef58d1e4d5f190f399c82bd92dae42680f16bc678ea1f"
     }
-  ]
+  ],
+  "gradient_clipping": {
+    "max_norm": 50.0,
+    "norm_type": 2.0,
+    "scope": "all_trainable_parameters"
+  }
 }

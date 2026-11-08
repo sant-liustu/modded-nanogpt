@@ -435,8 +435,10 @@ def update(model, optimizer, tape, position, args, lr, scale, targets, next_scal
                 raise FloatingPointError('nonfinite training loss')
             (loss * (valid/step_tokens)).backward()
             total += value*valid/step_tokens
-    grads = [p.grad.detach().float() for p in model.parameters() if p.grad is not None]
-    grad = float(torch.linalg.vector_norm(torch.stack(torch._foreach_norm(grads,2))))
+    # Clip the complete accumulated gradient, including RMSNorm gamma.
+    # The returned norm (and logged gradient_norm) is measured BEFORE clipping.
+    grad = float(torch.nn.utils.clip_grad_norm_(
+        model.parameters(), max_norm=50.0, norm_type=2.0, error_if_nonfinite=True))
     if not math.isfinite(grad):
         raise FloatingPointError('nonfinite gradient')
     optimizer.step()
@@ -484,6 +486,7 @@ def run(args):
     contract['model_sha256']=hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
     contract['policy']='fixednorm_all_parameters_'+OPTIMIZER+'_embedded_fanin_warmup_constant_20tpp_v3'
     contract['optimizer']=OPTIMIZER
+    contract['gradient_clipping']=dict(max_norm=50.0,norm_type=2.0,scope='all_trainable_parameters')
     contract['training_sha256']=hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
     out=Path(args.output);out.mkdir(parents=True,exist_ok=True)
     manifest=out/'config.json'

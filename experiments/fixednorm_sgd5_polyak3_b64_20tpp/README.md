@@ -2,7 +2,7 @@
 
 八个训练文件均为独立单文件，无本地模型/优化器模块依赖。
 模型、fixednorm、数据读取、更新公式和20TPP预算实现沿用上一版。
-本次只固定每份脚本的effective LR、momentum和默认独立输出路径。
+每份脚本固定effective LR、momentum和默认独立输出路径；现已统一加全局L2梯度裁剪50。
 可用`--output`指定新路径；LR/beta不能被命令行改成另一候选。
 
 | GPU（默认启动映射） | 文件 | effective LR | beta | 实际峰值eta |
@@ -22,7 +22,10 @@ width768/depth12/heads6/context1024/vocab50304；共享embedding/head只计一�
 123,590,400参数，训练2,471,808,000有效tokens=20TPP。
 37,717次更新，前1,886次warmup（5%向上取整），之后恒定直到结束。
 最后一次52,224有效tokens。每500步及warmup/结束验证固定262144 targets。
-无WD/梯度裁剪/compile/DDP；FP32参数、CUDA BF16 autocast。
+无WD/compile/DDP；FP32参数、CUDA BF16 autocast。
+梯度累积完成后、optimizer.step之前，对所有参数（包括一维gamma）的全局L2梯度
+执行clip_grad_norm_(max_norm=50,error_if_nonfinite=True)。日志gradient_norm保留裁剪前值。
+裁剪的是梯度，不是momentum速度或最终参数位移。源码/contract已改变，使用新输出目录。
 不下载或循环训练数据。
 
 ## Linux八卡并行

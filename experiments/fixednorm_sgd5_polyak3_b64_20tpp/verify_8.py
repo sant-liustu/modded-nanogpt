@@ -25,6 +25,40 @@ class ToyTape:
         return values[:-1].view(size,8), values[1:].view(size,8)
 
 
+class HighGradient(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.matrix = torch.nn.Parameter(torch.tensor([[1., 2.], [3., 4.]]))
+        self.gamma = torch.nn.Parameter(torch.ones(2))
+
+    def forward(self, x, y, return_logits=False):
+        return None, 200*self.matrix.sum()+300*self.gamma.sum()
+
+
+def clipping_check(module, args, device):
+    model = HighGradient().to(device)
+    optimizer = module.build_optimizer(model,args)
+    targets = module.targets_for(model)
+    _, before = module.update(model,optimizer,ToyTape(),0,args,args.lr,1.,targets,1.)
+    expected_norm = math.sqrt(4*200**2 + 2*300**2)
+    assert math.isclose(before, expected_norm, rel_tol=1e-6)
+    after = float(torch.stack([p.grad.square().sum() for p in model.parameters()]).sum().sqrt())
+    assert after <= 50.00001
+    expected_gamma = 1 - args.lr*300*50/(expected_norm+1e-6)
+    torch.testing.assert_close(model.gamma, torch.full_like(model.gamma,expected_gamma),
+                               rtol=2e-6,atol=2e-6)
+    # Repeat with microbatch1: clipping must happen once after full accumulation.
+    args2 = copy.copy(args)
+    args2.microbatch = 1
+    other = HighGradient().to(device)
+    opt2 = module.build_optimizer(other,args2)
+    module.update(other,opt2,ToyTape(),0,args2,args2.lr,1.,module.targets_for(other),1.)
+    for x,y in zip(model.parameters(),other.parameters()):
+        torch.testing.assert_close(x,y,rtol=2e-6,atol=2e-6)
+    return dict(preclip_norm=before,postclip_norm=after,includes_gamma=True,
+                clipping_after_accumulation=True)
+
+
 def main():
     torch.set_num_threads(1)
     torch.use_deterministic_algorithms(True)
@@ -36,7 +70,10 @@ def main():
         text = path.read_text()
         ast.parse(text, feature_version=(3,10))
         current = definitions(text)
-        template = definitions((sources/f"train_{job['optimizer']}.py").read_text())
+        template_text = (sources/f"train_{job['optimizer']}.py").read_text()
+        template_text = template_text.replace('    grads = [p.grad.detach().float() for p in model.parameters() if p.grad is not None]\n    grad = float(torch.linalg.vector_norm(torch.stack(torch._foreach_norm(grads,2))))', '    # Clip the complete accumulated gradient, including RMSNorm gamma.\n    # The returned norm (and logged gradient_norm) is measured BEFORE clipping.\n    grad = float(torch.nn.utils.clip_grad_norm_(\n        model.parameters(), max_norm=50.0, norm_type=2.0, error_if_nonfinite=True))')
+        template_text = template_text.replace("    contract['optimizer']=OPTIMIZER", "    contract['optimizer']=OPTIMIZER\n    contract['gradient_clipping']=dict(max_norm=50.0,norm_type=2.0,scope='all_trainable_parameters')")
+        template = definitions(template_text)
         assert current.keys() == template.keys()
         assert all(current[k] == template[k] for k in current if k!='parser')
         spec = importlib.util.spec_from_file_location('trial_'+str(index),path)
@@ -57,6 +94,7 @@ def main():
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
         args.context,args.batch,args.microbatch=8,4,4
         args.target_train_tokens,args.device=96,device
+        clipping = clipping_check(module,args,device)
         torch.manual_seed(0)
         # Small model with width-relative logit scale one, for an optimizer smoke test.
         config=module.GPTConfig(vocab_size=64,n_layer=1,n_head=2,n_embd=16,scale_base_model=16)
@@ -82,8 +120,9 @@ def main():
         error=max(x.get('relative_error',0) for x in diagnostics.values())
         assert error<3e-6
         report.append(dict(id=job['id'],device=device,peak_actual_lr=args.lr,
+                           clipping=clipping,
                            tiny_three_steps_finite=True,optimizer_restore_next_step_bitwise=True,
-                           norm_max_relative_error=error,only_parser_changed_from_template=True))
+                           norm_max_relative_error=error,matches_template_with_clipping_patch=True))
     result=subprocess.run([sys.executable,str(ROOT/'launch_8.py'),'--train','/data/train_*.bin',
         '--val','/data/val_*.bin','--output-root','/runs/search8','--dry-run'],
         capture_output=True,text=True,check=True)
