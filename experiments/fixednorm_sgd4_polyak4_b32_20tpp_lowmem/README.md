@@ -6,10 +6,10 @@
 | 1 | SGD | .12 | 0 | .12 |
 | 2 | SGD | .24 | 0 | .24 |
 | 3 | SGD | .48 | 0 | .48 |
-| 4 | Polyak | .24 | .9 | .024 |
-| 5 | Polyak | .48 | .9 | .048 |
-| 6 | Polyak | .96 | .9 | .096 |
-| 7 | Polyak | 1.92 | .9 | .192 |
+| 4 | Polyak | .24 | .98 | .0048 |
+| 5 | Polyak | .48 | .98 | .0096 |
+| 6 | Polyak | .96 | .98 | .0192 |
+| 7 | Polyak | 1.92 | .98 | .0384 |
 
 每份train_*.py为独立单文件，内嵌模型和优化器，无其他本地模块依赖。
 LR与beta在对应文件中固定；effective LR=eta/(1-beta)，不是可学习RMSNorm gamma。
@@ -41,7 +41,7 @@ python launch.py --train '/data/fineweb_train_*.bin' --val '/data/fineweb_val_*.
 
 ```bash
 CUDA_VISIBLE_DEVICES=0 python train_sgd_b32_elr0p06_beta0p0.py --train '/data/fineweb_train_*.bin' --val '/data/fineweb_val_*.bin' --output runs/sgd_b32_006
-CUDA_VISIBLE_DEVICES=4 python train_polyak_b32_elr1p92_beta0p9.py --train '/data/fineweb_train_*.bin' --val '/data/fineweb_val_*.bin' --output runs/polyak_b32_192
+CUDA_VISIBLE_DEVICES=4 python train_polyak_b32_elr1p92_beta0p98.py --train '/data/fineweb_train_*.bin' --val '/data/fineweb_val_*.bin' --output runs/polyak_b32_192
 ```
 
 可先运行`CUDA_VISIBLE_DEVICES=0 python probe_memory.py`，以完整模型形状和合成
@@ -52,3 +52,6 @@ verify_8.py已覆盖八组参数/预算、函数AST与模板一致、候选实�
 报告见verification.json，全部候选差异见checks.diff。测试模板在tests/，正式训练
 不依赖它。Windows/Python3.12小模型CUDA检查不代表云端Linux/Python3.10训练、
 完整768显存或收敛验证。未启动正式训练。
+
+本批Polyak的momentum已从.9改为.98；有效LR不变。新文件名和默认输出目录
+带beta0p98，避免复用beta0p9结果；旧beta0p9 checkpoint不兼容。SGD保持不变。

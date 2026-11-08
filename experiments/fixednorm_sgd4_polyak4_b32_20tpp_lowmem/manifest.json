@@ -56,47 +56,48 @@
       "sha256": "98241ddd2455bf1e7967cdf11b38ecf2d0b19b2a7e75c824f8c3d000b6dfde09"
     },
     {
-      "id": "polyak_b32_elr0p24_beta0p9",
-      "script": "train_polyak_b32_elr0p24_beta0p9.py",
+      "id": "polyak_b32_elr0p24_beta0p98",
+      "script": "train_polyak_b32_elr0p24_beta0p98.py",
       "optimizer": "polyak",
       "effective_lr": 0.24,
-      "momentum": 0.9,
-      "actual_peak_lr": 0.023999999999999994,
+      "momentum": 0.98,
+      "actual_peak_lr": 0.004800000000000004,
       "momentum_definition": "projected_base_parameter_difference",
-      "sha256": "71c8efc86deef1d118ac3c2dce817f5e912350ccc5348d3162a413da8869c5c1"
+      "sha256": "aeee546630a382282a4e5fb543f64ffcdb569aa256d3835dff288dfe454ef4b0"
     },
     {
-      "id": "polyak_b32_elr0p48_beta0p9",
-      "script": "train_polyak_b32_elr0p48_beta0p9.py",
+      "id": "polyak_b32_elr0p48_beta0p98",
+      "script": "train_polyak_b32_elr0p48_beta0p98.py",
       "optimizer": "polyak",
       "effective_lr": 0.48,
-      "momentum": 0.9,
-      "actual_peak_lr": 0.04799999999999999,
+      "momentum": 0.98,
+      "actual_peak_lr": 0.009600000000000008,
       "momentum_definition": "projected_base_parameter_difference",
-      "sha256": "63afd27face1a01bcc51796d7f4366503ba9e7d6e0de3f71909b6ff2f87f69e0"
+      "sha256": "ba72ea53ab9589b48c0057f98f0a81a076e8ffc3e1611ec00d9c50b562a657e8"
     },
     {
-      "id": "polyak_b32_elr0p96_beta0p9",
-      "script": "train_polyak_b32_elr0p96_beta0p9.py",
+      "id": "polyak_b32_elr0p96_beta0p98",
+      "script": "train_polyak_b32_elr0p96_beta0p98.py",
       "optimizer": "polyak",
       "effective_lr": 0.96,
-      "momentum": 0.9,
-      "actual_peak_lr": 0.09599999999999997,
+      "momentum": 0.98,
+      "actual_peak_lr": 0.019200000000000016,
       "momentum_definition": "projected_base_parameter_difference",
-      "sha256": "11479a1d425eb340a6094710cc6b130f84984a8582acf05b610c7622c3459edb"
+      "sha256": "ac4cb658871e475733e28e3263346a1c1686f0fb450c76c522fbddbcef37ff45"
     },
     {
-      "id": "polyak_b32_elr1p92_beta0p9",
-      "script": "train_polyak_b32_elr1p92_beta0p9.py",
+      "id": "polyak_b32_elr1p92_beta0p98",
+      "script": "train_polyak_b32_elr1p92_beta0p98.py",
       "optimizer": "polyak",
       "effective_lr": 1.92,
-      "momentum": 0.9,
-      "actual_peak_lr": 0.19199999999999995,
+      "momentum": 0.98,
+      "actual_peak_lr": 0.03840000000000003,
       "momentum_definition": "projected_base_parameter_difference",
-      "sha256": "ad07ec1303f8430239756c2817c165efdaa2bff0113b784bf87ec04bd085ab09"
+      "sha256": "bb1e5ff401a7cd7f8b236c1eda66cd6368679712a146af49a20341191c49cdd3"
     }
   ],
   "warmup_updates": 3772,
   "last_update_tokens": 19456,
-  "source_directory": "F:\\fixednorm_sgd_polyak_publish_20261108\\experiments\\fixednorm_16trials_b32_20tpp_lowmem"
+  "source_directory": "F:\\fixednorm_sgd_polyak_publish_20261108\\experiments\\fixednorm_16trials_b32_20tpp_lowmem",
+  "previous_selection_commit": "ab3ee93"
 }

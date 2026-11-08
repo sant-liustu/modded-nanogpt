@@ -63,54 +63,9 @@
       "matches_clipped_template_except_parser": true
     },
     {
-      "id": "polyak_b32_elr0p24_beta0p9",
+      "id": "polyak_b32_elr0p24_beta0p98",
       "device": "cuda",
-      "peak_actual_lr": 0.023999999999999994,
-      "clipping": {
-        "preclip_norm": 583.09521484375,
-        "postclip_norm": 50.0,
-        "includes_gamma": true,
-        "clipping_after_accumulation": true
-      },
-      "tiny_three_steps_finite": true,
-      "optimizer_restore_next_step_bitwise": true,
-      "norm_max_relative_error": 6.14916635388596e-08,
-      "matches_clipped_template_except_parser": true
-    },
-    {
-      "id": "polyak_b32_elr0p48_beta0p9",
-      "device": "cuda",
-      "peak_actual_lr": 0.04799999999999999,
-      "clipping": {
-        "preclip_norm": 583.09521484375,
-        "postclip_norm": 50.0,
-        "includes_gamma": true,
-        "clipping_after_accumulation": true
-      },
-      "tiny_three_steps_finite": true,
-      "optimizer_restore_next_step_bitwise": true,
-      "norm_max_relative_error": 1.1645513375846406e-07,
-      "matches_clipped_template_except_parser": true
-    },
-    {
-      "id": "polyak_b32_elr0p96_beta0p9",
-      "device": "cuda",
-      "peak_actual_lr": 0.09599999999999997,
-      "clipping": {
-        "preclip_norm": 583.09521484375,
-        "postclip_norm": 50.0,
-        "includes_gamma": true,
-        "clipping_after_accumulation": true
-      },
-      "tiny_three_steps_finite": true,
-      "optimizer_restore_next_step_bitwise": true,
-      "norm_max_relative_error": 1.1620392903477494e-07,
-      "matches_clipped_template_except_parser": true
-    },
-    {
-      "id": "polyak_b32_elr1p92_beta0p9",
-      "device": "cuda",
-      "peak_actual_lr": 0.19199999999999995,
+      "peak_actual_lr": 0.004800000000000004,
       "clipping": {
         "preclip_norm": 583.09521484375,
         "postclip_norm": 50.0,
@@ -120,6 +75,51 @@
       "tiny_three_steps_finite": true,
       "optimizer_restore_next_step_bitwise": true,
       "norm_max_relative_error": 1.189600984385919e-07,
+      "matches_clipped_template_except_parser": true
+    },
+    {
+      "id": "polyak_b32_elr0p48_beta0p98",
+      "device": "cuda",
+      "peak_actual_lr": 0.009600000000000008,
+      "clipping": {
+        "preclip_norm": 583.09521484375,
+        "postclip_norm": 50.0,
+        "includes_gamma": true,
+        "clipping_after_accumulation": true
+      },
+      "tiny_three_steps_finite": true,
+      "optimizer_restore_next_step_bitwise": true,
+      "norm_max_relative_error": 1.1684590828231478e-07,
+      "matches_clipped_template_except_parser": true
+    },
+    {
+      "id": "polyak_b32_elr0p96_beta0p98",
+      "device": "cuda",
+      "peak_actual_lr": 0.019200000000000016,
+      "clipping": {
+        "preclip_norm": 583.09521484375,
+        "postclip_norm": 50.0,
+        "includes_gamma": true,
+        "clipping_after_accumulation": true
+      },
+      "tiny_three_steps_finite": true,
+      "optimizer_restore_next_step_bitwise": true,
+      "norm_max_relative_error": 1.229833270777192e-07,
+      "matches_clipped_template_except_parser": true
+    },
+    {
+      "id": "polyak_b32_elr1p92_beta0p98",
+      "device": "cuda",
+      "peak_actual_lr": 0.03840000000000003,
+      "clipping": {
+        "preclip_norm": 583.09521484375,
+        "postclip_norm": 50.0,
+        "includes_gamma": true,
+        "clipping_after_accumulation": true
+      },
+      "tiny_three_steps_finite": true,
+      "optimizer_restore_next_step_bitwise": true,
+      "norm_max_relative_error": 1.229833270777192e-07,
       "matches_clipped_template_except_parser": true
     }
   ],
