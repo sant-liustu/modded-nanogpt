@@ -25,7 +25,7 @@ Paper: https://arxiv.org/abs/2310.04415
 Upstream: https://github.com/tml-epfl/why-weight-decay
 `model.py` is downloaded unmodified from the upstream main branch on 2026-11-09. Its SHA256 is in provenance.json. Upstream license is included.
 
-Model and optimizer follow upstream defaults: 12 layers, 12 heads, width 768, sequence length 256, vocabulary 50304, no linear/LN biases, learnable LayerNorm gains, tied token embeddings/output head, dropout 0, init scale .02 with upstream residual scaling. AdamW beta=(.9,.95), default epsilon 1e-8, upstream name-based decay groups, fused AdamW when CUDA supports it. Peak LR .0006, 400 warmup updates, cosine toward .00006 over 50000 updates, clipping 1.0, global batch 256. No EMA is needed for the Figure 7 raw-model comparison.
+Model and optimizer follow upstream defaults: 12 layers, 12 heads, width 768, sequence length 256, vocabulary 50304, no linear/LN biases, learnable LayerNorm gains, tied token embeddings/output head, dropout 0, init scale .02 with upstream residual scaling. AdamW beta=(.9,.95), default epsilon 1e-8, upstream name-based decay groups, fused AdamW when CUDA supports it. Peak LR .0006, 400 warmup updates, cosine toward .00006 over 50000 updates, clipping 1.0, global batch 256, microbatch 256, gradient accumulation 1. No EMA is needed for the Figure 7 raw-model comparison.
 
 Reference runs default to BF16 autocast with FP32 parameter storage, matching upstream. Matching runs set WD=0 and use `lr[t] = reference_elr[t] * current_global_norm[t]`. Global norm uses upstream `model.weight_norm()` (includes LN, shared parameters counted once). LR and norm are sampled before each update. All optimizer groups receive the same LR.
 

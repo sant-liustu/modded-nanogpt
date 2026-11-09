@@ -21,7 +21,7 @@ def main():
     p.add_argument('--target', type=Path, help='Reference run directory; sets WD=0')
     p.add_argument('--precision', choices=['float32', 'bfloat16'], default='bfloat16')
     p.add_argument('--steps', type=int, default=50000)
-    p.add_argument('--micro-batch', type=int, default=8)
+    p.add_argument('--micro-batch', type=int, default=256)
     p.add_argument('--batch-size', type=int, default=256)
     p.add_argument('--seed', type=int, default=0)
     p.add_argument('--eval-interval', type=int, default=200)
