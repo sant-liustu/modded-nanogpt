@@ -47,3 +47,14 @@ bash 09_gamma_match01_fp32.sh /data/openwebtext runs
 ```
 
 Run reference first. Reference uses WD=.1 on matrices, BF16. Match uses WD=0, FP32. Both keep LayerNorm gamma on the original 400-step warmup + cosine schedule (peak .0006, floor .00006), with no WD. Matrix LR in match is target ELR times current global L2 norm excluding all LayerNorm gamma. Reference records the same norm convention. Tied embedding is counted once. Logs add gamma_lr and gamma_norm. Old all-parameter-norm targets are rejected. The original seven launchers retain their behavior. These two new launchers are independent of run_all.sh.
+
+## Two-GPU gamma pair
+
+```bash
+CUDA_VISIBLE_DEVICES=0,1 bash 10_gamma_ref_wd01_2gpu.sh /data/openwebtext runs
+CUDA_VISIBLE_DEVICES=0,1 bash 11_gamma_match01_fp32_2gpu.sh /data/openwebtext runs
+```
+
+Each GPU uses microbatch 128; global batch 256; accumulation 1. Reference and matching remain sequential. Global sampled indices are partitioned across ranks (not duplicated); DDP averages gradients before global gradient clipping. Norm is computed on each full replica, not summed across replicas. Training loss is averaged across ranks. Evaluation uses identical fixed samples on each rank; only rank 0 writes logs and checkpoints. Checkpoints include per-rank random states and require the same world size on resume. New reference is required for the new world-size/microbatch configuration. Single-GPU launchers retain their prior defaults.
+
+Validation of DDP update: Python syntax and single-process CPU tiny run passed; global sampling partition checked. Windows torchrun failed during rendezvous because local PyTorch lacks libuv; alternate Gloo file-store initialization did not complete and was stopped. Two-process training, resume, CUDA/NCCL, compiled training and throughput remain unverified.

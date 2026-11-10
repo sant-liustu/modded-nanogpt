@@ -1,4 +1,4 @@
-"""Figure 7 reproduction. Python >=3.10, PyTorch >=2.0, single GPU."""
+"""Figure 7 reproduction. Python >=3.10, PyTorch >=2.0, single GPU or torchrun DDP."""
 import argparse
 import contextlib
 import csv
@@ -10,6 +10,8 @@ from pathlib import Path
 
 import numpy as np
 import torch
+import torch.distributed as dist
+from torch.nn.parallel import DistributedDataParallel as DDP
 from model import GPT, GPTConfig
 
 
@@ -35,10 +37,20 @@ def main():
     p.add_argument('--gamma-cosine', action='store_true',
                    help='Gamma uses original schedule; ELR norm excludes gamma')
     a = p.parse_args()
+    world = int(os.environ.get('WORLD_SIZE', '1'))
+    rank = int(os.environ.get('RANK', '0'))
+    local_rank = int(os.environ.get('LOCAL_RANK', '0'))
+    distributed = world > 1
+    if distributed:
+        if a.device.startswith('cuda'):
+            torch.cuda.set_device(local_rank)
+            a.device = f'cuda:{local_rank}'
+        dist.init_process_group(backend='nccl' if a.device.startswith('cuda') else 'gloo')
+    master = rank == 0
     if a.steps <= 400 and not a.tiny:
         p.error('Formal runs need more than 400 steps of warmup')
-    if a.batch_size % a.micro_batch:
-        p.error('batch-size must be divisible by micro-batch')
+    if a.micro_batch <= 0 or a.batch_size % (a.micro_batch * world):
+        p.error('global batch-size must be divisible by micro-batch * world size')
     a.out.mkdir(parents=True, exist_ok=True)
     ckpt = a.out / 'latest.pt'
     if (a.out / 'metrics.csv').exists() and not a.resume:
@@ -80,6 +92,8 @@ def main():
                     precision=a.precision, tf32=not a.strict_fp32,
                     weight_decay=wd, target=str(a.target), torch_version=torch.__version__,
                     norm='upstream model.weight_norm(), before optimizer step')
+    if distributed:
+        metadata.update(world_size=world, sampling='shared global indices partitioned by rank')
     if a.gamma_cosine:
         metadata.update(gamma_cosine=True, gamma_names=gamma_names,
                         norm='global L2 excluding LayerNorm gamma, before optimizer step')
@@ -91,6 +105,8 @@ def main():
                 raise ValueError(f'Reference mismatch: {key}')
         if ref['norm'] != metadata['norm'] or ref.get('gamma_cosine', False) != a.gamma_cosine:
             raise ValueError('Reference norm/gamma schedule mismatch')
+        if ref.get('world_size', 1) != world:
+            raise ValueError('Reference world size mismatch')
         target = np.load(a.target / 'elr.npy')
         if len(target) != a.steps or not np.isfinite(target).all():
             raise ValueError('Reference trajectory incomplete or nonfinite')
@@ -103,13 +119,17 @@ def main():
         model.load_state_dict(state['model'])
         optimizer.load_state_dict(state['optimizer'])
         train_rng.set_state(state['train_rng'].cpu())
-        torch.set_rng_state(state['torch_rng'].cpu())
+        rng_state = state['rank_rng'][rank] if distributed else state
+        torch.set_rng_state(rng_state['torch_rng'].cpu())
         if a.device.startswith('cuda'):
-            torch.cuda.set_rng_state_all([x.cpu() for x in state['cuda_rng']])
+            if distributed:
+                torch.cuda.set_rng_state(rng_state['cuda_rng'].cpu(), device=a.device)
+            else:
+                torch.cuda.set_rng_state_all([x.cpu() for x in state['cuda_rng']])
         trajectory = state['trajectory']
         start = state['step']
         # Drop rows newer than the last committed checkpoint before replay.
-        for name in ['metrics.csv', 'eval.csv']:
+        for name in (['metrics.csv', 'eval.csv'] if master else []):
             path = a.out / name
             if path.exists():
                 with path.open(newline='') as f:
@@ -120,12 +140,20 @@ def main():
                     writer = csv.DictWriter(f, fieldnames=fields)
                     writer.writeheader()
                     writer.writerows(rows)
-    (a.out / 'config.json').write_text(json.dumps(metadata, indent=2))
+    if master:
+        (a.out / 'config.json').write_text(json.dumps(metadata, indent=2))
     forward = torch.compile(model) if a.compile else model
+    if distributed:
+        forward = DDP(forward, device_ids=[local_rank] if a.device.startswith('cuda') else None)
+    if master:
+        print(f'world_size={world} microbatch_per_rank={a.micro_batch} global_batch={a.batch_size} accumulation={a.batch_size // (a.micro_batch * world)}', flush=True)
 
     def batch(split, rng):
         d = data[split]
-        ix = torch.randint(len(d) - cfg['block_size'], (a.micro_batch,), generator=rng)
+        count = a.micro_batch * world if split == 'train' and rng is train_rng else a.micro_batch
+        ix = torch.randint(len(d) - cfg['block_size'], (count,), generator=rng)
+        if count != a.micro_batch:
+            ix = ix[rank * a.micro_batch:(rank + 1) * a.micro_batch]
         arr = np.stack([np.array(d[int(i):int(i)+cfg['block_size']+1], dtype=np.int64) for i in ix])
         return (torch.from_numpy(arr[:, :-1].copy()).to(a.device),
                 torch.from_numpy(arr[:, 1:].copy()).to(a.device))
@@ -135,6 +163,8 @@ def main():
                 if a.precision == 'bfloat16' else contextlib.nullcontext())
 
     def append(name, row):
+        if not master:
+            return
         path = a.out / name
         new = not path.exists()
         with path.open('a', newline='') as f:
@@ -144,10 +174,20 @@ def main():
             w.writerow(row)
 
     def save(step):
+        rank_rng = None
+        if distributed:
+            local_rng = dict(torch_rng=torch.get_rng_state(),
+                             cuda_rng=torch.cuda.get_rng_state(a.device) if a.device.startswith('cuda') else [])
+            rank_rng = [None] * world
+            dist.all_gather_object(rank_rng, local_rng)
+        if not master:
+            return
         state = dict(step=step, metadata=metadata, model=model.state_dict(),
                      optimizer=optimizer.state_dict(), trajectory=trajectory,
                      train_rng=train_rng.get_state(), torch_rng=torch.get_rng_state(),
                      cuda_rng=torch.cuda.get_rng_state_all() if a.device.startswith('cuda') else [])
+        if distributed:
+            state['rank_rng'] = rank_rng
         torch.save(state, a.out / 'latest.tmp')
         os.replace(a.out / 'latest.tmp', ckpt)
         np.save(a.out / 'elr.npy', trajectory)
@@ -163,7 +203,7 @@ def main():
                     for _ in range(math.ceil(a.eval_examples / a.micro_batch)):
                         x, y = batch(split, eval_rng)
                         with autocast():
-                            _, loss = forward(x, y)
+                            _, loss = model(x, y)
                         losses.append(loss.item())
                     row[split + '_loss'] = sum(losses) / len(losses)
             append('eval.csv', row)
@@ -190,7 +230,7 @@ def main():
         trajectory[step] = lr / norm
         optimizer.zero_grad(set_to_none=True)
         loss_sum = 0.0
-        accumulation = a.batch_size // a.micro_batch
+        accumulation = a.batch_size // (a.micro_batch * world)
         for _ in range(accumulation):
             x, y = batch('train', train_rng)
             with autocast():
@@ -198,6 +238,10 @@ def main():
                 scaled = loss / accumulation
             loss_sum += loss.item() / accumulation
             scaled.backward()
+        if distributed:
+            averaged_loss = torch.tensor(loss_sum, device=a.device, dtype=torch.float64)
+            dist.all_reduce(averaged_loss)
+            loss_sum = averaged_loss.item() / world
         grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0, error_if_nonfinite=True)
         if not math.isfinite(loss_sum):
             raise FloatingPointError(f'Nonfinite loss at {step}')
@@ -208,10 +252,14 @@ def main():
         if a.gamma_cosine:
             metric.update(gamma_lr=base_lr, gamma_norm=gamma_norm)
         append('metrics.csv', metric)
-        if step % 20 == 0:
+        if master and step % 20 == 0:
             print(f'{step}/{a.steps} loss={loss_sum:.6f} lr={lr:.8g} norm={norm:.5f}', flush=True)
         if (step + 1) % a.save_interval == 0 or step + 1 == a.steps:
             save(step + 1)
+
+    if distributed:
+        dist.barrier()
+        dist.destroy_process_group()
 
 
 if __name__ == '__main__':
