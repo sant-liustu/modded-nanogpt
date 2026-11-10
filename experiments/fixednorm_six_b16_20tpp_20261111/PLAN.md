@@ -1,0 +1,1 @@
+用户确认BS16六组探索：SGD .06/.12；Polyak和Nesterov beta=.98各.96/1.92。目的为检查更小batch的方法差距，候选非最优保证。沿用模型/数据/seed0/20TPP/fixednorm/clip50/5%warmup+constant/低显存head，不新增抽象。Nesterov采用投影后base参数差分。检查预算、模板函数AST、tiny CUDA更新、裁剪、投影、恢复及独立差分公式。BS16更新次数增加可能耗时更长；不在本机正式训练。
