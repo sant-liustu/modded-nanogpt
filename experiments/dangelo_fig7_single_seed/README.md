@@ -36,3 +36,14 @@ Training and evaluation use separate reproducible RNG streams. Runs share initia
 Upstream enables TF32 even with `dtype=float32`; we preserve this default. Use `--strict-fp32` to disable TF32 and record it as an additional variant. Modern CUDA/PyTorch kernels may differ from the original environment.
 
 The full suite includes BF16 reference WD=0/.1/.3 and WD=0 matching runs in FP32/BF16 targeting .1/.3. BF16 matching may fail, as reported by the paper; run individual commands to continue other branches after failure. No claim of cloud training validation is made by the local smoke check.
+
+## Gamma cosine / norm excluding gamma
+
+New pair (seed 0, microbatch=global batch=256):
+
+```bash
+bash 08_gamma_ref_wd01.sh /data/openwebtext runs
+bash 09_gamma_match01_fp32.sh /data/openwebtext runs
+```
+
+Run reference first. Reference uses WD=.1 on matrices, BF16. Match uses WD=0, FP32. Both keep LayerNorm gamma on the original 400-step warmup + cosine schedule (peak .0006, floor .00006), with no WD. Matrix LR in match is target ELR times current global L2 norm excluding all LayerNorm gamma. Reference records the same norm convention. Tied embedding is counted once. Logs add gamma_lr and gamma_norm. Old all-parameter-norm targets are rejected. The original seven launchers retain their behavior. These two new launchers are independent of run_all.sh.
