@@ -1,0 +1,23 @@
+{
+  ".gitattributes": "8b9c3028d6467ff3be7c793141927841d70f47f52d0590677438f488ca154992",
+  "checks.diff": "93394e710a83fd57555f962fe871ea9a8438896366ff8cdc8c9210e9f88d4ee5",
+  "displacement_verification.json": "bc710269455ea4396bac5349bc188f236ddd8ab46f36a221b5d20c0fda4e2c21",
+  "launch.py": "766e78dc217acb10a225739a054b12819d9cb1f1dd87809a13b982666c541957",
+  "manifest.json": "4559b0e1bd15a26d9afa0be575d666c05313bbd5514b93e8d3931e00761ec61a",
+  "PLAN.md": "ce0c41460423fa4f81d0caad9b87d941caeccc55e73d40b75a650b09194c6bf4",
+  "probe_memory.py": "93389c5f2c503107d145c886489b91dd512050f71dbc0fe2c0f2ae829d0b7919",
+  "README.md": "ac88b198b12d20fed4767e70dc9a6a2f0d0380aeb83df993a64fff231854315d",
+  "train_nesterov_b128_elr1p92_beta0p98.py": "3b262a4b59f4f6f2e47b055d22df22d84bfe6d37cc58ae96687c44da9ee2106d",
+  "train_nesterov_b128_elr3p84_beta0p98.py": "26049ba2081d99415930772fbd1176d4bccc9e2a2cff5ea9a3c565e6678968ed",
+  "train_nesterov_b128_elr7p68_beta0p98.py": "ad8de166d7fb0054504b712e60fdd4ec5edcb8a9ce8a73e3f073f211e55b2d41",
+  "train_nesterov_b64_elr0p96_beta0p98.py": "765ac7937286dfae34b78ac1b62fd7ef5509b710572de2e14ba5d3c1eba3f6d0",
+  "train_nesterov_b64_elr1p92_beta0p98.py": "e982c99a80e5ff7128edb838adb85b957b07f0bd6244f212050b56e3cd5cba4a",
+  "train_nesterov_b64_elr3p84_beta0p98.py": "979ed261866324bfff7f33f8d60fe97bcaa8b65ce82f766e942682b4f586c821",
+  "train_polyak_b128_elr7p68_beta0p98.py": "b38ec3a84dddeddc303ff9773316eba1ac7b7f7b079b6f8d3c2d0da88fc431aa",
+  "train_polyak_b32_elr3p84_beta0p98.py": "ee2ee57a49ebf0db333bc24e958f3dae9c0a308ac5c5ff88056e21388a2766dc",
+  "verification.json": "4bc4705ed90b2aef3233ae70c85bde5a87c52dae2469b44c2ebb60e653b491aa",
+  "verify_8.py": "b5fa038e68f3009a01f1e4dc27036b44d0a0bc942c66da943bf3677c983a4d98",
+  "verify_displacement.py": "fab52c5419d5dee9ca19eecbe055e857402ea439d78429aac7590919bd5fc78f",
+  "tests/train_nesterov.py": "8f76613193308775e3dcfc4b6fc84b2d3e2d355fc0dd26a3f7db2b74a2b4c907",
+  "tests/train_polyak.py": "71fc9ca3272ad868d346e5edd43afcd01eb69dbcefe247bd06bba9943d501273"
+}

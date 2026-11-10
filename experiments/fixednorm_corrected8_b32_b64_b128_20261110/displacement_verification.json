@@ -1,0 +1,139 @@
+{
+  "python": "3.12.3 (tags/v3.12.3:f6650f9, Apr  9 2024, 14:05:25) [MSC v.1938 64 bit (AMD64)]",
+  "torch": "2.5.1+cu124",
+  "results": [
+    {
+      "folder": "fixednorm_corrected8_b32_b64_b128_20261110",
+      "id": "nesterov_b64_elr0p96_beta0p98",
+      "cpu": {
+        "device": "cpu",
+        "variable_lr_projected_reference": true,
+        "all_microbatches_at_parameter_difference_lookahead": true,
+        "previous_base_state_correct": true,
+        "exception_restore_bitwise": true,
+        "resume_next_step_bitwise": true,
+        "distinguishes_raw_velocity": true
+      },
+      "cuda": {
+        "device": "cuda",
+        "variable_lr_projected_reference": true,
+        "all_microbatches_at_parameter_difference_lookahead": true,
+        "previous_base_state_correct": true,
+        "exception_restore_bitwise": true,
+        "resume_next_step_bitwise": true,
+        "distinguishes_raw_velocity": true
+      }
+    },
+    {
+      "folder": "fixednorm_corrected8_b32_b64_b128_20261110",
+      "id": "nesterov_b64_elr1p92_beta0p98",
+      "cpu": {
+        "device": "cpu",
+        "variable_lr_projected_reference": true,
+        "all_microbatches_at_parameter_difference_lookahead": true,
+        "previous_base_state_correct": true,
+        "exception_restore_bitwise": true,
+        "resume_next_step_bitwise": true,
+        "distinguishes_raw_velocity": true
+      },
+      "cuda": {
+        "device": "cuda",
+        "variable_lr_projected_reference": true,
+        "all_microbatches_at_parameter_difference_lookahead": true,
+        "previous_base_state_correct": true,
+        "exception_restore_bitwise": true,
+        "resume_next_step_bitwise": true,
+        "distinguishes_raw_velocity": true
+      }
+    },
+    {
+      "folder": "fixednorm_corrected8_b32_b64_b128_20261110",
+      "id": "nesterov_b64_elr3p84_beta0p98",
+      "cpu": {
+        "device": "cpu",
+        "variable_lr_projected_reference": true,
+        "all_microbatches_at_parameter_difference_lookahead": true,
+        "previous_base_state_correct": true,
+        "exception_restore_bitwise": true,
+        "resume_next_step_bitwise": true,
+        "distinguishes_raw_velocity": true
+      },
+      "cuda": {
+        "device": "cuda",
+        "variable_lr_projected_reference": true,
+        "all_microbatches_at_parameter_difference_lookahead": true,
+        "previous_base_state_correct": true,
+        "exception_restore_bitwise": true,
+        "resume_next_step_bitwise": true,
+        "distinguishes_raw_velocity": true
+      }
+    },
+    {
+      "folder": "fixednorm_corrected8_b32_b64_b128_20261110",
+      "id": "nesterov_b128_elr1p92_beta0p98",
+      "cpu": {
+        "device": "cpu",
+        "variable_lr_projected_reference": true,
+        "all_microbatches_at_parameter_difference_lookahead": true,
+        "previous_base_state_correct": true,
+        "exception_restore_bitwise": true,
+        "resume_next_step_bitwise": true,
+        "distinguishes_raw_velocity": true
+      },
+      "cuda": {
+        "device": "cuda",
+        "variable_lr_projected_reference": true,
+        "all_microbatches_at_parameter_difference_lookahead": true,
+        "previous_base_state_correct": true,
+        "exception_restore_bitwise": true,
+        "resume_next_step_bitwise": true,
+        "distinguishes_raw_velocity": true
+      }
+    },
+    {
+      "folder": "fixednorm_corrected8_b32_b64_b128_20261110",
+      "id": "nesterov_b128_elr3p84_beta0p98",
+      "cpu": {
+        "device": "cpu",
+        "variable_lr_projected_reference": true,
+        "all_microbatches_at_parameter_difference_lookahead": true,
+        "previous_base_state_correct": true,
+        "exception_restore_bitwise": true,
+        "resume_next_step_bitwise": true,
+        "distinguishes_raw_velocity": true
+      },
+      "cuda": {
+        "device": "cuda",
+        "variable_lr_projected_reference": true,
+        "all_microbatches_at_parameter_difference_lookahead": true,
+        "previous_base_state_correct": true,
+        "exception_restore_bitwise": true,
+        "resume_next_step_bitwise": true,
+        "distinguishes_raw_velocity": true
+      }
+    },
+    {
+      "folder": "fixednorm_corrected8_b32_b64_b128_20261110",
+      "id": "nesterov_b128_elr7p68_beta0p98",
+      "cpu": {
+        "device": "cpu",
+        "variable_lr_projected_reference": true,
+        "all_microbatches_at_parameter_difference_lookahead": true,
+        "previous_base_state_correct": true,
+        "exception_restore_bitwise": true,
+        "resume_next_step_bitwise": true,
+        "distinguishes_raw_velocity": true
+      },
+      "cuda": {
+        "device": "cuda",
+        "variable_lr_projected_reference": true,
+        "all_microbatches_at_parameter_difference_lookahead": true,
+        "previous_base_state_correct": true,
+        "exception_restore_bitwise": true,
+        "resume_next_step_bitwise": true,
+        "distinguishes_raw_velocity": true
+      }
+    }
+  ],
+  "full768_training_tested": false
+}

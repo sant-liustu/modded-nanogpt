@@ -1,0 +1,129 @@
+{
+  "python": "3.12.3 (tags/v3.12.3:f6650f9, Apr  9 2024, 14:05:25) [MSC v.1938 64 bit (AMD64)]",
+  "torch": "2.5.1+cu124",
+  "jobs": [
+    {
+      "id": "nesterov_b64_elr0p96_beta0p98",
+      "device": "cuda",
+      "peak_actual_lr": 0.019200000000000016,
+      "clipping": {
+        "preclip_norm": 583.09521484375,
+        "postclip_norm": 50.0,
+        "includes_gamma": true,
+        "clipping_after_accumulation": true
+      },
+      "tiny_three_steps_finite": true,
+      "optimizer_restore_next_step_bitwise": true,
+      "norm_max_relative_error": 1.1528302445995564e-07,
+      "matches_clipped_template_except_parser": true
+    },
+    {
+      "id": "nesterov_b64_elr1p92_beta0p98",
+      "device": "cuda",
+      "peak_actual_lr": 0.03840000000000003,
+      "clipping": {
+        "preclip_norm": 583.09521484375,
+        "postclip_norm": 50.0,
+        "includes_gamma": true,
+        "clipping_after_accumulation": true
+      },
+      "tiny_three_steps_finite": true,
+      "optimizer_restore_next_step_bitwise": true,
+      "norm_max_relative_error": 1.1684590828231478e-07,
+      "matches_clipped_template_except_parser": true
+    },
+    {
+      "id": "nesterov_b64_elr3p84_beta0p98",
+      "device": "cuda",
+      "peak_actual_lr": 0.07680000000000006,
+      "clipping": {
+        "preclip_norm": 583.09521484375,
+        "postclip_norm": 50.0,
+        "includes_gamma": true,
+        "clipping_after_accumulation": true
+      },
+      "tiny_three_steps_finite": true,
+      "optimizer_restore_next_step_bitwise": true,
+      "norm_max_relative_error": 1.189600984385919e-07,
+      "matches_clipped_template_except_parser": true
+    },
+    {
+      "id": "nesterov_b128_elr1p92_beta0p98",
+      "device": "cuda",
+      "peak_actual_lr": 0.03840000000000003,
+      "clipping": {
+        "preclip_norm": 583.09521484375,
+        "postclip_norm": 50.0,
+        "includes_gamma": true,
+        "clipping_after_accumulation": true
+      },
+      "tiny_three_steps_finite": true,
+      "optimizer_restore_next_step_bitwise": true,
+      "norm_max_relative_error": 1.189600984385919e-07,
+      "matches_clipped_template_except_parser": true
+    },
+    {
+      "id": "nesterov_b128_elr3p84_beta0p98",
+      "device": "cuda",
+      "peak_actual_lr": 0.07680000000000006,
+      "clipping": {
+        "preclip_norm": 583.09521484375,
+        "postclip_norm": 50.0,
+        "includes_gamma": true,
+        "clipping_after_accumulation": true
+      },
+      "tiny_three_steps_finite": true,
+      "optimizer_restore_next_step_bitwise": true,
+      "norm_max_relative_error": 1.1684590828231478e-07,
+      "matches_clipped_template_except_parser": true
+    },
+    {
+      "id": "nesterov_b128_elr7p68_beta0p98",
+      "device": "cuda",
+      "peak_actual_lr": 0.15360000000000013,
+      "clipping": {
+        "preclip_norm": 583.09521484375,
+        "postclip_norm": 50.0,
+        "includes_gamma": true,
+        "clipping_after_accumulation": true
+      },
+      "tiny_three_steps_finite": true,
+      "optimizer_restore_next_step_bitwise": true,
+      "norm_max_relative_error": 1.1645513364744176e-07,
+      "matches_clipped_template_except_parser": true
+    },
+    {
+      "id": "polyak_b128_elr7p68_beta0p98",
+      "device": "cuda",
+      "peak_actual_lr": 0.15360000000000013,
+      "clipping": {
+        "preclip_norm": 583.09521484375,
+        "postclip_norm": 50.0,
+        "includes_gamma": true,
+        "clipping_after_accumulation": true
+      },
+      "tiny_three_steps_finite": true,
+      "optimizer_restore_next_step_bitwise": true,
+      "norm_max_relative_error": 1.189600984385919e-07,
+      "matches_clipped_template_except_parser": true
+    },
+    {
+      "id": "polyak_b32_elr3p84_beta0p98",
+      "device": "cuda",
+      "peak_actual_lr": 0.07680000000000006,
+      "clipping": {
+        "preclip_norm": 583.09521484375,
+        "postclip_norm": 50.0,
+        "includes_gamma": true,
+        "clipping_after_accumulation": true
+      },
+      "tiny_three_steps_finite": true,
+      "optimizer_restore_next_step_bitwise": true,
+      "norm_max_relative_error": 6.14916635388596e-08,
+      "matches_clipped_template_except_parser": true
+    }
+  ],
+  "eight_trials_on_eight_gpu_dry_run": true,
+  "full768_batch32_64_128_training_or_memory_tested": false,
+  "cloud_linux_python310_training_tested": false
+}
