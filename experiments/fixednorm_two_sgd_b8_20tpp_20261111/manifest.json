@@ -1,0 +1,37 @@
+{
+  "parameter_count": 123590400,
+  "train_tokens": 2471808000,
+  "loss_chunk_tokens": 1024,
+  "jobs": [
+    {
+      "id": "sgd_b8_elr0p06_beta0p0",
+      "script": "train_sgd_b8_elr0p06_beta0p0.py",
+      "optimizer": "sgd",
+      "batch": 8,
+      "microbatch": 8,
+      "accumulation_steps": 1,
+      "effective_lr": 0.06,
+      "momentum": 0.0,
+      "actual_peak_lr": 0.06,
+      "updates": 301735,
+      "warmup_updates": 15087,
+      "source": "F:\\fixednorm_three_b16_followup_20261111\\train_sgd_b16_elr0p24_beta0p0.py",
+      "sha256": "5dffbd8bff1373dc09436d3cab680a35b7a446878812581729943241d8263a5f"
+    },
+    {
+      "id": "sgd_b8_elr0p12_beta0p0",
+      "script": "train_sgd_b8_elr0p12_beta0p0.py",
+      "optimizer": "sgd",
+      "batch": 8,
+      "microbatch": 8,
+      "accumulation_steps": 1,
+      "effective_lr": 0.12,
+      "momentum": 0.0,
+      "actual_peak_lr": 0.12,
+      "updates": 301735,
+      "warmup_updates": 15087,
+      "source": "F:\\fixednorm_three_b16_followup_20261111\\train_sgd_b16_elr0p24_beta0p0.py",
+      "sha256": "0ca0ce8acaf09cadb6e962a0bf1a1501a1fc7d662ce2a95743e0e0101e67c39a"
+    }
+  ]
+}

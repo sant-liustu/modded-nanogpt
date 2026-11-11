@@ -1,0 +1,39 @@
+{
+  "python": "3.12.3 (tags/v3.12.3:f6650f9, Apr  9 2024, 14:05:25) [MSC v.1938 64 bit (AMD64)]",
+  "torch": "2.5.1+cu124",
+  "jobs": [
+    {
+      "id": "sgd_b8_elr0p06_beta0p0",
+      "device": "cuda",
+      "peak_actual_lr": 0.06,
+      "clipping": {
+        "preclip_norm": 583.09521484375,
+        "postclip_norm": 50.0,
+        "includes_gamma": true,
+        "clipping_after_accumulation": true
+      },
+      "tiny_three_steps_finite": true,
+      "optimizer_restore_next_step_bitwise": true,
+      "norm_max_relative_error": 1.1684590828231478e-07,
+      "matches_clipped_template_except_parser": true
+    },
+    {
+      "id": "sgd_b8_elr0p12_beta0p0",
+      "device": "cuda",
+      "peak_actual_lr": 0.12,
+      "clipping": {
+        "preclip_norm": 583.09521484375,
+        "postclip_norm": 50.0,
+        "includes_gamma": true,
+        "clipping_after_accumulation": true
+      },
+      "tiny_three_steps_finite": true,
+      "optimizer_restore_next_step_bitwise": true,
+      "norm_max_relative_error": 1.189600984385919e-07,
+      "matches_clipped_template_except_parser": true
+    }
+  ],
+  "two_trials_on_two_gpu_dry_run": true,
+  "full768_batch8_training_or_memory_tested": false,
+  "cloud_linux_python310_training_tested": false
+}

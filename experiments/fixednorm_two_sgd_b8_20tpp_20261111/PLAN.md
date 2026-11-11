@@ -1,0 +1,1 @@
+用户确认BS8 SGD ELR .06/.12两组，比较更小batch下SGD表现；不预设最佳LR缩放。沿用模型/seed0/数据tape/20TPP/fixednorm/clip50/5%warmup后constant/低显存head，仅修改batch=microbatch8、ELR、独立输出。验证预算/AST/tiny CUDA/裁剪/投影/恢复和两卡dry-run；推送现有分支，不在本机启动真实训练。
