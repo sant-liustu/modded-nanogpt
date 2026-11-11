@@ -1,0 +1,1 @@
+用户指定BS16补点：SGD .24、Polyak beta=.98 ELR3.84、Nesterov beta=.98 ELR.48。依据在跑中途结果探索边界，不认定最终排序。保持模型/seed0/数据tape/20TPP/fixednorm/clip50/5%warmup后constant及低显存协议。Nesterov投影后base参数差分。仅改候选和独立输出；检查预算/AST/tiny CUDA/裁剪/投影/恢复/独立Nesterov公式，推送原分支，不启动正式训练。

@@ -1,0 +1,19 @@
+{
+  ".gitattributes": "8b9c3028d6467ff3be7c793141927841d70f47f52d0590677438f488ca154992",
+  "checks.diff": "4a084f306f02a4c91af800e95f17b072063d7d7d9dcbbb3df8c2e88a6c72c0dd",
+  "displacement_verification.json": "31cfbf4d3dff76d6cf0fe575ef4c344e53d5ae3918d19bd1b55f013948c3e78d",
+  "launch.py": "f89dca4dc44b560762ff2b9b04a147a8603b76bebc0d49e9b9bbddffc06ad310",
+  "manifest.json": "00ba21cd09395d716d0b0df1f91e3541035957f92529e827dcebd42c556092ed",
+  "PLAN.md": "9b0034df46e54b26647bda3550a3ae9f7a40f6a6108d1576678539a19bb65c7a",
+  "probe_memory.py": "23a6119a360a2cf978f0842dbab321cc6a81e99a9b6837daba509b8cd66de6bc",
+  "README.md": "86411c2baae97490f1ef330f6971bdbc3a9fa4ba41a583735c9fba5ec8d14a55",
+  "train_nesterov_b16_elr0p48_beta0p98.py": "b6c98103b9b1344fe0a9c5801213b4d0bb413d5a95be74d1f30b0d7822e9c11d",
+  "train_polyak_b16_elr3p84_beta0p98.py": "8fee476435812d350941e3d7d2dcebe29eff388a3b49767c2e5fef45aa72b479",
+  "train_sgd_b16_elr0p24_beta0p0.py": "4755db025cb73f8895377b5a4b6081544f8aeabff22d77a3785d0ca46bc884b8",
+  "verification.json": "9d01b100a7aa42be2532cc4fead940a274ff76a3b7bc03655d8a9503058c9381",
+  "verify_3.py": "628e75a29370d09d2cc11a352722e871cf869b545c6d87bfffcb398428c39d1b",
+  "verify_displacement.py": "fab52c5419d5dee9ca19eecbe055e857402ea439d78429aac7590919bd5fc78f",
+  "tests/train_nesterov.py": "7a9d8ca2d5dba55b2bc7b471d464a7576b1c8d6c09c684318bbc804509b62122",
+  "tests/train_polyak.py": "c53b221ab80b9e2bc24d49bb56691cc464963dfabd6f636a2632fbff703cf131",
+  "tests/train_sgd.py": "dc844eeeb3adec11ad9b7b0cf5e360e26565a247e71c5382f2a6ee540245d3f8"
+}

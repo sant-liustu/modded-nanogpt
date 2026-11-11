@@ -1,0 +1,55 @@
+{
+  "parameter_count": 123590400,
+  "train_tokens": 2471808000,
+  "loss_chunk_tokens": 1024,
+  "jobs": [
+    {
+      "id": "sgd_b16_elr0p24_beta0p0",
+      "script": "train_sgd_b16_elr0p24_beta0p0.py",
+      "optimizer": "sgd",
+      "batch": 16,
+      "microbatch": 16,
+      "accumulation_steps": 1,
+      "effective_lr": 0.24,
+      "momentum": 0.0,
+      "actual_peak_lr": 0.24,
+      "updates": 150868,
+      "warmup_updates": 7544,
+      "momentum_definition": "none",
+      "source": "F:\\fixednorm_six_b16_20tpp_20261111\\train_sgd_b16_elr0p06_beta0p0.py",
+      "sha256": "4755db025cb73f8895377b5a4b6081544f8aeabff22d77a3785d0ca46bc884b8"
+    },
+    {
+      "id": "polyak_b16_elr3p84_beta0p98",
+      "script": "train_polyak_b16_elr3p84_beta0p98.py",
+      "optimizer": "polyak",
+      "batch": 16,
+      "microbatch": 16,
+      "accumulation_steps": 1,
+      "effective_lr": 3.84,
+      "momentum": 0.98,
+      "actual_peak_lr": 0.07680000000000006,
+      "updates": 150868,
+      "warmup_updates": 7544,
+      "momentum_definition": "projected_base_parameter_difference",
+      "source": "F:\\fixednorm_six_b16_20tpp_20261111\\train_polyak_b16_elr0p96_beta0p98.py",
+      "sha256": "8fee476435812d350941e3d7d2dcebe29eff388a3b49767c2e5fef45aa72b479"
+    },
+    {
+      "id": "nesterov_b16_elr0p48_beta0p98",
+      "script": "train_nesterov_b16_elr0p48_beta0p98.py",
+      "optimizer": "nesterov",
+      "batch": 16,
+      "microbatch": 16,
+      "accumulation_steps": 1,
+      "effective_lr": 0.48,
+      "momentum": 0.98,
+      "actual_peak_lr": 0.009600000000000008,
+      "updates": 150868,
+      "warmup_updates": 7544,
+      "momentum_definition": "projected_base_parameter_difference",
+      "source": "F:\\fixednorm_six_b16_20tpp_20261111\\train_nesterov_b16_elr0p96_beta0p98.py",
+      "sha256": "b6c98103b9b1344fe0a9c5801213b4d0bb413d5a95be74d1f30b0d7822e9c11d"
+    }
+  ]
+}
