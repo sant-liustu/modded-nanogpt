@@ -13,7 +13,7 @@ ROOT=Path(__file__).resolve().parent
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--script',default='train_nesterov_b128_elr2p88_beta0p98.py')
+    parser.add_argument('--script',default='train_sgd_b4_elr0p03_beta0p0.py')
     parser.add_argument('--loss-chunk-tokens',type=int,default=1024)
     parser.add_argument('--steps',type=int,default=2)
     cli=parser.parse_args()
