@@ -1,17 +1,12 @@
 # 最终分组 第2批：8组
 
-| GPU | 方法 | BS | microbatch | beta | ELR | 实际峰值LR |
-|---|---|---|---|---|---|---|
-| 0 | sgd | 4 | 4 | 0.0 | 0.03 | 0.03 |
-| 1 | sgd | 4 | 4 | 0.0 | 0.06 | 0.06 |
-| 2 | polyak | 4 | 4 | 0.98 | 0.24 | 0.0048 |
-| 3 | polyak | 4 | 4 | 0.98 | 0.48 | 0.0096 |
-| 4 | nesterov | 4 | 4 | 0.98 | 0.24 | 0.0048 |
-| 5 | nesterov | 4 | 4 | 0.98 | 0.48 | 0.0096 |
-| 6 | nesterov | 8 | 8 | 0.98 | 0.48 | 0.0096 |
-| 7 | nesterov | 8 | 8 | 0.98 | 0.96 | 0.0192 |
+| GPU | 方法 | BS | 更新次数 | warmup |
+|---|---|---|
+| 4 | 603469 | 30174 |
+| 8 | 301735 | 15087 |
+| 128 | 18859 | 943 |
 
-所有BS2已集中第一批。BS8 SGD不再列入本轮，旧实验继续沿用原脚本。候选按用户最终指定，非最优保证。
+第一批为小batch（BS2五组+BS4三组）；第二批为大batch（BS4三组+BS8四组+BS128一组）。BS8 SGD不再列入本轮，旧实验继续沿用原脚本。候选按用户最终指定，非最优保证。
 共同协议：width768/depth12/heads6/context1024/vocab50304；123,590,400唯一参数，20TPP=2,471,808,000有效targets；seed0、相同数据tape顺序、不循环数据；5%线性warmup后constant，无decay。矩阵固定初始RMS，gamma不投影；所有参数用所选优化器；clip50包含gamma。FP32参数、BF16 autocast，无WD/compile/DDP；head/CE分块1024tokens并反向重算。验证microbatch32，固定262144targets，每500步及初始化/warmup结束/最终验证。
 Nesterov均用修正版d_t=theta_t-theta_prev（投影后base），y=theta_t+beta*d_t不投影；完整累积在同一个y，恢复base、clip、raw=theta_t+beta*d_t-eta*g(y)、矩阵投影；previous_parameter更新前保存当前base，不递推raw velocity。BS128使用microbatch64累积2次，其余batch=microbatch。
 

@@ -1,1 +1,3 @@
 用户最终确认16组分两批各8组；本批2。全部BS2集中第一批：SGD .03、Polyak .12/.24、Nesterov .12/.24。第一批另有BS128 Nesterov2.88和BS8 Polyak .48/.96。第二批BS4 SGD .03/.06、Polyak .24/.48、Nesterov .24/.48及BS8 Nesterov .48/.96。全部动量beta=.98。删除本轮BS8 SGD重复候选。保持原训练协议与修正Nesterov，不新增抽象。验证配置/预算/AST/tiny更新/投影/恢复/独立差分和launcher；不启动真实训练，分别提交原分支。
+
+用户最终要求大小batch集中：按BS升序排列切为两批各8组；第一批小batch，第二批大batch。候选不变，仅归属和默认输出路径改变。
