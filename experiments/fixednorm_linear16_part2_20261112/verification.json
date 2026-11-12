@@ -93,9 +93,9 @@
       "matches_clipped_template_except_parser": true
     },
     {
-      "id": "polyak_b2_elr0p24_beta0p98",
+      "id": "nesterov_b8_elr0p48_beta0p98",
       "device": "cuda",
-      "peak_actual_lr": 0.004800000000000004,
+      "peak_actual_lr": 0.009600000000000008,
       "clipping": {
         "preclip_norm": 583.09521484375,
         "postclip_norm": 50.0,
@@ -108,9 +108,9 @@
       "matches_clipped_template_except_parser": true
     },
     {
-      "id": "nesterov_b2_elr0p24_beta0p98",
+      "id": "nesterov_b8_elr0p96_beta0p98",
       "device": "cuda",
-      "peak_actual_lr": 0.004800000000000004,
+      "peak_actual_lr": 0.019200000000000016,
       "clipping": {
         "preclip_norm": 583.09521484375,
         "postclip_norm": 50.0,
