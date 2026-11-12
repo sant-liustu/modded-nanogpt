@@ -3,9 +3,9 @@
   "torch": "2.5.1+cu124",
   "jobs": [
     {
-      "id": "sgd_b8_elr0p06_beta0p0",
+      "id": "sgd_b2_elr0p03_beta0p0",
       "device": "cuda",
-      "peak_actual_lr": 0.06,
+      "peak_actual_lr": 0.03,
       "clipping": {
         "preclip_norm": 583.09521484375,
         "postclip_norm": 50.0,
@@ -14,13 +14,73 @@
       },
       "tiny_three_steps_finite": true,
       "optimizer_restore_next_step_bitwise": true,
-      "norm_max_relative_error": 1.1684590828231478e-07,
+      "norm_max_relative_error": 1.189600984385919e-07,
       "matches_clipped_template_except_parser": true
     },
     {
-      "id": "sgd_b8_elr0p12_beta0p0",
+      "id": "polyak_b2_elr0p12_beta0p98",
       "device": "cuda",
-      "peak_actual_lr": 0.12,
+      "peak_actual_lr": 0.002400000000000002,
+      "clipping": {
+        "preclip_norm": 583.09521484375,
+        "postclip_norm": 50.0,
+        "includes_gamma": true,
+        "clipping_after_accumulation": true
+      },
+      "tiny_three_steps_finite": true,
+      "optimizer_restore_next_step_bitwise": true,
+      "norm_max_relative_error": 6.14916635388596e-08,
+      "matches_clipped_template_except_parser": true
+    },
+    {
+      "id": "polyak_b2_elr0p24_beta0p98",
+      "device": "cuda",
+      "peak_actual_lr": 0.004800000000000004,
+      "clipping": {
+        "preclip_norm": 583.09521484375,
+        "postclip_norm": 50.0,
+        "includes_gamma": true,
+        "clipping_after_accumulation": true
+      },
+      "tiny_three_steps_finite": true,
+      "optimizer_restore_next_step_bitwise": true,
+      "norm_max_relative_error": 1.189600984385919e-07,
+      "matches_clipped_template_except_parser": true
+    },
+    {
+      "id": "nesterov_b2_elr0p12_beta0p98",
+      "device": "cuda",
+      "peak_actual_lr": 0.002400000000000002,
+      "clipping": {
+        "preclip_norm": 583.09521484375,
+        "postclip_norm": 50.0,
+        "includes_gamma": true,
+        "clipping_after_accumulation": true
+      },
+      "tiny_three_steps_finite": true,
+      "optimizer_restore_next_step_bitwise": true,
+      "norm_max_relative_error": 1.1645513375846406e-07,
+      "matches_clipped_template_except_parser": true
+    },
+    {
+      "id": "nesterov_b2_elr0p24_beta0p98",
+      "device": "cuda",
+      "peak_actual_lr": 0.004800000000000004,
+      "clipping": {
+        "preclip_norm": 583.09521484375,
+        "postclip_norm": 50.0,
+        "includes_gamma": true,
+        "clipping_after_accumulation": true
+      },
+      "tiny_three_steps_finite": true,
+      "optimizer_restore_next_step_bitwise": true,
+      "norm_max_relative_error": 1.1528302445995564e-07,
+      "matches_clipped_template_except_parser": true
+    },
+    {
+      "id": "nesterov_b128_elr2p88_beta0p98",
+      "device": "cuda",
+      "peak_actual_lr": 0.05760000000000005,
       "clipping": {
         "preclip_norm": 583.09521484375,
         "postclip_norm": 50.0,
@@ -60,66 +120,6 @@
       "tiny_three_steps_finite": true,
       "optimizer_restore_next_step_bitwise": true,
       "norm_max_relative_error": 1.229833270777192e-07,
-      "matches_clipped_template_except_parser": true
-    },
-    {
-      "id": "nesterov_b8_elr0p48_beta0p98",
-      "device": "cuda",
-      "peak_actual_lr": 0.009600000000000008,
-      "clipping": {
-        "preclip_norm": 583.09521484375,
-        "postclip_norm": 50.0,
-        "includes_gamma": true,
-        "clipping_after_accumulation": true
-      },
-      "tiny_three_steps_finite": true,
-      "optimizer_restore_next_step_bitwise": true,
-      "norm_max_relative_error": 1.189600984385919e-07,
-      "matches_clipped_template_except_parser": true
-    },
-    {
-      "id": "nesterov_b8_elr0p96_beta0p98",
-      "device": "cuda",
-      "peak_actual_lr": 0.019200000000000016,
-      "clipping": {
-        "preclip_norm": 583.09521484375,
-        "postclip_norm": 50.0,
-        "includes_gamma": true,
-        "clipping_after_accumulation": true
-      },
-      "tiny_three_steps_finite": true,
-      "optimizer_restore_next_step_bitwise": true,
-      "norm_max_relative_error": 1.1528302445995564e-07,
-      "matches_clipped_template_except_parser": true
-    },
-    {
-      "id": "sgd_b2_elr0p03_beta0p0",
-      "device": "cuda",
-      "peak_actual_lr": 0.03,
-      "clipping": {
-        "preclip_norm": 583.09521484375,
-        "postclip_norm": 50.0,
-        "includes_gamma": true,
-        "clipping_after_accumulation": true
-      },
-      "tiny_three_steps_finite": true,
-      "optimizer_restore_next_step_bitwise": true,
-      "norm_max_relative_error": 1.189600984385919e-07,
-      "matches_clipped_template_except_parser": true
-    },
-    {
-      "id": "nesterov_b128_elr2p88_beta0p98",
-      "device": "cuda",
-      "peak_actual_lr": 0.05760000000000005,
-      "clipping": {
-        "preclip_norm": 583.09521484375,
-        "postclip_norm": 50.0,
-        "includes_gamma": true,
-        "clipping_after_accumulation": true
-      },
-      "tiny_three_steps_finite": true,
-      "optimizer_restore_next_step_bitwise": true,
-      "norm_max_relative_error": 1.189600984385919e-07,
       "matches_clipped_template_except_parser": true
     }
   ],

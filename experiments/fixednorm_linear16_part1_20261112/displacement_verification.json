@@ -4,7 +4,7 @@
   "results": [
     {
       "folder": "fixednorm_linear16_part1_20261112",
-      "id": "nesterov_b8_elr0p48_beta0p98",
+      "id": "nesterov_b2_elr0p12_beta0p98",
       "cpu": {
         "device": "cpu",
         "variable_lr_projected_reference": true,
@@ -26,7 +26,7 @@
     },
     {
       "folder": "fixednorm_linear16_part1_20261112",
-      "id": "nesterov_b8_elr0p96_beta0p98",
+      "id": "nesterov_b2_elr0p24_beta0p98",
       "cpu": {
         "device": "cpu",
         "variable_lr_projected_reference": true,

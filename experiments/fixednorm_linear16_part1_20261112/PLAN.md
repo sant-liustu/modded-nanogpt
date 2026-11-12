@@ -1,3 +1,1 @@
-用户确认linear rule两批各8组：BS8/4各方法两点、BS2各方法一个点，另BS128 Nesterov2.88。参考BS16 SGD .12/.24、Polyak .96/1.92、Nesterov .48/.96，ELR随BS线性缩放；BS2选各参考下点。参考不是确认最优；BS1282.88为指定补点。沿用20TPP/fixednorm/clip50/seed0/warmup_constant/低显存；Nesterov投影后base参数差分。BS128 micro64累积2次。检查预算/AST/tiny CUDA/恢复/独立差分；推送但不启动真实训练。BS8 SGD两点已有，不重复启动。
-
-用户修正候选（覆盖此前linear参考选点）：BS2 SGD .03、Polyak .24、Nesterov .24；BS8 Polyak/Nesterov各.48/.96；BS4 Polyak/Nesterov各.24/.48。其他候选不变。
+用户最终确认16组分两批各8组；本批1。全部BS2集中第一批：SGD .03、Polyak .12/.24、Nesterov .12/.24。第一批另有BS128 Nesterov2.88和BS8 Polyak .48/.96。第二批BS4 SGD .03/.06、Polyak .24/.48、Nesterov .24/.48及BS8 Nesterov .48/.96。全部动量beta=.98。删除本轮BS8 SGD重复候选。保持原训练协议与修正Nesterov，不新增抽象。验证配置/预算/AST/tiny更新/投影/恢复/独立差分和launcher；不启动真实训练，分别提交原分支。
