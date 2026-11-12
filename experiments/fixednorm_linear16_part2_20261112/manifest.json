@@ -71,23 +71,6 @@
       "sha256": "97440fa89a629277a85cb2d5fe8ae9efb8b533f76d41307260e2aa4c77513264"
     },
     {
-      "id": "nesterov_b4_elr0p12_beta0p98",
-      "script": "train_nesterov_b4_elr0p12_beta0p98.py",
-      "optimizer": "nesterov",
-      "batch": 4,
-      "microbatch": 4,
-      "accumulation_steps": 1,
-      "effective_lr": 0.12,
-      "momentum": 0.98,
-      "actual_peak_lr": 0.002400000000000002,
-      "updates": 603469,
-      "warmup_updates": 30174,
-      "source": "F:\\fixednorm_three_b16_followup_20261111\\train_nesterov_b16_elr0p48_beta0p98.py",
-      "existing_duplicate": false,
-      "reference_bs16_elr": 0.48,
-      "sha256": "4ca0da3a96b0b7a32b88f02437a6f04e8732406a2a33abbd6b3194ceeda649f2"
-    },
-    {
       "id": "nesterov_b4_elr0p24_beta0p98",
       "script": "train_nesterov_b4_elr0p24_beta0p98.py",
       "optimizer": "nesterov",
@@ -105,38 +88,55 @@
       "sha256": "8ea4ceac02a633f3f25affaa5ccc680e87192993ae188edef0c5ae82cb39d4d9"
     },
     {
-      "id": "polyak_b2_elr0p12_beta0p98",
-      "script": "train_polyak_b2_elr0p12_beta0p98.py",
+      "id": "nesterov_b4_elr0p48_beta0p98",
+      "script": "train_nesterov_b4_elr0p48_beta0p98.py",
+      "optimizer": "nesterov",
+      "batch": 4,
+      "microbatch": 4,
+      "accumulation_steps": 1,
+      "effective_lr": 0.48,
+      "momentum": 0.98,
+      "actual_peak_lr": 0.009600000000000008,
+      "updates": 603469,
+      "warmup_updates": 30174,
+      "source": "F:\\fixednorm_three_b16_followup_20261111\\train_nesterov_b16_elr0p48_beta0p98.py",
+      "existing_duplicate": false,
+      "reference_bs16_elr": 1.92,
+      "sha256": "b76816004c5d5706e28c226384020930f4720eab66ab8d041423095ade0046c6"
+    },
+    {
+      "id": "polyak_b2_elr0p24_beta0p98",
+      "script": "train_polyak_b2_elr0p24_beta0p98.py",
       "optimizer": "polyak",
       "batch": 2,
       "microbatch": 2,
       "accumulation_steps": 1,
-      "effective_lr": 0.12,
+      "effective_lr": 0.24,
       "momentum": 0.98,
-      "actual_peak_lr": 0.002400000000000002,
+      "actual_peak_lr": 0.004800000000000004,
       "updates": 1206938,
       "warmup_updates": 60347,
       "source": "F:\\fixednorm_three_b16_followup_20261111\\train_polyak_b16_elr3p84_beta0p98.py",
       "existing_duplicate": false,
-      "reference_bs16_elr": 0.96,
-      "sha256": "25fa3f4038f6bbaad42ce71bc69b470ea87d9ee041498407630f0a5e0b049503"
+      "reference_bs16_elr": 1.92,
+      "sha256": "bc87a08e9ed63badfa6a630ef21f09b478c874f23d3d73ab0aeefd99ea0d013f"
     },
     {
-      "id": "nesterov_b2_elr0p06_beta0p98",
-      "script": "train_nesterov_b2_elr0p06_beta0p98.py",
+      "id": "nesterov_b2_elr0p24_beta0p98",
+      "script": "train_nesterov_b2_elr0p24_beta0p98.py",
       "optimizer": "nesterov",
       "batch": 2,
       "microbatch": 2,
       "accumulation_steps": 1,
-      "effective_lr": 0.06,
+      "effective_lr": 0.24,
       "momentum": 0.98,
-      "actual_peak_lr": 0.001200000000000001,
+      "actual_peak_lr": 0.004800000000000004,
       "updates": 1206938,
       "warmup_updates": 60347,
       "source": "F:\\fixednorm_three_b16_followup_20261111\\train_nesterov_b16_elr0p48_beta0p98.py",
       "existing_duplicate": false,
-      "reference_bs16_elr": 0.48,
-      "sha256": "d48ad1a156640e171c945dbcbe0c192db1d83dea148fbc20f1344f5f47851462"
+      "reference_bs16_elr": 1.92,
+      "sha256": "e2cb4fd40ef4874284d09387ed7c6bc2a1af6c2172e8eb210eb1d2e4ffe2e978"
     }
   ]
 }

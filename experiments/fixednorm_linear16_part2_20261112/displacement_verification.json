@@ -4,28 +4,6 @@
   "results": [
     {
       "folder": "fixednorm_linear16_part2_20261112",
-      "id": "nesterov_b4_elr0p12_beta0p98",
-      "cpu": {
-        "device": "cpu",
-        "variable_lr_projected_reference": true,
-        "all_microbatches_at_parameter_difference_lookahead": true,
-        "previous_base_state_correct": true,
-        "exception_restore_bitwise": true,
-        "resume_next_step_bitwise": true,
-        "distinguishes_raw_velocity": true
-      },
-      "cuda": {
-        "device": "cuda",
-        "variable_lr_projected_reference": true,
-        "all_microbatches_at_parameter_difference_lookahead": true,
-        "previous_base_state_correct": true,
-        "exception_restore_bitwise": true,
-        "resume_next_step_bitwise": true,
-        "distinguishes_raw_velocity": true
-      }
-    },
-    {
-      "folder": "fixednorm_linear16_part2_20261112",
       "id": "nesterov_b4_elr0p24_beta0p98",
       "cpu": {
         "device": "cpu",
@@ -48,7 +26,29 @@
     },
     {
       "folder": "fixednorm_linear16_part2_20261112",
-      "id": "nesterov_b2_elr0p06_beta0p98",
+      "id": "nesterov_b4_elr0p48_beta0p98",
+      "cpu": {
+        "device": "cpu",
+        "variable_lr_projected_reference": true,
+        "all_microbatches_at_parameter_difference_lookahead": true,
+        "previous_base_state_correct": true,
+        "exception_restore_bitwise": true,
+        "resume_next_step_bitwise": true,
+        "distinguishes_raw_velocity": true
+      },
+      "cuda": {
+        "device": "cuda",
+        "variable_lr_projected_reference": true,
+        "all_microbatches_at_parameter_difference_lookahead": true,
+        "previous_base_state_correct": true,
+        "exception_restore_bitwise": true,
+        "resume_next_step_bitwise": true,
+        "distinguishes_raw_velocity": true
+      }
+    },
+    {
+      "folder": "fixednorm_linear16_part2_20261112",
+      "id": "nesterov_b2_elr0p24_beta0p98",
       "cpu": {
         "device": "cpu",
         "variable_lr_projected_reference": true,
