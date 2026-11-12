@@ -1,4 +1,4 @@
-"""Fixednorm sgd for matrices and RMSNorm scales, single GPU, exact tape resume."""
+"""Fixednorm nesterov for matrices and RMSNorm scales, single GPU, exact tape resume."""
 import argparse
 import contextlib
 import glob
@@ -218,7 +218,7 @@ class GPT(nn.Module):
 
 
 
-OPTIMIZER = 'sgd'
+OPTIMIZER = 'nesterov'
 
 class MomentumOptimizer(torch.optim.Optimizer):
     """Unnormalized momentum; NAG explicitly uses consecutive base parameter differences."""
@@ -519,7 +519,7 @@ def run(args):
     contract['model_sha256']=hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
     contract['policy']='fixednorm_all_parameters_'+OPTIMIZER+'_embedded_fanin_warmup_constant_20tpp_head_checkpoint_v4'
     contract['optimizer']=OPTIMIZER
-    contract['momentum_definition']='none'
+    contract['momentum_definition']='projected_base_parameter_difference'
     contract['gradient_clipping']=dict(max_norm=50.0,norm_type=2.0,scope='all_trainable_parameters')
     contract['training_sha256']=hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
     out=Path(args.output);out.mkdir(parents=True,exist_ok=True)
@@ -614,14 +614,14 @@ def parser():
     p=argparse.ArgumentParser()
     p.add_argument('--train',default='F:/datasets/fineweb10B-gpt2/raw/fineweb_train_*.bin')
     p.add_argument('--val',default='F:/datasets/fineweb10B-gpt2/raw/fineweb_val_*.bin')
-    p.add_argument('--output',default='runs_linear16_part1_20261112/sgd_b2_elr0p015_beta0p0')
+    p.add_argument('--output',default='runs_linear16_part1_20261112/nesterov_b8_elr0p96_beta0p98')
     p.add_argument('--arm',choices=['fixed'],default='fixed')
-    for flag,default in [('vocab-size',50304),('batch',2),('context',1024),('width',768),('layers',12),('heads',6),('seed',0),('validation-contexts',256),('validation-batch-size',32),('eval-every',500),('checkpoint-every',1000),('dense-window',0),('dense-every',20)]:
+    for flag,default in [('vocab-size',50304),('batch',8),('context',1024),('width',768),('layers',12),('heads',6),('seed',0),('validation-contexts',256),('validation-batch-size',32),('eval-every',500),('checkpoint-every',1000),('dense-window',0),('dense-every',20)]:
         p.add_argument('--'+flag,type=int,default=default)
-    p.add_argument('--microbatch',type=int,default=2)
+    p.add_argument('--microbatch',type=int,default=8)
     p.add_argument('--loss-chunk-tokens',type=int,default=1024,help='Head/CE token chunk; 0 uses reference full logits')
-    p.add_argument('--effective-lr',type=float,choices=[0.015],default=0.015,help='Fixed eta/(1-beta) for this trial; distinct from RMSNorm gamma')
-    p.add_argument('--momentum',type=float,choices=[0.0],default=0.0)
+    p.add_argument('--effective-lr',type=float,choices=[0.96],default=0.96,help='Fixed eta/(1-beta) for this trial; distinct from RMSNorm gamma')
+    p.add_argument('--momentum',type=float,choices=[0.98],default=0.98)
     p.add_argument('--warmup-fraction',type=float,default=.05)
     p.add_argument('--device',choices=['cpu','cuda'],default='cuda')
     p.add_argument('--preflight',action='store_true')

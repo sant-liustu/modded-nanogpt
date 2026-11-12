@@ -71,23 +71,6 @@
       "sha256": "25bf3a1b5474512152599eb0c4d06668d08954586adb49d3b0a20b2993d0e634"
     },
     {
-      "id": "nesterov_b8_elr0p24_beta0p98",
-      "script": "train_nesterov_b8_elr0p24_beta0p98.py",
-      "optimizer": "nesterov",
-      "batch": 8,
-      "microbatch": 8,
-      "accumulation_steps": 1,
-      "effective_lr": 0.24,
-      "momentum": 0.98,
-      "actual_peak_lr": 0.004800000000000004,
-      "updates": 301735,
-      "warmup_updates": 15087,
-      "source": "F:\\fixednorm_three_b16_followup_20261111\\train_nesterov_b16_elr0p48_beta0p98.py",
-      "existing_duplicate": false,
-      "reference_bs16_elr": 0.48,
-      "sha256": "3ff9cbb772e3904641b2a12b511d91f451bfe2eb72fabae93d59b17a888ddd95"
-    },
-    {
       "id": "nesterov_b8_elr0p48_beta0p98",
       "script": "train_nesterov_b8_elr0p48_beta0p98.py",
       "optimizer": "nesterov",
@@ -105,21 +88,38 @@
       "sha256": "e541261e19e63a827f7e0c165f03bb8edc05c8de93dfdd55293e38c99d3368c0"
     },
     {
-      "id": "sgd_b2_elr0p015_beta0p0",
-      "script": "train_sgd_b2_elr0p015_beta0p0.py",
+      "id": "nesterov_b8_elr0p96_beta0p98",
+      "script": "train_nesterov_b8_elr0p96_beta0p98.py",
+      "optimizer": "nesterov",
+      "batch": 8,
+      "microbatch": 8,
+      "accumulation_steps": 1,
+      "effective_lr": 0.96,
+      "momentum": 0.98,
+      "actual_peak_lr": 0.019200000000000016,
+      "updates": 301735,
+      "warmup_updates": 15087,
+      "source": "F:\\fixednorm_three_b16_followup_20261111\\train_nesterov_b16_elr0p48_beta0p98.py",
+      "existing_duplicate": false,
+      "reference_bs16_elr": 1.92,
+      "sha256": "c676083470a4374b2223abed15cd310cec9ec071450b3f50de1a278c3a34c182"
+    },
+    {
+      "id": "sgd_b2_elr0p03_beta0p0",
+      "script": "train_sgd_b2_elr0p03_beta0p0.py",
       "optimizer": "sgd",
       "batch": 2,
       "microbatch": 2,
       "accumulation_steps": 1,
-      "effective_lr": 0.015,
+      "effective_lr": 0.03,
       "momentum": 0.0,
-      "actual_peak_lr": 0.015,
+      "actual_peak_lr": 0.03,
       "updates": 1206938,
       "warmup_updates": 60347,
       "source": "F:\\fixednorm_three_b16_followup_20261111\\train_sgd_b16_elr0p24_beta0p0.py",
       "existing_duplicate": false,
-      "reference_bs16_elr": 0.12,
-      "sha256": "d469774c3f0ea8cd82d14a4d7df1223343e6dc9d58e8999d16befb597067d6db"
+      "reference_bs16_elr": 0.24,
+      "sha256": "417123e869260e07878a3f983b2a260c923e984629e2972eefeba6a5a25dcfea"
     },
     {
       "id": "nesterov_b128_elr2p88_beta0p98",

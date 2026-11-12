@@ -6,13 +6,13 @@
 | 1 | sgd | 8 | 8 | 0.0 | 0.12 | 0.12 |
 | 2 | polyak | 8 | 8 | 0.98 | 0.48 | 0.0096 |
 | 3 | polyak | 8 | 8 | 0.98 | 0.96 | 0.0192 |
-| 4 | nesterov | 8 | 8 | 0.98 | 0.24 | 0.0048 |
-| 5 | nesterov | 8 | 8 | 0.98 | 0.48 | 0.0096 |
-| 6 | sgd | 2 | 2 | 0.0 | 0.015 | 0.015 |
+| 4 | nesterov | 8 | 8 | 0.98 | 0.48 | 0.0096 |
+| 5 | nesterov | 8 | 8 | 0.98 | 0.96 | 0.0192 |
+| 6 | sgd | 2 | 2 | 0.0 | 0.03 | 0.03 |
 | 7 | nesterov | 128 | 64 | 0.98 | 2.88 | 0.0576 |
 
 ## 选点依据
-BS16参考：SGD .12/.24、Polyak beta=.98 .96/1.92、Nesterov beta=.98 .48/.96。BS8与BS4按ELR_new=ELR_ref*BS_new/16得到各两点。BS2各取参考低点：SGD .015、Polyak .12、Nesterov .06。参考不是已确认最优，linear rule是选点假设。BS128 Nesterov2.88为用户指定补点，microbatch64累积2次。
+候选按用户最新指定值，见上表；不再按之前不同方法的BS16参考点机械缩放。BS128 Nesterov2.88保持不变，microbatch64累积2次。
 第一批BS8 SGD .06/.12与此前two_sgd_b8完全重复实验条件；若已启动/完成，不要另启动，沿用已有结果。它们只是为16份配置完整列出，不是两个新独立数据点。若要复用已有checkpoint，请从原目录原脚本恢复，本批源码输出路径变化会触发strict source校验。
 
 ## 训练协议
@@ -35,3 +35,5 @@ python launch.py --train '/data/fineweb_train_*.bin' --val '/data/fineweb_val_*.
 ## 检查
 verify_8.py：配置/预算/Python3.10语法/模板AST一致、tiny CUDA训练/clip/fixednorm/恢复后下一步一致、八卡dry-run。verify_displacement.py：所有Nesterov CPU/CUDA独立参数差分参考，含变化LR、同点累积、previous base、异常恢复及resume。probe_memory.py为完整形状合成token两步探针。
 本地Windows/Python3.12.3/PyTorch2.5.1+cu124小模型验证不等于云端Linux/Python3.10.16、全尺寸显存或收敛验证。未启动正式训练。小batch固定20TPP更新数较多。报告见verification.json/displacement_verification.json；来源见manifest，差异见checks.diff。
+
+用户修正候选（覆盖此前linear参考选点）：BS2 SGD .03、Polyak .24、Nesterov .24；BS8 Polyak/Nesterov各.48/.96；BS4 Polyak/Nesterov各.24/.48。其他候选不变。
