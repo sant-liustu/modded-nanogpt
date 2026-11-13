@@ -41,6 +41,11 @@ class CausalSelfAttention(nn.Module):
         # regularization
         self.attn_dropout = nn.Dropout(config.dropout)
         self.resid_dropout = nn.Dropout(config.dropout)
+        self.qk_norm = config.qk_norm
+        if self.qk_norm:
+            head_dim = config.n_embd // config.n_head
+            self.q_gain = nn.Parameter(torch.ones(head_dim))
+            self.k_gain = nn.Parameter(torch.ones(head_dim))
         self.n_head = config.n_head
         self.n_embd = config.n_embd
         self.dropout = config.dropout
@@ -59,6 +64,11 @@ class CausalSelfAttention(nn.Module):
         q, k, v  = self.c_attn(x).split(self.n_embd, dim=2)
         k = k.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
         q = q.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
+        if self.qk_norm:
+            def normalize(z, gain):
+                f = z.float()
+                return (f * torch.rsqrt(f.square().mean(dim=-1, keepdim=True) + 1e-6) * gain).to(z.dtype)
+            q, k = normalize(q, self.q_gain), normalize(k, self.k_gain)
         v = v.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
 
         # causal self-attention; Self-attend: (B, nh, T, hs) x (B, nh, hs, T) -> (B, nh, T, T)
@@ -121,6 +131,8 @@ class GPTConfig:
     weight_tying: bool = True
     custom_init: bool = False
     init_scale: float = 0.02
+
+    qk_norm: bool = False
 
 class GPT(nn.Module):
 
@@ -292,7 +304,7 @@ class GPT(nn.Module):
         # i.e. all weight tensors in matmuls + embeddings decay, all biases and layernorms don't.
         decay_params, nodecay_params = [], []
         for n, p in param_dict.items():
-            if any([s in n for s in wd_substrings_include]):
+            if not n.endswith((".q_gain", ".k_gain")) and any(s in n for s in wd_substrings_include):
                 decay_params.append(p)
             else:
                 nodecay_params.append(p)

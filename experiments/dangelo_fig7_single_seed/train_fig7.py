@@ -34,9 +34,12 @@ def main():
     p.add_argument('--strict-fp32', action='store_true', help='Disable upstream TF32 defaults')
     p.add_argument('--device', default='cuda')
     p.add_argument('--tiny', action='store_true', help='Small synthetic-data smoke test only')
+    p.add_argument('--qk-norm', action='store_true', help='Apply RMSNorm with learned gains to Q and K')
     p.add_argument('--gamma-cosine', action='store_true',
                    help='Gamma uses original schedule; ELR norm excludes gamma')
     a = p.parse_args()
+    if a.qk_norm and a.gamma_cosine:
+        p.error('--qk-norm and --gamma-cosine are separate experimental conditions')
     world = int(os.environ.get('WORLD_SIZE', '1'))
     rank = int(os.environ.get('RANK', '0'))
     local_rank = int(os.environ.get('LOCAL_RANK', '0'))
@@ -61,6 +64,8 @@ def main():
     cfg = dict(n_layer=12, n_head=12, n_embd=768, block_size=256,
                vocab_size=50304, bias=False, learnable_ln=True,
                weight_tying=True, dropout=0.0, init_scale=0.02)
+    if a.qk_norm:
+        cfg.update(qk_norm=True)
     if a.tiny:
         cfg.update(n_layer=1, n_head=2, n_embd=32, block_size=16, vocab_size=128)
     model = GPT(GPTConfig(**cfg)).to(a.device)
