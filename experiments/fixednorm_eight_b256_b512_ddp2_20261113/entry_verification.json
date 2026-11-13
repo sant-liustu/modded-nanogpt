@@ -1,0 +1,13 @@
+{
+  "cpu_two_process_gloo": true,
+  "optimizers": [
+    "sgd",
+    "polyak",
+    "nesterov"
+  ],
+  "real_entry_tiny_models": true,
+  "full_budget_and_partial_tail": true,
+  "single_writer_logs": true,
+  "final_checkpoint_resume": true,
+  "cloud_nccl_full_model": false
+}

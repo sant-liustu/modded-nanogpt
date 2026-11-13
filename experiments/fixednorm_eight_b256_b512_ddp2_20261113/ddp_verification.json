@@ -1,0 +1,95 @@
+{
+  "python": "3.12.3 (tags/v3.12.3:f6650f9, Apr  9 2024, 14:05:25) [MSC v.1938 64 bit (AMD64)]",
+  "torch": "2.5.1+cu124",
+  "jobs": [
+    {
+      "id": "sgd_b256_elr0p24_beta0p0",
+      "cpu_gloo_two_ranks": true,
+      "serial_match": true,
+      "max_parameter_abs_error": 8.940696716308594e-08,
+      "partial_final_step_5_tokens": true,
+      "zero_token_rank": true,
+      "checkpoint_restore": true,
+      "ranks_bitwise_equal": true,
+      "accumulation_slots": 2
+    },
+    {
+      "id": "sgd_b256_elr0p48_beta0p0",
+      "cpu_gloo_two_ranks": true,
+      "serial_match": true,
+      "max_parameter_abs_error": 7.450580596923828e-08,
+      "partial_final_step_5_tokens": true,
+      "zero_token_rank": true,
+      "checkpoint_restore": true,
+      "ranks_bitwise_equal": true,
+      "accumulation_slots": 2
+    },
+    {
+      "id": "polyak_b256_elr3p84_beta0p98",
+      "cpu_gloo_two_ranks": true,
+      "serial_match": true,
+      "max_parameter_abs_error": 1.1920928955078125e-07,
+      "partial_final_step_5_tokens": true,
+      "zero_token_rank": true,
+      "checkpoint_restore": true,
+      "ranks_bitwise_equal": true,
+      "accumulation_slots": 2
+    },
+    {
+      "id": "polyak_b256_elr7p68_beta0p98",
+      "cpu_gloo_two_ranks": true,
+      "serial_match": true,
+      "max_parameter_abs_error": 1.9744038581848145e-07,
+      "partial_final_step_5_tokens": true,
+      "zero_token_rank": true,
+      "checkpoint_restore": true,
+      "ranks_bitwise_equal": true,
+      "accumulation_slots": 2
+    },
+    {
+      "id": "nesterov_b256_elr1p92_beta0p98",
+      "cpu_gloo_two_ranks": true,
+      "serial_match": true,
+      "max_parameter_abs_error": 2.9802322387695312e-08,
+      "partial_final_step_5_tokens": true,
+      "zero_token_rank": true,
+      "checkpoint_restore": true,
+      "ranks_bitwise_equal": true,
+      "accumulation_slots": 2
+    },
+    {
+      "id": "nesterov_b256_elr3p84_beta0p98",
+      "cpu_gloo_two_ranks": true,
+      "serial_match": true,
+      "max_parameter_abs_error": 1.2293457984924316e-07,
+      "partial_final_step_5_tokens": true,
+      "zero_token_rank": true,
+      "checkpoint_restore": true,
+      "ranks_bitwise_equal": true,
+      "accumulation_slots": 2
+    },
+    {
+      "id": "sgd_b512_elr0p48_beta0p0",
+      "cpu_gloo_two_ranks": true,
+      "serial_match": true,
+      "max_parameter_abs_error": 5.960464477539063e-08,
+      "partial_final_step_5_tokens": true,
+      "zero_token_rank": true,
+      "checkpoint_restore": true,
+      "ranks_bitwise_equal": true,
+      "accumulation_slots": 4
+    },
+    {
+      "id": "sgd_b512_elr0p96_beta0p0",
+      "cpu_gloo_two_ranks": true,
+      "serial_match": true,
+      "max_parameter_abs_error": 1.862645149230957e-07,
+      "partial_final_step_5_tokens": true,
+      "zero_token_rank": true,
+      "checkpoint_restore": true,
+      "ranks_bitwise_equal": true,
+      "accumulation_slots": 4
+    }
+  ],
+  "cloud_linux_nccl_full_model_tested": false
+}

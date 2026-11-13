@@ -1,0 +1,1736 @@
+--- serial/train_sgd_b256_elr0p24_beta0p0.py
++++ DDP2/train_sgd_b256_elr0p24_beta0p0.py
+@@ -1,4 +1,7 @@
+-"""Fixednorm sgd for matrices and RMSNorm scales, single GPU, exact tape resume."""
++"""Fixednorm sgd for matrices and RMSNorm scales, two-rank DDP, exact tape resume."""
++import io
++import torch.distributed as dist
++from torch.nn.parallel import DistributedDataParallel as DDP
+ import argparse
+ import contextlib
+ import glob
+@@ -443,50 +446,63 @@
+ 
+ def update(model, optimizer, tape, position, args, lr, scale, targets, next_scale):
+     model.train()
++    raw = model.module if isinstance(model, DDP) else model
++    world = dist.get_world_size() if dist.is_initialized() else 1
++    rank = dist.get_rank() if dist.is_initialized() else 0
+     optimizer.param_groups[0]['lr'] = lr * scale**ARMS[args.arm]
+     optimizer.param_groups[1]['lr'] = lr
+     optimizer.zero_grad(set_to_none=True)
+     micro = args.microbatch or args.batch
+-    total = 0.
+     step_tokens = min(args.batch*args.context, args.target_train_tokens-position*args.context)
+     rows = math.ceil(step_tokens/args.context)
++    slots = math.ceil(rows/(micro*world))
++    total = torch.zeros((), dtype=torch.float64, device=args.device)
+     lookahead = optimizer.lookahead() if OPTIMIZER == 'nesterov' else contextlib.nullcontext()
+     with lookahead:
+-        for offset in range(0, rows, micro):
+-            count = min(micro, rows-offset)
+-            valid = min(count*args.context, step_tokens-offset*args.context)
+-            if valid != count*args.context:
+-                x,y = tape.batch(position+offset, count, args.device, valid_tokens=valid)
++        for slot in range(slots):
++            offset = (slot*world+rank)*micro
++            count = min(micro, max(0, rows-offset))
++            valid = min(count*args.context, max(0, step_tokens-offset*args.context))
++            if valid:
++                if valid != count*args.context:
++                    x,y = tape.batch(position+offset,count,args.device,valid_tokens=valid)
++                else:
++                    x,y = tape.batch(position+offset,count,args.device)
+             else:
+-                x,y = tape.batch(position+offset, count, args.device)
+-            with amp(args.device):
+-                _,loss = model(x,y,return_logits=False)
+-            value = float(loss.detach())
+-            if not math.isfinite(value):
+-                raise FloatingPointError('nonfinite training loss')
+-            (loss * (valid/step_tokens)).backward()
+-            total += value*valid/step_tokens
+-    # Clip the complete accumulated gradient, including RMSNorm gamma.
+-    # The returned norm (and logged gradient_norm) is measured BEFORE clipping.
+-    grad = float(torch.nn.utils.clip_grad_norm_(
+-        model.parameters(), max_norm=50.0, norm_type=2.0, error_if_nonfinite=True))
+-    if not math.isfinite(grad):
+-        raise FloatingPointError('nonfinite gradient')
++                # Dummy zero-weight graph keeps DDP collectives aligned on a partial final step.
++                x,y = tape.batch(position,1,args.device)
++            sync = model.no_sync() if isinstance(model,DDP) and slot < slots-1 else contextlib.nullcontext()
++            with sync:
++                with amp(args.device):
++                    _,loss = model(x,y,return_logits=False)
++                bad = (~torch.isfinite(loss.detach())).to(torch.int32)
++                if world>1: dist.all_reduce(bad,op=dist.ReduceOp.MAX)
++                if bad.item(): raise FloatingPointError('nonfinite loss on a DDP rank')
++                (loss * (world*valid/step_tokens)).backward()
++                total += loss.detach().double()*(valid/step_tokens)
++    if world>1: dist.all_reduce(total,op=dist.ReduceOp.SUM)
++    grad = float(torch.nn.utils.clip_grad_norm_(raw.parameters(),max_norm=50.0,
++                                               norm_type=2.0,error_if_nonfinite=True))
+     optimizer.step()
+-    project(model, targets, next_scale)
+-    return total,grad
++    project(raw,targets,next_scale)
++    return float(total),grad
+ 
+ 
+ def save(path, model, targets, updates, contract, cumulative_lr, optimizer):
++    if dist.is_initialized() and dist.get_rank()!=0:
++        dist.barrier()
++        return
++    model = model.module if isinstance(model,DDP) else model
+     tmp = path.with_suffix('.tmp')
+     torch.save(dict(model=model.state_dict(), optimizer=optimizer.state_dict(), norm_targets=targets, updates=updates,
+                     position=min(updates*contract['tokens_per_update'], contract['target_train_tokens']), contract=contract,
+                     cumulative_lr=cumulative_lr, rng=torch.get_rng_state(),
+                     cuda_rng=torch.cuda.get_rng_state_all() if contract['device']=='cuda' else []),tmp)
+     os.replace(tmp,path)
+-
+-
+-def run(args):
++    if dist.is_initialized(): dist.barrier()
++
++
++def run_core(args):
+     if not math.isfinite(args.effective_lr) or args.effective_lr <= 0:
+         raise ValueError('effective LR must be positive and finite')
+     if not math.isfinite(args.momentum) or not 0 <= args.momentum < 1:
+@@ -513,7 +529,10 @@
+         raise ValueError('insufficient training tokens; no implicit repetition')
+     if args.validation_contexts*args.context+1 > val.tokens:
+         raise ValueError('insufficient validation tokens')
++    rank = dist.get_rank()
+     contract = {k:v for k,v in vars(args).items() if k not in ('output','preflight')}
++    contract['world_size'] = dist.get_world_size()
++    contract['parallelism'] = 'DDP2'
+     for key,tape in [('train',train),('val',val)]:
+         contract[key]=[[str(Path(f).resolve()),Path(f).stat().st_size,Path(f).stat().st_mtime_ns] for f in tape.files]
+     contract['model_sha256']=hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+@@ -524,9 +543,18 @@
+     contract['training_sha256']=hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+     out=Path(args.output);out.mkdir(parents=True,exist_ok=True)
+     manifest=out/'config.json'
+-    if manifest.exists() and json.loads(manifest.read_text()) != contract:
+-        raise ValueError('output belongs to a different experiment')
+-    manifest.write_text(json.dumps(contract,indent=2),encoding='utf-8')
++    config_error=[None]
++    if rank==0:
++        try:
++            if manifest.exists() and json.loads(manifest.read_text()) != contract:
++                raise ValueError('output belongs to a different experiment')
++            temp=manifest.with_suffix('.tmp')
++            temp.write_text(json.dumps(contract,indent=2),encoding='utf-8')
++            os.replace(temp,manifest)
++        except Exception as exc:
++            config_error[0]=str(exc)
++    dist.broadcast_object_list(config_error,src=0)
++    if config_error[0]: raise ValueError(config_error[0])
+     if args.preflight:
+         return
+     torch.manual_seed(args.seed);np.random.seed(args.seed)
+@@ -560,33 +588,37 @@
+         if args.device=='cuda':
+             torch.cuda.set_rng_state_all([v.cpu() for v in state['cuda_rng']])
+         del state
++    raw_model=model
++    model=DDP(raw_model,device_ids=[torch.cuda.current_device()] if args.device=='cuda' else None,
++              broadcast_buffers=False)
+     started=time.monotonic()
+-    with step_trace(out/'steps.jsonl',completed) as steps, step_trace(out/'metrics.jsonl',completed) as metrics:
++    with (step_trace(out/'steps.jsonl',completed) if rank==0 else contextlib.nullcontext(io.StringIO())) as steps, (step_trace(out/'metrics.jsonl',completed) if rank==0 else contextlib.nullcontext(io.StringIO())) as metrics:
+         def measure():
+             # Diagnostics describe current checkpoint weights and NEXT update LR.
+             index=min(completed,args.updates-1)
+             scale=scale_at(args.arm,completed,args.updates)
+             lr=base_lr(args,index)
+             row=dict(updates=completed,tokens=min(completed*args.tokens_per_update,args.target_train_tokens),
+-                     validation_loss=evaluate(model,val,args.validation_contexts,args.validation_batch_size,args.device),
++                     validation_loss=distributed_evaluate(raw_model,val,args.validation_contexts,args.validation_batch_size,args.device),
+                      parameter_norm=float(torch.stack([p.detach().float().square().sum() for p in model.parameters()]).sum().sqrt()),
+                      norm_scale=scale,seconds=time.monotonic()-started,
+                      diagnostic_lr_semantics='next_update; final uses last base LR',
+-                     tensors=diagnostics(model,targets,scale,lr*scale**ARMS[args.arm],lr))
+-            metrics.write(json.dumps(row)+'\n');metrics.flush()
+-            print(json.dumps({k:v for k,v in row.items() if k!='tensors'}),flush=True)
++                     tensors=diagnostics(raw_model,targets,scale,lr*scale**ARMS[args.arm],lr))
++            if rank==0: metrics.write(json.dumps(row)+'\n');metrics.flush()
++            if rank==0: print(json.dumps({k:v for k,v in row.items() if k!='tensors'}),flush=True)
+         if completed==0:
+             # A pre-first-checkpoint restart must not duplicate the initial metric.
+             metrics.seek(0,2)
+-            if (out/'metrics.jsonl').stat().st_size==0:
+-                measure()
++            need=torch.tensor(int((out/'metrics.jsonl').stat().st_size==0) if rank==0 else 0,device=args.device)
++            dist.broadcast(need,src=0)
++            if need.item(): measure()
+         for index in range(completed,args.updates):
+             scale=scale_at(args.arm,index,args.updates)
+             next_scale=scale_at(args.arm,index+1,args.updates)
+             lr=base_lr(args,index);matrix_lr=lr*scale**ARMS[args.arm]
+             loss,grad=update(model,optimizer,train,index*args.batch,args,lr,scale,targets,next_scale)
+             completed=index+1;cumulative_lr+=matrix_lr
+-            steps.write(json.dumps(dict(updates=completed,tokens=min(completed*args.tokens_per_update,args.target_train_tokens),
++            if rank==0: steps.write(json.dumps(dict(updates=completed,tokens=min(completed*args.tokens_per_update,args.target_train_tokens),
+                 train_loss=loss,gradient_norm=grad,base_lr=lr,matrix_lr=matrix_lr,gamma_lr=lr,
+                 optimizer=OPTIMIZER,momentum=args.momentum,effective_lr=lr/(1-args.momentum),
+                 loss_evaluation_point='lookahead' if OPTIMIZER=='nesterov' else 'base',
+@@ -610,11 +642,36 @@
+ 
+ 
+ 
++def distributed_evaluate(model,tape,count,micro,device):
++    value=torch.zeros((),dtype=torch.float64,device=device)
++    error=[None]
++    if dist.get_rank()==0:
++        try: value.fill_(evaluate(model,tape,count,micro,device))
++        except Exception as exc: error[0]=str(exc)
++    dist.broadcast_object_list(error,src=0)
++    if error[0]: raise RuntimeError(error[0])
++    dist.broadcast(value,src=0)
++    return float(value)
++
++
++def run(args):
++    world=int(os.environ.get('WORLD_SIZE','1'))
++    if world!=2: raise ValueError('Launch with torchrun --standalone --nproc_per_node=2')
++    local=int(os.environ.get('LOCAL_RANK','0'))
++    if args.batch % (2*args.microbatch): raise ValueError('Global batch must divide world*microbatch')
++    if args.device=='cuda': torch.cuda.set_device(local)
++    dist.init_process_group(backend='nccl' if args.device=='cuda' else 'gloo')
++    try:
++        run_core(args)
++    finally:
++        dist.destroy_process_group()
++
++
+ def parser():
+     p=argparse.ArgumentParser()
+     p.add_argument('--train',default='F:/datasets/fineweb10B-gpt2/raw/fineweb_train_*.bin')
+     p.add_argument('--val',default='F:/datasets/fineweb10B-gpt2/raw/fineweb_val_*.bin')
+-    p.add_argument('--output',default='runs_eight_b256_b512_20261113/sgd_b256_elr0p24_beta0p0')
++    p.add_argument('--output',default='runs_eight_b256_b512_ddp2_20261113/sgd_b256_elr0p24_beta0p0')
+     p.add_argument('--arm',choices=['fixed'],default='fixed')
+     for flag,default in [('vocab-size',50304),('batch',256),('context',1024),('width',768),('layers',12),('heads',6),('seed',0),('validation-contexts',256),('validation-batch-size',32),('eval-every',500),('checkpoint-every',1000),('dense-window',0),('dense-every',20)]:
+         p.add_argument('--'+flag,type=int,default=default)
+--- serial/train_sgd_b256_elr0p48_beta0p0.py
++++ DDP2/train_sgd_b256_elr0p48_beta0p0.py
+@@ -1,4 +1,7 @@
+-"""Fixednorm sgd for matrices and RMSNorm scales, single GPU, exact tape resume."""
++"""Fixednorm sgd for matrices and RMSNorm scales, two-rank DDP, exact tape resume."""
++import io
++import torch.distributed as dist
++from torch.nn.parallel import DistributedDataParallel as DDP
+ import argparse
+ import contextlib
+ import glob
+@@ -443,50 +446,63 @@
+ 
+ def update(model, optimizer, tape, position, args, lr, scale, targets, next_scale):
+     model.train()
++    raw = model.module if isinstance(model, DDP) else model
++    world = dist.get_world_size() if dist.is_initialized() else 1
++    rank = dist.get_rank() if dist.is_initialized() else 0
+     optimizer.param_groups[0]['lr'] = lr * scale**ARMS[args.arm]
+     optimizer.param_groups[1]['lr'] = lr
+     optimizer.zero_grad(set_to_none=True)
+     micro = args.microbatch or args.batch
+-    total = 0.
+     step_tokens = min(args.batch*args.context, args.target_train_tokens-position*args.context)
+     rows = math.ceil(step_tokens/args.context)
++    slots = math.ceil(rows/(micro*world))
++    total = torch.zeros((), dtype=torch.float64, device=args.device)
+     lookahead = optimizer.lookahead() if OPTIMIZER == 'nesterov' else contextlib.nullcontext()
+     with lookahead:
+-        for offset in range(0, rows, micro):
+-            count = min(micro, rows-offset)
+-            valid = min(count*args.context, step_tokens-offset*args.context)
+-            if valid != count*args.context:
+-                x,y = tape.batch(position+offset, count, args.device, valid_tokens=valid)
++        for slot in range(slots):
++            offset = (slot*world+rank)*micro
++            count = min(micro, max(0, rows-offset))
++            valid = min(count*args.context, max(0, step_tokens-offset*args.context))
++            if valid:
++                if valid != count*args.context:
++                    x,y = tape.batch(position+offset,count,args.device,valid_tokens=valid)
++                else:
++                    x,y = tape.batch(position+offset,count,args.device)
+             else:
+-                x,y = tape.batch(position+offset, count, args.device)
+-            with amp(args.device):
+-                _,loss = model(x,y,return_logits=False)
+-            value = float(loss.detach())
+-            if not math.isfinite(value):
+-                raise FloatingPointError('nonfinite training loss')
+-            (loss * (valid/step_tokens)).backward()
+-            total += value*valid/step_tokens
+-    # Clip the complete accumulated gradient, including RMSNorm gamma.
+-    # The returned norm (and logged gradient_norm) is measured BEFORE clipping.
+-    grad = float(torch.nn.utils.clip_grad_norm_(
+-        model.parameters(), max_norm=50.0, norm_type=2.0, error_if_nonfinite=True))
+-    if not math.isfinite(grad):
+-        raise FloatingPointError('nonfinite gradient')
++                # Dummy zero-weight graph keeps DDP collectives aligned on a partial final step.
++                x,y = tape.batch(position,1,args.device)
++            sync = model.no_sync() if isinstance(model,DDP) and slot < slots-1 else contextlib.nullcontext()
++            with sync:
++                with amp(args.device):
++                    _,loss = model(x,y,return_logits=False)
++                bad = (~torch.isfinite(loss.detach())).to(torch.int32)
++                if world>1: dist.all_reduce(bad,op=dist.ReduceOp.MAX)
++                if bad.item(): raise FloatingPointError('nonfinite loss on a DDP rank')
++                (loss * (world*valid/step_tokens)).backward()
++                total += loss.detach().double()*(valid/step_tokens)
++    if world>1: dist.all_reduce(total,op=dist.ReduceOp.SUM)
++    grad = float(torch.nn.utils.clip_grad_norm_(raw.parameters(),max_norm=50.0,
++                                               norm_type=2.0,error_if_nonfinite=True))
+     optimizer.step()
+-    project(model, targets, next_scale)
+-    return total,grad
++    project(raw,targets,next_scale)
++    return float(total),grad
+ 
+ 
+ def save(path, model, targets, updates, contract, cumulative_lr, optimizer):
++    if dist.is_initialized() and dist.get_rank()!=0:
++        dist.barrier()
++        return
++    model = model.module if isinstance(model,DDP) else model
+     tmp = path.with_suffix('.tmp')
+     torch.save(dict(model=model.state_dict(), optimizer=optimizer.state_dict(), norm_targets=targets, updates=updates,
+                     position=min(updates*contract['tokens_per_update'], contract['target_train_tokens']), contract=contract,
+                     cumulative_lr=cumulative_lr, rng=torch.get_rng_state(),
+                     cuda_rng=torch.cuda.get_rng_state_all() if contract['device']=='cuda' else []),tmp)
+     os.replace(tmp,path)
+-
+-
+-def run(args):
++    if dist.is_initialized(): dist.barrier()
++
++
++def run_core(args):
+     if not math.isfinite(args.effective_lr) or args.effective_lr <= 0:
+         raise ValueError('effective LR must be positive and finite')
+     if not math.isfinite(args.momentum) or not 0 <= args.momentum < 1:
+@@ -513,7 +529,10 @@
+         raise ValueError('insufficient training tokens; no implicit repetition')
+     if args.validation_contexts*args.context+1 > val.tokens:
+         raise ValueError('insufficient validation tokens')
++    rank = dist.get_rank()
+     contract = {k:v for k,v in vars(args).items() if k not in ('output','preflight')}
++    contract['world_size'] = dist.get_world_size()
++    contract['parallelism'] = 'DDP2'
+     for key,tape in [('train',train),('val',val)]:
+         contract[key]=[[str(Path(f).resolve()),Path(f).stat().st_size,Path(f).stat().st_mtime_ns] for f in tape.files]
+     contract['model_sha256']=hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+@@ -524,9 +543,18 @@
+     contract['training_sha256']=hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+     out=Path(args.output);out.mkdir(parents=True,exist_ok=True)
+     manifest=out/'config.json'
+-    if manifest.exists() and json.loads(manifest.read_text()) != contract:
+-        raise ValueError('output belongs to a different experiment')
+-    manifest.write_text(json.dumps(contract,indent=2),encoding='utf-8')
++    config_error=[None]
++    if rank==0:
++        try:
++            if manifest.exists() and json.loads(manifest.read_text()) != contract:
++                raise ValueError('output belongs to a different experiment')
++            temp=manifest.with_suffix('.tmp')
++            temp.write_text(json.dumps(contract,indent=2),encoding='utf-8')
++            os.replace(temp,manifest)
++        except Exception as exc:
++            config_error[0]=str(exc)
++    dist.broadcast_object_list(config_error,src=0)
++    if config_error[0]: raise ValueError(config_error[0])
+     if args.preflight:
+         return
+     torch.manual_seed(args.seed);np.random.seed(args.seed)
+@@ -560,33 +588,37 @@
+         if args.device=='cuda':
+             torch.cuda.set_rng_state_all([v.cpu() for v in state['cuda_rng']])
+         del state
++    raw_model=model
++    model=DDP(raw_model,device_ids=[torch.cuda.current_device()] if args.device=='cuda' else None,
++              broadcast_buffers=False)
+     started=time.monotonic()
+-    with step_trace(out/'steps.jsonl',completed) as steps, step_trace(out/'metrics.jsonl',completed) as metrics:
++    with (step_trace(out/'steps.jsonl',completed) if rank==0 else contextlib.nullcontext(io.StringIO())) as steps, (step_trace(out/'metrics.jsonl',completed) if rank==0 else contextlib.nullcontext(io.StringIO())) as metrics:
+         def measure():
+             # Diagnostics describe current checkpoint weights and NEXT update LR.
+             index=min(completed,args.updates-1)
+             scale=scale_at(args.arm,completed,args.updates)
+             lr=base_lr(args,index)
+             row=dict(updates=completed,tokens=min(completed*args.tokens_per_update,args.target_train_tokens),
+-                     validation_loss=evaluate(model,val,args.validation_contexts,args.validation_batch_size,args.device),
++                     validation_loss=distributed_evaluate(raw_model,val,args.validation_contexts,args.validation_batch_size,args.device),
+                      parameter_norm=float(torch.stack([p.detach().float().square().sum() for p in model.parameters()]).sum().sqrt()),
+                      norm_scale=scale,seconds=time.monotonic()-started,
+                      diagnostic_lr_semantics='next_update; final uses last base LR',
+-                     tensors=diagnostics(model,targets,scale,lr*scale**ARMS[args.arm],lr))
+-            metrics.write(json.dumps(row)+'\n');metrics.flush()
+-            print(json.dumps({k:v for k,v in row.items() if k!='tensors'}),flush=True)
++                     tensors=diagnostics(raw_model,targets,scale,lr*scale**ARMS[args.arm],lr))
++            if rank==0: metrics.write(json.dumps(row)+'\n');metrics.flush()
++            if rank==0: print(json.dumps({k:v for k,v in row.items() if k!='tensors'}),flush=True)
+         if completed==0:
+             # A pre-first-checkpoint restart must not duplicate the initial metric.
+             metrics.seek(0,2)
+-            if (out/'metrics.jsonl').stat().st_size==0:
+-                measure()
++            need=torch.tensor(int((out/'metrics.jsonl').stat().st_size==0) if rank==0 else 0,device=args.device)
++            dist.broadcast(need,src=0)
++            if need.item(): measure()
+         for index in range(completed,args.updates):
+             scale=scale_at(args.arm,index,args.updates)
+             next_scale=scale_at(args.arm,index+1,args.updates)
+             lr=base_lr(args,index);matrix_lr=lr*scale**ARMS[args.arm]
+             loss,grad=update(model,optimizer,train,index*args.batch,args,lr,scale,targets,next_scale)
+             completed=index+1;cumulative_lr+=matrix_lr
+-            steps.write(json.dumps(dict(updates=completed,tokens=min(completed*args.tokens_per_update,args.target_train_tokens),
++            if rank==0: steps.write(json.dumps(dict(updates=completed,tokens=min(completed*args.tokens_per_update,args.target_train_tokens),
+                 train_loss=loss,gradient_norm=grad,base_lr=lr,matrix_lr=matrix_lr,gamma_lr=lr,
+                 optimizer=OPTIMIZER,momentum=args.momentum,effective_lr=lr/(1-args.momentum),
+                 loss_evaluation_point='lookahead' if OPTIMIZER=='nesterov' else 'base',
+@@ -610,11 +642,36 @@
+ 
+ 
+ 
++def distributed_evaluate(model,tape,count,micro,device):
++    value=torch.zeros((),dtype=torch.float64,device=device)
++    error=[None]
++    if dist.get_rank()==0:
++        try: value.fill_(evaluate(model,tape,count,micro,device))
++        except Exception as exc: error[0]=str(exc)
++    dist.broadcast_object_list(error,src=0)
++    if error[0]: raise RuntimeError(error[0])
++    dist.broadcast(value,src=0)
++    return float(value)
++
++
++def run(args):
++    world=int(os.environ.get('WORLD_SIZE','1'))
++    if world!=2: raise ValueError('Launch with torchrun --standalone --nproc_per_node=2')
++    local=int(os.environ.get('LOCAL_RANK','0'))
++    if args.batch % (2*args.microbatch): raise ValueError('Global batch must divide world*microbatch')
++    if args.device=='cuda': torch.cuda.set_device(local)
++    dist.init_process_group(backend='nccl' if args.device=='cuda' else 'gloo')
++    try:
++        run_core(args)
++    finally:
++        dist.destroy_process_group()
++
++
+ def parser():
+     p=argparse.ArgumentParser()
+     p.add_argument('--train',default='F:/datasets/fineweb10B-gpt2/raw/fineweb_train_*.bin')
+     p.add_argument('--val',default='F:/datasets/fineweb10B-gpt2/raw/fineweb_val_*.bin')
+-    p.add_argument('--output',default='runs_eight_b256_b512_20261113/sgd_b256_elr0p48_beta0p0')
++    p.add_argument('--output',default='runs_eight_b256_b512_ddp2_20261113/sgd_b256_elr0p48_beta0p0')
+     p.add_argument('--arm',choices=['fixed'],default='fixed')
+     for flag,default in [('vocab-size',50304),('batch',256),('context',1024),('width',768),('layers',12),('heads',6),('seed',0),('validation-contexts',256),('validation-batch-size',32),('eval-every',500),('checkpoint-every',1000),('dense-window',0),('dense-every',20)]:
+         p.add_argument('--'+flag,type=int,default=default)
+--- serial/train_polyak_b256_elr3p84_beta0p98.py
++++ DDP2/train_polyak_b256_elr3p84_beta0p98.py
+@@ -1,4 +1,7 @@
+-"""Fixednorm polyak for matrices and RMSNorm scales, single GPU, exact tape resume."""
++"""Fixednorm polyak for matrices and RMSNorm scales, two-rank DDP, exact tape resume."""
++import io
++import torch.distributed as dist
++from torch.nn.parallel import DistributedDataParallel as DDP
+ import argparse
+ import contextlib
+ import glob
+@@ -443,50 +446,63 @@
+ 
+ def update(model, optimizer, tape, position, args, lr, scale, targets, next_scale):
+     model.train()
++    raw = model.module if isinstance(model, DDP) else model
++    world = dist.get_world_size() if dist.is_initialized() else 1
++    rank = dist.get_rank() if dist.is_initialized() else 0
+     optimizer.param_groups[0]['lr'] = lr * scale**ARMS[args.arm]
+     optimizer.param_groups[1]['lr'] = lr
+     optimizer.zero_grad(set_to_none=True)
+     micro = args.microbatch or args.batch
+-    total = 0.
+     step_tokens = min(args.batch*args.context, args.target_train_tokens-position*args.context)
+     rows = math.ceil(step_tokens/args.context)
++    slots = math.ceil(rows/(micro*world))
++    total = torch.zeros((), dtype=torch.float64, device=args.device)
+     lookahead = optimizer.lookahead() if OPTIMIZER == 'nesterov' else contextlib.nullcontext()
+     with lookahead:
+-        for offset in range(0, rows, micro):
+-            count = min(micro, rows-offset)
+-            valid = min(count*args.context, step_tokens-offset*args.context)
+-            if valid != count*args.context:
+-                x,y = tape.batch(position+offset, count, args.device, valid_tokens=valid)
++        for slot in range(slots):
++            offset = (slot*world+rank)*micro
++            count = min(micro, max(0, rows-offset))
++            valid = min(count*args.context, max(0, step_tokens-offset*args.context))
++            if valid:
++                if valid != count*args.context:
++                    x,y = tape.batch(position+offset,count,args.device,valid_tokens=valid)
++                else:
++                    x,y = tape.batch(position+offset,count,args.device)
+             else:
+-                x,y = tape.batch(position+offset, count, args.device)
+-            with amp(args.device):
+-                _,loss = model(x,y,return_logits=False)
+-            value = float(loss.detach())
+-            if not math.isfinite(value):
+-                raise FloatingPointError('nonfinite training loss')
+-            (loss * (valid/step_tokens)).backward()
+-            total += value*valid/step_tokens
+-    # Clip the complete accumulated gradient, including RMSNorm gamma.
+-    # The returned norm (and logged gradient_norm) is measured BEFORE clipping.
+-    grad = float(torch.nn.utils.clip_grad_norm_(
+-        model.parameters(), max_norm=50.0, norm_type=2.0, error_if_nonfinite=True))
+-    if not math.isfinite(grad):
+-        raise FloatingPointError('nonfinite gradient')
++                # Dummy zero-weight graph keeps DDP collectives aligned on a partial final step.
++                x,y = tape.batch(position,1,args.device)
++            sync = model.no_sync() if isinstance(model,DDP) and slot < slots-1 else contextlib.nullcontext()
++            with sync:
++                with amp(args.device):
++                    _,loss = model(x,y,return_logits=False)
++                bad = (~torch.isfinite(loss.detach())).to(torch.int32)
++                if world>1: dist.all_reduce(bad,op=dist.ReduceOp.MAX)
++                if bad.item(): raise FloatingPointError('nonfinite loss on a DDP rank')
++                (loss * (world*valid/step_tokens)).backward()
++                total += loss.detach().double()*(valid/step_tokens)
++    if world>1: dist.all_reduce(total,op=dist.ReduceOp.SUM)
++    grad = float(torch.nn.utils.clip_grad_norm_(raw.parameters(),max_norm=50.0,
++                                               norm_type=2.0,error_if_nonfinite=True))
+     optimizer.step()
+-    project(model, targets, next_scale)
+-    return total,grad
++    project(raw,targets,next_scale)
++    return float(total),grad
+ 
+ 
+ def save(path, model, targets, updates, contract, cumulative_lr, optimizer):
++    if dist.is_initialized() and dist.get_rank()!=0:
++        dist.barrier()
++        return
++    model = model.module if isinstance(model,DDP) else model
+     tmp = path.with_suffix('.tmp')
+     torch.save(dict(model=model.state_dict(), optimizer=optimizer.state_dict(), norm_targets=targets, updates=updates,
+                     position=min(updates*contract['tokens_per_update'], contract['target_train_tokens']), contract=contract,
+                     cumulative_lr=cumulative_lr, rng=torch.get_rng_state(),
+                     cuda_rng=torch.cuda.get_rng_state_all() if contract['device']=='cuda' else []),tmp)
+     os.replace(tmp,path)
+-
+-
+-def run(args):
++    if dist.is_initialized(): dist.barrier()
++
++
++def run_core(args):
+     if not math.isfinite(args.effective_lr) or args.effective_lr <= 0:
+         raise ValueError('effective LR must be positive and finite')
+     if not math.isfinite(args.momentum) or not 0 <= args.momentum < 1:
+@@ -513,7 +529,10 @@
+         raise ValueError('insufficient training tokens; no implicit repetition')
+     if args.validation_contexts*args.context+1 > val.tokens:
+         raise ValueError('insufficient validation tokens')
++    rank = dist.get_rank()
+     contract = {k:v for k,v in vars(args).items() if k not in ('output','preflight')}
++    contract['world_size'] = dist.get_world_size()
++    contract['parallelism'] = 'DDP2'
+     for key,tape in [('train',train),('val',val)]:
+         contract[key]=[[str(Path(f).resolve()),Path(f).stat().st_size,Path(f).stat().st_mtime_ns] for f in tape.files]
+     contract['model_sha256']=hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+@@ -524,9 +543,18 @@
+     contract['training_sha256']=hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+     out=Path(args.output);out.mkdir(parents=True,exist_ok=True)
+     manifest=out/'config.json'
+-    if manifest.exists() and json.loads(manifest.read_text()) != contract:
+-        raise ValueError('output belongs to a different experiment')
+-    manifest.write_text(json.dumps(contract,indent=2),encoding='utf-8')
++    config_error=[None]
++    if rank==0:
++        try:
++            if manifest.exists() and json.loads(manifest.read_text()) != contract:
++                raise ValueError('output belongs to a different experiment')
++            temp=manifest.with_suffix('.tmp')
++            temp.write_text(json.dumps(contract,indent=2),encoding='utf-8')
++            os.replace(temp,manifest)
++        except Exception as exc:
++            config_error[0]=str(exc)
++    dist.broadcast_object_list(config_error,src=0)
++    if config_error[0]: raise ValueError(config_error[0])
+     if args.preflight:
+         return
+     torch.manual_seed(args.seed);np.random.seed(args.seed)
+@@ -560,33 +588,37 @@
+         if args.device=='cuda':
+             torch.cuda.set_rng_state_all([v.cpu() for v in state['cuda_rng']])
+         del state
++    raw_model=model
++    model=DDP(raw_model,device_ids=[torch.cuda.current_device()] if args.device=='cuda' else None,
++              broadcast_buffers=False)
+     started=time.monotonic()
+-    with step_trace(out/'steps.jsonl',completed) as steps, step_trace(out/'metrics.jsonl',completed) as metrics:
++    with (step_trace(out/'steps.jsonl',completed) if rank==0 else contextlib.nullcontext(io.StringIO())) as steps, (step_trace(out/'metrics.jsonl',completed) if rank==0 else contextlib.nullcontext(io.StringIO())) as metrics:
+         def measure():
+             # Diagnostics describe current checkpoint weights and NEXT update LR.
+             index=min(completed,args.updates-1)
+             scale=scale_at(args.arm,completed,args.updates)
+             lr=base_lr(args,index)
+             row=dict(updates=completed,tokens=min(completed*args.tokens_per_update,args.target_train_tokens),
+-                     validation_loss=evaluate(model,val,args.validation_contexts,args.validation_batch_size,args.device),
++                     validation_loss=distributed_evaluate(raw_model,val,args.validation_contexts,args.validation_batch_size,args.device),
+                      parameter_norm=float(torch.stack([p.detach().float().square().sum() for p in model.parameters()]).sum().sqrt()),
+                      norm_scale=scale,seconds=time.monotonic()-started,
+                      diagnostic_lr_semantics='next_update; final uses last base LR',
+-                     tensors=diagnostics(model,targets,scale,lr*scale**ARMS[args.arm],lr))
+-            metrics.write(json.dumps(row)+'\n');metrics.flush()
+-            print(json.dumps({k:v for k,v in row.items() if k!='tensors'}),flush=True)
++                     tensors=diagnostics(raw_model,targets,scale,lr*scale**ARMS[args.arm],lr))
++            if rank==0: metrics.write(json.dumps(row)+'\n');metrics.flush()
++            if rank==0: print(json.dumps({k:v for k,v in row.items() if k!='tensors'}),flush=True)
+         if completed==0:
+             # A pre-first-checkpoint restart must not duplicate the initial metric.
+             metrics.seek(0,2)
+-            if (out/'metrics.jsonl').stat().st_size==0:
+-                measure()
++            need=torch.tensor(int((out/'metrics.jsonl').stat().st_size==0) if rank==0 else 0,device=args.device)
++            dist.broadcast(need,src=0)
++            if need.item(): measure()
+         for index in range(completed,args.updates):
+             scale=scale_at(args.arm,index,args.updates)
+             next_scale=scale_at(args.arm,index+1,args.updates)
+             lr=base_lr(args,index);matrix_lr=lr*scale**ARMS[args.arm]
+             loss,grad=update(model,optimizer,train,index*args.batch,args,lr,scale,targets,next_scale)
+             completed=index+1;cumulative_lr+=matrix_lr
+-            steps.write(json.dumps(dict(updates=completed,tokens=min(completed*args.tokens_per_update,args.target_train_tokens),
++            if rank==0: steps.write(json.dumps(dict(updates=completed,tokens=min(completed*args.tokens_per_update,args.target_train_tokens),
+                 train_loss=loss,gradient_norm=grad,base_lr=lr,matrix_lr=matrix_lr,gamma_lr=lr,
+                 optimizer=OPTIMIZER,momentum=args.momentum,effective_lr=lr/(1-args.momentum),
+                 loss_evaluation_point='lookahead' if OPTIMIZER=='nesterov' else 'base',
+@@ -610,11 +642,36 @@
+ 
+ 
+ 
++def distributed_evaluate(model,tape,count,micro,device):
++    value=torch.zeros((),dtype=torch.float64,device=device)
++    error=[None]
++    if dist.get_rank()==0:
++        try: value.fill_(evaluate(model,tape,count,micro,device))
++        except Exception as exc: error[0]=str(exc)
++    dist.broadcast_object_list(error,src=0)
++    if error[0]: raise RuntimeError(error[0])
++    dist.broadcast(value,src=0)
++    return float(value)
++
++
++def run(args):
++    world=int(os.environ.get('WORLD_SIZE','1'))
++    if world!=2: raise ValueError('Launch with torchrun --standalone --nproc_per_node=2')
++    local=int(os.environ.get('LOCAL_RANK','0'))
++    if args.batch % (2*args.microbatch): raise ValueError('Global batch must divide world*microbatch')
++    if args.device=='cuda': torch.cuda.set_device(local)
++    dist.init_process_group(backend='nccl' if args.device=='cuda' else 'gloo')
++    try:
++        run_core(args)
++    finally:
++        dist.destroy_process_group()
++
++
+ def parser():
+     p=argparse.ArgumentParser()
+     p.add_argument('--train',default='F:/datasets/fineweb10B-gpt2/raw/fineweb_train_*.bin')
+     p.add_argument('--val',default='F:/datasets/fineweb10B-gpt2/raw/fineweb_val_*.bin')
+-    p.add_argument('--output',default='runs_eight_b256_b512_20261113/polyak_b256_elr3p84_beta0p98')
++    p.add_argument('--output',default='runs_eight_b256_b512_ddp2_20261113/polyak_b256_elr3p84_beta0p98')
+     p.add_argument('--arm',choices=['fixed'],default='fixed')
+     for flag,default in [('vocab-size',50304),('batch',256),('context',1024),('width',768),('layers',12),('heads',6),('seed',0),('validation-contexts',256),('validation-batch-size',32),('eval-every',500),('checkpoint-every',1000),('dense-window',0),('dense-every',20)]:
+         p.add_argument('--'+flag,type=int,default=default)
+--- serial/train_polyak_b256_elr7p68_beta0p98.py
++++ DDP2/train_polyak_b256_elr7p68_beta0p98.py
+@@ -1,4 +1,7 @@
+-"""Fixednorm polyak for matrices and RMSNorm scales, single GPU, exact tape resume."""
++"""Fixednorm polyak for matrices and RMSNorm scales, two-rank DDP, exact tape resume."""
++import io
++import torch.distributed as dist
++from torch.nn.parallel import DistributedDataParallel as DDP
+ import argparse
+ import contextlib
+ import glob
+@@ -443,50 +446,63 @@
+ 
+ def update(model, optimizer, tape, position, args, lr, scale, targets, next_scale):
+     model.train()
++    raw = model.module if isinstance(model, DDP) else model
++    world = dist.get_world_size() if dist.is_initialized() else 1
++    rank = dist.get_rank() if dist.is_initialized() else 0
+     optimizer.param_groups[0]['lr'] = lr * scale**ARMS[args.arm]
+     optimizer.param_groups[1]['lr'] = lr
+     optimizer.zero_grad(set_to_none=True)
+     micro = args.microbatch or args.batch
+-    total = 0.
+     step_tokens = min(args.batch*args.context, args.target_train_tokens-position*args.context)
+     rows = math.ceil(step_tokens/args.context)
++    slots = math.ceil(rows/(micro*world))
++    total = torch.zeros((), dtype=torch.float64, device=args.device)
+     lookahead = optimizer.lookahead() if OPTIMIZER == 'nesterov' else contextlib.nullcontext()
+     with lookahead:
+-        for offset in range(0, rows, micro):
+-            count = min(micro, rows-offset)
+-            valid = min(count*args.context, step_tokens-offset*args.context)
+-            if valid != count*args.context:
+-                x,y = tape.batch(position+offset, count, args.device, valid_tokens=valid)
++        for slot in range(slots):
++            offset = (slot*world+rank)*micro
++            count = min(micro, max(0, rows-offset))
++            valid = min(count*args.context, max(0, step_tokens-offset*args.context))
++            if valid:
++                if valid != count*args.context:
++                    x,y = tape.batch(position+offset,count,args.device,valid_tokens=valid)
++                else:
++                    x,y = tape.batch(position+offset,count,args.device)
+             else:
+-                x,y = tape.batch(position+offset, count, args.device)
+-            with amp(args.device):
+-                _,loss = model(x,y,return_logits=False)
+-            value = float(loss.detach())
+-            if not math.isfinite(value):
+-                raise FloatingPointError('nonfinite training loss')
+-            (loss * (valid/step_tokens)).backward()
+-            total += value*valid/step_tokens
+-    # Clip the complete accumulated gradient, including RMSNorm gamma.
+-    # The returned norm (and logged gradient_norm) is measured BEFORE clipping.
+-    grad = float(torch.nn.utils.clip_grad_norm_(
+-        model.parameters(), max_norm=50.0, norm_type=2.0, error_if_nonfinite=True))
+-    if not math.isfinite(grad):
+-        raise FloatingPointError('nonfinite gradient')
++                # Dummy zero-weight graph keeps DDP collectives aligned on a partial final step.
++                x,y = tape.batch(position,1,args.device)
++            sync = model.no_sync() if isinstance(model,DDP) and slot < slots-1 else contextlib.nullcontext()
++            with sync:
++                with amp(args.device):
++                    _,loss = model(x,y,return_logits=False)
++                bad = (~torch.isfinite(loss.detach())).to(torch.int32)
++                if world>1: dist.all_reduce(bad,op=dist.ReduceOp.MAX)
++                if bad.item(): raise FloatingPointError('nonfinite loss on a DDP rank')
++                (loss * (world*valid/step_tokens)).backward()
++                total += loss.detach().double()*(valid/step_tokens)
++    if world>1: dist.all_reduce(total,op=dist.ReduceOp.SUM)
++    grad = float(torch.nn.utils.clip_grad_norm_(raw.parameters(),max_norm=50.0,
++                                               norm_type=2.0,error_if_nonfinite=True))
+     optimizer.step()
+-    project(model, targets, next_scale)
+-    return total,grad
++    project(raw,targets,next_scale)
++    return float(total),grad
+ 
+ 
+ def save(path, model, targets, updates, contract, cumulative_lr, optimizer):
++    if dist.is_initialized() and dist.get_rank()!=0:
++        dist.barrier()
++        return
++    model = model.module if isinstance(model,DDP) else model
+     tmp = path.with_suffix('.tmp')
+     torch.save(dict(model=model.state_dict(), optimizer=optimizer.state_dict(), norm_targets=targets, updates=updates,
+                     position=min(updates*contract['tokens_per_update'], contract['target_train_tokens']), contract=contract,
+                     cumulative_lr=cumulative_lr, rng=torch.get_rng_state(),
+                     cuda_rng=torch.cuda.get_rng_state_all() if contract['device']=='cuda' else []),tmp)
+     os.replace(tmp,path)
+-
+-
+-def run(args):
++    if dist.is_initialized(): dist.barrier()
++
++
++def run_core(args):
+     if not math.isfinite(args.effective_lr) or args.effective_lr <= 0:
+         raise ValueError('effective LR must be positive and finite')
+     if not math.isfinite(args.momentum) or not 0 <= args.momentum < 1:
+@@ -513,7 +529,10 @@
+         raise ValueError('insufficient training tokens; no implicit repetition')
+     if args.validation_contexts*args.context+1 > val.tokens:
+         raise ValueError('insufficient validation tokens')
++    rank = dist.get_rank()
+     contract = {k:v for k,v in vars(args).items() if k not in ('output','preflight')}
++    contract['world_size'] = dist.get_world_size()
++    contract['parallelism'] = 'DDP2'
+     for key,tape in [('train',train),('val',val)]:
+         contract[key]=[[str(Path(f).resolve()),Path(f).stat().st_size,Path(f).stat().st_mtime_ns] for f in tape.files]
+     contract['model_sha256']=hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+@@ -524,9 +543,18 @@
+     contract['training_sha256']=hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+     out=Path(args.output);out.mkdir(parents=True,exist_ok=True)
+     manifest=out/'config.json'
+-    if manifest.exists() and json.loads(manifest.read_text()) != contract:
+-        raise ValueError('output belongs to a different experiment')
+-    manifest.write_text(json.dumps(contract,indent=2),encoding='utf-8')
++    config_error=[None]
++    if rank==0:
++        try:
++            if manifest.exists() and json.loads(manifest.read_text()) != contract:
++                raise ValueError('output belongs to a different experiment')
++            temp=manifest.with_suffix('.tmp')
++            temp.write_text(json.dumps(contract,indent=2),encoding='utf-8')
++            os.replace(temp,manifest)
++        except Exception as exc:
++            config_error[0]=str(exc)
++    dist.broadcast_object_list(config_error,src=0)
++    if config_error[0]: raise ValueError(config_error[0])
+     if args.preflight:
+         return
+     torch.manual_seed(args.seed);np.random.seed(args.seed)
+@@ -560,33 +588,37 @@
+         if args.device=='cuda':
+             torch.cuda.set_rng_state_all([v.cpu() for v in state['cuda_rng']])
+         del state
++    raw_model=model
++    model=DDP(raw_model,device_ids=[torch.cuda.current_device()] if args.device=='cuda' else None,
++              broadcast_buffers=False)
+     started=time.monotonic()
+-    with step_trace(out/'steps.jsonl',completed) as steps, step_trace(out/'metrics.jsonl',completed) as metrics:
++    with (step_trace(out/'steps.jsonl',completed) if rank==0 else contextlib.nullcontext(io.StringIO())) as steps, (step_trace(out/'metrics.jsonl',completed) if rank==0 else contextlib.nullcontext(io.StringIO())) as metrics:
+         def measure():
+             # Diagnostics describe current checkpoint weights and NEXT update LR.
+             index=min(completed,args.updates-1)
+             scale=scale_at(args.arm,completed,args.updates)
+             lr=base_lr(args,index)
+             row=dict(updates=completed,tokens=min(completed*args.tokens_per_update,args.target_train_tokens),
+-                     validation_loss=evaluate(model,val,args.validation_contexts,args.validation_batch_size,args.device),
++                     validation_loss=distributed_evaluate(raw_model,val,args.validation_contexts,args.validation_batch_size,args.device),
+                      parameter_norm=float(torch.stack([p.detach().float().square().sum() for p in model.parameters()]).sum().sqrt()),
+                      norm_scale=scale,seconds=time.monotonic()-started,
+                      diagnostic_lr_semantics='next_update; final uses last base LR',
+-                     tensors=diagnostics(model,targets,scale,lr*scale**ARMS[args.arm],lr))
+-            metrics.write(json.dumps(row)+'\n');metrics.flush()
+-            print(json.dumps({k:v for k,v in row.items() if k!='tensors'}),flush=True)
++                     tensors=diagnostics(raw_model,targets,scale,lr*scale**ARMS[args.arm],lr))
++            if rank==0: metrics.write(json.dumps(row)+'\n');metrics.flush()
++            if rank==0: print(json.dumps({k:v for k,v in row.items() if k!='tensors'}),flush=True)
+         if completed==0:
+             # A pre-first-checkpoint restart must not duplicate the initial metric.
+             metrics.seek(0,2)
+-            if (out/'metrics.jsonl').stat().st_size==0:
+-                measure()
++            need=torch.tensor(int((out/'metrics.jsonl').stat().st_size==0) if rank==0 else 0,device=args.device)
++            dist.broadcast(need,src=0)
++            if need.item(): measure()
+         for index in range(completed,args.updates):
+             scale=scale_at(args.arm,index,args.updates)
+             next_scale=scale_at(args.arm,index+1,args.updates)
+             lr=base_lr(args,index);matrix_lr=lr*scale**ARMS[args.arm]
+             loss,grad=update(model,optimizer,train,index*args.batch,args,lr,scale,targets,next_scale)
+             completed=index+1;cumulative_lr+=matrix_lr
+-            steps.write(json.dumps(dict(updates=completed,tokens=min(completed*args.tokens_per_update,args.target_train_tokens),
++            if rank==0: steps.write(json.dumps(dict(updates=completed,tokens=min(completed*args.tokens_per_update,args.target_train_tokens),
+                 train_loss=loss,gradient_norm=grad,base_lr=lr,matrix_lr=matrix_lr,gamma_lr=lr,
+                 optimizer=OPTIMIZER,momentum=args.momentum,effective_lr=lr/(1-args.momentum),
+                 loss_evaluation_point='lookahead' if OPTIMIZER=='nesterov' else 'base',
+@@ -610,11 +642,36 @@
+ 
+ 
+ 
++def distributed_evaluate(model,tape,count,micro,device):
++    value=torch.zeros((),dtype=torch.float64,device=device)
++    error=[None]
++    if dist.get_rank()==0:
++        try: value.fill_(evaluate(model,tape,count,micro,device))
++        except Exception as exc: error[0]=str(exc)
++    dist.broadcast_object_list(error,src=0)
++    if error[0]: raise RuntimeError(error[0])
++    dist.broadcast(value,src=0)
++    return float(value)
++
++
++def run(args):
++    world=int(os.environ.get('WORLD_SIZE','1'))
++    if world!=2: raise ValueError('Launch with torchrun --standalone --nproc_per_node=2')
++    local=int(os.environ.get('LOCAL_RANK','0'))
++    if args.batch % (2*args.microbatch): raise ValueError('Global batch must divide world*microbatch')
++    if args.device=='cuda': torch.cuda.set_device(local)
++    dist.init_process_group(backend='nccl' if args.device=='cuda' else 'gloo')
++    try:
++        run_core(args)
++    finally:
++        dist.destroy_process_group()
++
++
+ def parser():
+     p=argparse.ArgumentParser()
+     p.add_argument('--train',default='F:/datasets/fineweb10B-gpt2/raw/fineweb_train_*.bin')
+     p.add_argument('--val',default='F:/datasets/fineweb10B-gpt2/raw/fineweb_val_*.bin')
+-    p.add_argument('--output',default='runs_eight_b256_b512_20261113/polyak_b256_elr7p68_beta0p98')
++    p.add_argument('--output',default='runs_eight_b256_b512_ddp2_20261113/polyak_b256_elr7p68_beta0p98')
+     p.add_argument('--arm',choices=['fixed'],default='fixed')
+     for flag,default in [('vocab-size',50304),('batch',256),('context',1024),('width',768),('layers',12),('heads',6),('seed',0),('validation-contexts',256),('validation-batch-size',32),('eval-every',500),('checkpoint-every',1000),('dense-window',0),('dense-every',20)]:
+         p.add_argument('--'+flag,type=int,default=default)
+--- serial/train_nesterov_b256_elr1p92_beta0p98.py
++++ DDP2/train_nesterov_b256_elr1p92_beta0p98.py
+@@ -1,4 +1,7 @@
+-"""Fixednorm nesterov for matrices and RMSNorm scales, single GPU, exact tape resume."""
++"""Fixednorm nesterov for matrices and RMSNorm scales, two-rank DDP, exact tape resume."""
++import io
++import torch.distributed as dist
++from torch.nn.parallel import DistributedDataParallel as DDP
+ import argparse
+ import contextlib
+ import glob
+@@ -443,50 +446,63 @@
+ 
+ def update(model, optimizer, tape, position, args, lr, scale, targets, next_scale):
+     model.train()
++    raw = model.module if isinstance(model, DDP) else model
++    world = dist.get_world_size() if dist.is_initialized() else 1
++    rank = dist.get_rank() if dist.is_initialized() else 0
+     optimizer.param_groups[0]['lr'] = lr * scale**ARMS[args.arm]
+     optimizer.param_groups[1]['lr'] = lr
+     optimizer.zero_grad(set_to_none=True)
+     micro = args.microbatch or args.batch
+-    total = 0.
+     step_tokens = min(args.batch*args.context, args.target_train_tokens-position*args.context)
+     rows = math.ceil(step_tokens/args.context)
++    slots = math.ceil(rows/(micro*world))
++    total = torch.zeros((), dtype=torch.float64, device=args.device)
+     lookahead = optimizer.lookahead() if OPTIMIZER == 'nesterov' else contextlib.nullcontext()
+     with lookahead:
+-        for offset in range(0, rows, micro):
+-            count = min(micro, rows-offset)
+-            valid = min(count*args.context, step_tokens-offset*args.context)
+-            if valid != count*args.context:
+-                x,y = tape.batch(position+offset, count, args.device, valid_tokens=valid)
++        for slot in range(slots):
++            offset = (slot*world+rank)*micro
++            count = min(micro, max(0, rows-offset))
++            valid = min(count*args.context, max(0, step_tokens-offset*args.context))
++            if valid:
++                if valid != count*args.context:
++                    x,y = tape.batch(position+offset,count,args.device,valid_tokens=valid)
++                else:
++                    x,y = tape.batch(position+offset,count,args.device)
+             else:
+-                x,y = tape.batch(position+offset, count, args.device)
+-            with amp(args.device):
+-                _,loss = model(x,y,return_logits=False)
+-            value = float(loss.detach())
+-            if not math.isfinite(value):
+-                raise FloatingPointError('nonfinite training loss')
+-            (loss * (valid/step_tokens)).backward()
+-            total += value*valid/step_tokens
+-    # Clip the complete accumulated gradient, including RMSNorm gamma.
+-    # The returned norm (and logged gradient_norm) is measured BEFORE clipping.
+-    grad = float(torch.nn.utils.clip_grad_norm_(
+-        model.parameters(), max_norm=50.0, norm_type=2.0, error_if_nonfinite=True))
+-    if not math.isfinite(grad):
+-        raise FloatingPointError('nonfinite gradient')
++                # Dummy zero-weight graph keeps DDP collectives aligned on a partial final step.
++                x,y = tape.batch(position,1,args.device)
++            sync = model.no_sync() if isinstance(model,DDP) and slot < slots-1 else contextlib.nullcontext()
++            with sync:
++                with amp(args.device):
++                    _,loss = model(x,y,return_logits=False)
++                bad = (~torch.isfinite(loss.detach())).to(torch.int32)
++                if world>1: dist.all_reduce(bad,op=dist.ReduceOp.MAX)
++                if bad.item(): raise FloatingPointError('nonfinite loss on a DDP rank')
++                (loss * (world*valid/step_tokens)).backward()
++                total += loss.detach().double()*(valid/step_tokens)
++    if world>1: dist.all_reduce(total,op=dist.ReduceOp.SUM)
++    grad = float(torch.nn.utils.clip_grad_norm_(raw.parameters(),max_norm=50.0,
++                                               norm_type=2.0,error_if_nonfinite=True))
+     optimizer.step()
+-    project(model, targets, next_scale)
+-    return total,grad
++    project(raw,targets,next_scale)
++    return float(total),grad
+ 
+ 
+ def save(path, model, targets, updates, contract, cumulative_lr, optimizer):
++    if dist.is_initialized() and dist.get_rank()!=0:
++        dist.barrier()
++        return
++    model = model.module if isinstance(model,DDP) else model
+     tmp = path.with_suffix('.tmp')
+     torch.save(dict(model=model.state_dict(), optimizer=optimizer.state_dict(), norm_targets=targets, updates=updates,
+                     position=min(updates*contract['tokens_per_update'], contract['target_train_tokens']), contract=contract,
+                     cumulative_lr=cumulative_lr, rng=torch.get_rng_state(),
+                     cuda_rng=torch.cuda.get_rng_state_all() if contract['device']=='cuda' else []),tmp)
+     os.replace(tmp,path)
+-
+-
+-def run(args):
++    if dist.is_initialized(): dist.barrier()
++
++
++def run_core(args):
+     if not math.isfinite(args.effective_lr) or args.effective_lr <= 0:
+         raise ValueError('effective LR must be positive and finite')
+     if not math.isfinite(args.momentum) or not 0 <= args.momentum < 1:
+@@ -513,7 +529,10 @@
+         raise ValueError('insufficient training tokens; no implicit repetition')
+     if args.validation_contexts*args.context+1 > val.tokens:
+         raise ValueError('insufficient validation tokens')
++    rank = dist.get_rank()
+     contract = {k:v for k,v in vars(args).items() if k not in ('output','preflight')}
++    contract['world_size'] = dist.get_world_size()
++    contract['parallelism'] = 'DDP2'
+     for key,tape in [('train',train),('val',val)]:
+         contract[key]=[[str(Path(f).resolve()),Path(f).stat().st_size,Path(f).stat().st_mtime_ns] for f in tape.files]
+     contract['model_sha256']=hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+@@ -524,9 +543,18 @@
+     contract['training_sha256']=hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+     out=Path(args.output);out.mkdir(parents=True,exist_ok=True)
+     manifest=out/'config.json'
+-    if manifest.exists() and json.loads(manifest.read_text()) != contract:
+-        raise ValueError('output belongs to a different experiment')
+-    manifest.write_text(json.dumps(contract,indent=2),encoding='utf-8')
++    config_error=[None]
++    if rank==0:
++        try:
++            if manifest.exists() and json.loads(manifest.read_text()) != contract:
++                raise ValueError('output belongs to a different experiment')
++            temp=manifest.with_suffix('.tmp')
++            temp.write_text(json.dumps(contract,indent=2),encoding='utf-8')
++            os.replace(temp,manifest)
++        except Exception as exc:
++            config_error[0]=str(exc)
++    dist.broadcast_object_list(config_error,src=0)
++    if config_error[0]: raise ValueError(config_error[0])
+     if args.preflight:
+         return
+     torch.manual_seed(args.seed);np.random.seed(args.seed)
+@@ -560,33 +588,37 @@
+         if args.device=='cuda':
+             torch.cuda.set_rng_state_all([v.cpu() for v in state['cuda_rng']])
+         del state
++    raw_model=model
++    model=DDP(raw_model,device_ids=[torch.cuda.current_device()] if args.device=='cuda' else None,
++              broadcast_buffers=False)
+     started=time.monotonic()
+-    with step_trace(out/'steps.jsonl',completed) as steps, step_trace(out/'metrics.jsonl',completed) as metrics:
++    with (step_trace(out/'steps.jsonl',completed) if rank==0 else contextlib.nullcontext(io.StringIO())) as steps, (step_trace(out/'metrics.jsonl',completed) if rank==0 else contextlib.nullcontext(io.StringIO())) as metrics:
+         def measure():
+             # Diagnostics describe current checkpoint weights and NEXT update LR.
+             index=min(completed,args.updates-1)
+             scale=scale_at(args.arm,completed,args.updates)
+             lr=base_lr(args,index)
+             row=dict(updates=completed,tokens=min(completed*args.tokens_per_update,args.target_train_tokens),
+-                     validation_loss=evaluate(model,val,args.validation_contexts,args.validation_batch_size,args.device),
++                     validation_loss=distributed_evaluate(raw_model,val,args.validation_contexts,args.validation_batch_size,args.device),
+                      parameter_norm=float(torch.stack([p.detach().float().square().sum() for p in model.parameters()]).sum().sqrt()),
+                      norm_scale=scale,seconds=time.monotonic()-started,
+                      diagnostic_lr_semantics='next_update; final uses last base LR',
+-                     tensors=diagnostics(model,targets,scale,lr*scale**ARMS[args.arm],lr))
+-            metrics.write(json.dumps(row)+'\n');metrics.flush()
+-            print(json.dumps({k:v for k,v in row.items() if k!='tensors'}),flush=True)
++                     tensors=diagnostics(raw_model,targets,scale,lr*scale**ARMS[args.arm],lr))
++            if rank==0: metrics.write(json.dumps(row)+'\n');metrics.flush()
++            if rank==0: print(json.dumps({k:v for k,v in row.items() if k!='tensors'}),flush=True)
+         if completed==0:
+             # A pre-first-checkpoint restart must not duplicate the initial metric.
+             metrics.seek(0,2)
+-            if (out/'metrics.jsonl').stat().st_size==0:
+-                measure()
++            need=torch.tensor(int((out/'metrics.jsonl').stat().st_size==0) if rank==0 else 0,device=args.device)
++            dist.broadcast(need,src=0)
++            if need.item(): measure()
+         for index in range(completed,args.updates):
+             scale=scale_at(args.arm,index,args.updates)
+             next_scale=scale_at(args.arm,index+1,args.updates)
+             lr=base_lr(args,index);matrix_lr=lr*scale**ARMS[args.arm]
+             loss,grad=update(model,optimizer,train,index*args.batch,args,lr,scale,targets,next_scale)
+             completed=index+1;cumulative_lr+=matrix_lr
+-            steps.write(json.dumps(dict(updates=completed,tokens=min(completed*args.tokens_per_update,args.target_train_tokens),
++            if rank==0: steps.write(json.dumps(dict(updates=completed,tokens=min(completed*args.tokens_per_update,args.target_train_tokens),
+                 train_loss=loss,gradient_norm=grad,base_lr=lr,matrix_lr=matrix_lr,gamma_lr=lr,
+                 optimizer=OPTIMIZER,momentum=args.momentum,effective_lr=lr/(1-args.momentum),
+                 loss_evaluation_point='lookahead' if OPTIMIZER=='nesterov' else 'base',
+@@ -610,11 +642,36 @@
+ 
+ 
+ 
++def distributed_evaluate(model,tape,count,micro,device):
++    value=torch.zeros((),dtype=torch.float64,device=device)
++    error=[None]
++    if dist.get_rank()==0:
++        try: value.fill_(evaluate(model,tape,count,micro,device))
++        except Exception as exc: error[0]=str(exc)
++    dist.broadcast_object_list(error,src=0)
++    if error[0]: raise RuntimeError(error[0])
++    dist.broadcast(value,src=0)
++    return float(value)
++
++
++def run(args):
++    world=int(os.environ.get('WORLD_SIZE','1'))
++    if world!=2: raise ValueError('Launch with torchrun --standalone --nproc_per_node=2')
++    local=int(os.environ.get('LOCAL_RANK','0'))
++    if args.batch % (2*args.microbatch): raise ValueError('Global batch must divide world*microbatch')
++    if args.device=='cuda': torch.cuda.set_device(local)
++    dist.init_process_group(backend='nccl' if args.device=='cuda' else 'gloo')
++    try:
++        run_core(args)
++    finally:
++        dist.destroy_process_group()
++
++
+ def parser():
+     p=argparse.ArgumentParser()
+     p.add_argument('--train',default='F:/datasets/fineweb10B-gpt2/raw/fineweb_train_*.bin')
+     p.add_argument('--val',default='F:/datasets/fineweb10B-gpt2/raw/fineweb_val_*.bin')
+-    p.add_argument('--output',default='runs_eight_b256_b512_20261113/nesterov_b256_elr1p92_beta0p98')
++    p.add_argument('--output',default='runs_eight_b256_b512_ddp2_20261113/nesterov_b256_elr1p92_beta0p98')
+     p.add_argument('--arm',choices=['fixed'],default='fixed')
+     for flag,default in [('vocab-size',50304),('batch',256),('context',1024),('width',768),('layers',12),('heads',6),('seed',0),('validation-contexts',256),('validation-batch-size',32),('eval-every',500),('checkpoint-every',1000),('dense-window',0),('dense-every',20)]:
+         p.add_argument('--'+flag,type=int,default=default)
+--- serial/train_nesterov_b256_elr3p84_beta0p98.py
++++ DDP2/train_nesterov_b256_elr3p84_beta0p98.py
+@@ -1,4 +1,7 @@
+-"""Fixednorm nesterov for matrices and RMSNorm scales, single GPU, exact tape resume."""
++"""Fixednorm nesterov for matrices and RMSNorm scales, two-rank DDP, exact tape resume."""
++import io
++import torch.distributed as dist
++from torch.nn.parallel import DistributedDataParallel as DDP
+ import argparse
+ import contextlib
+ import glob
+@@ -443,50 +446,63 @@
+ 
+ def update(model, optimizer, tape, position, args, lr, scale, targets, next_scale):
+     model.train()
++    raw = model.module if isinstance(model, DDP) else model
++    world = dist.get_world_size() if dist.is_initialized() else 1
++    rank = dist.get_rank() if dist.is_initialized() else 0
+     optimizer.param_groups[0]['lr'] = lr * scale**ARMS[args.arm]
+     optimizer.param_groups[1]['lr'] = lr
+     optimizer.zero_grad(set_to_none=True)
+     micro = args.microbatch or args.batch
+-    total = 0.
+     step_tokens = min(args.batch*args.context, args.target_train_tokens-position*args.context)
+     rows = math.ceil(step_tokens/args.context)
++    slots = math.ceil(rows/(micro*world))
++    total = torch.zeros((), dtype=torch.float64, device=args.device)
+     lookahead = optimizer.lookahead() if OPTIMIZER == 'nesterov' else contextlib.nullcontext()
+     with lookahead:
+-        for offset in range(0, rows, micro):
+-            count = min(micro, rows-offset)
+-            valid = min(count*args.context, step_tokens-offset*args.context)
+-            if valid != count*args.context:
+-                x,y = tape.batch(position+offset, count, args.device, valid_tokens=valid)
++        for slot in range(slots):
++            offset = (slot*world+rank)*micro
++            count = min(micro, max(0, rows-offset))
++            valid = min(count*args.context, max(0, step_tokens-offset*args.context))
++            if valid:
++                if valid != count*args.context:
++                    x,y = tape.batch(position+offset,count,args.device,valid_tokens=valid)
++                else:
++                    x,y = tape.batch(position+offset,count,args.device)
+             else:
+-                x,y = tape.batch(position+offset, count, args.device)
+-            with amp(args.device):
+-                _,loss = model(x,y,return_logits=False)
+-            value = float(loss.detach())
+-            if not math.isfinite(value):
+-                raise FloatingPointError('nonfinite training loss')
+-            (loss * (valid/step_tokens)).backward()
+-            total += value*valid/step_tokens
+-    # Clip the complete accumulated gradient, including RMSNorm gamma.
+-    # The returned norm (and logged gradient_norm) is measured BEFORE clipping.
+-    grad = float(torch.nn.utils.clip_grad_norm_(
+-        model.parameters(), max_norm=50.0, norm_type=2.0, error_if_nonfinite=True))
+-    if not math.isfinite(grad):
+-        raise FloatingPointError('nonfinite gradient')
++                # Dummy zero-weight graph keeps DDP collectives aligned on a partial final step.
++                x,y = tape.batch(position,1,args.device)
++            sync = model.no_sync() if isinstance(model,DDP) and slot < slots-1 else contextlib.nullcontext()
++            with sync:
++                with amp(args.device):
++                    _,loss = model(x,y,return_logits=False)
++                bad = (~torch.isfinite(loss.detach())).to(torch.int32)
++                if world>1: dist.all_reduce(bad,op=dist.ReduceOp.MAX)
++                if bad.item(): raise FloatingPointError('nonfinite loss on a DDP rank')
++                (loss * (world*valid/step_tokens)).backward()
++                total += loss.detach().double()*(valid/step_tokens)
++    if world>1: dist.all_reduce(total,op=dist.ReduceOp.SUM)
++    grad = float(torch.nn.utils.clip_grad_norm_(raw.parameters(),max_norm=50.0,
++                                               norm_type=2.0,error_if_nonfinite=True))
+     optimizer.step()
+-    project(model, targets, next_scale)
+-    return total,grad
++    project(raw,targets,next_scale)
++    return float(total),grad
+ 
+ 
+ def save(path, model, targets, updates, contract, cumulative_lr, optimizer):
++    if dist.is_initialized() and dist.get_rank()!=0:
++        dist.barrier()
++        return
++    model = model.module if isinstance(model,DDP) else model
+     tmp = path.with_suffix('.tmp')
+     torch.save(dict(model=model.state_dict(), optimizer=optimizer.state_dict(), norm_targets=targets, updates=updates,
+                     position=min(updates*contract['tokens_per_update'], contract['target_train_tokens']), contract=contract,
+                     cumulative_lr=cumulative_lr, rng=torch.get_rng_state(),
+                     cuda_rng=torch.cuda.get_rng_state_all() if contract['device']=='cuda' else []),tmp)
+     os.replace(tmp,path)
+-
+-
+-def run(args):
++    if dist.is_initialized(): dist.barrier()
++
++
++def run_core(args):
+     if not math.isfinite(args.effective_lr) or args.effective_lr <= 0:
+         raise ValueError('effective LR must be positive and finite')
+     if not math.isfinite(args.momentum) or not 0 <= args.momentum < 1:
+@@ -513,7 +529,10 @@
+         raise ValueError('insufficient training tokens; no implicit repetition')
+     if args.validation_contexts*args.context+1 > val.tokens:
+         raise ValueError('insufficient validation tokens')
++    rank = dist.get_rank()
+     contract = {k:v for k,v in vars(args).items() if k not in ('output','preflight')}
++    contract['world_size'] = dist.get_world_size()
++    contract['parallelism'] = 'DDP2'
+     for key,tape in [('train',train),('val',val)]:
+         contract[key]=[[str(Path(f).resolve()),Path(f).stat().st_size,Path(f).stat().st_mtime_ns] for f in tape.files]
+     contract['model_sha256']=hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+@@ -524,9 +543,18 @@
+     contract['training_sha256']=hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+     out=Path(args.output);out.mkdir(parents=True,exist_ok=True)
+     manifest=out/'config.json'
+-    if manifest.exists() and json.loads(manifest.read_text()) != contract:
+-        raise ValueError('output belongs to a different experiment')
+-    manifest.write_text(json.dumps(contract,indent=2),encoding='utf-8')
++    config_error=[None]
++    if rank==0:
++        try:
++            if manifest.exists() and json.loads(manifest.read_text()) != contract:
++                raise ValueError('output belongs to a different experiment')
++            temp=manifest.with_suffix('.tmp')
++            temp.write_text(json.dumps(contract,indent=2),encoding='utf-8')
++            os.replace(temp,manifest)
++        except Exception as exc:
++            config_error[0]=str(exc)
++    dist.broadcast_object_list(config_error,src=0)
++    if config_error[0]: raise ValueError(config_error[0])
+     if args.preflight:
+         return
+     torch.manual_seed(args.seed);np.random.seed(args.seed)
+@@ -560,33 +588,37 @@
+         if args.device=='cuda':
+             torch.cuda.set_rng_state_all([v.cpu() for v in state['cuda_rng']])
+         del state
++    raw_model=model
++    model=DDP(raw_model,device_ids=[torch.cuda.current_device()] if args.device=='cuda' else None,
++              broadcast_buffers=False)
+     started=time.monotonic()
+-    with step_trace(out/'steps.jsonl',completed) as steps, step_trace(out/'metrics.jsonl',completed) as metrics:
++    with (step_trace(out/'steps.jsonl',completed) if rank==0 else contextlib.nullcontext(io.StringIO())) as steps, (step_trace(out/'metrics.jsonl',completed) if rank==0 else contextlib.nullcontext(io.StringIO())) as metrics:
+         def measure():
+             # Diagnostics describe current checkpoint weights and NEXT update LR.
+             index=min(completed,args.updates-1)
+             scale=scale_at(args.arm,completed,args.updates)
+             lr=base_lr(args,index)
+             row=dict(updates=completed,tokens=min(completed*args.tokens_per_update,args.target_train_tokens),
+-                     validation_loss=evaluate(model,val,args.validation_contexts,args.validation_batch_size,args.device),
++                     validation_loss=distributed_evaluate(raw_model,val,args.validation_contexts,args.validation_batch_size,args.device),
+                      parameter_norm=float(torch.stack([p.detach().float().square().sum() for p in model.parameters()]).sum().sqrt()),
+                      norm_scale=scale,seconds=time.monotonic()-started,
+                      diagnostic_lr_semantics='next_update; final uses last base LR',
+-                     tensors=diagnostics(model,targets,scale,lr*scale**ARMS[args.arm],lr))
+-            metrics.write(json.dumps(row)+'\n');metrics.flush()
+-            print(json.dumps({k:v for k,v in row.items() if k!='tensors'}),flush=True)
++                     tensors=diagnostics(raw_model,targets,scale,lr*scale**ARMS[args.arm],lr))
++            if rank==0: metrics.write(json.dumps(row)+'\n');metrics.flush()
++            if rank==0: print(json.dumps({k:v for k,v in row.items() if k!='tensors'}),flush=True)
+         if completed==0:
+             # A pre-first-checkpoint restart must not duplicate the initial metric.
+             metrics.seek(0,2)
+-            if (out/'metrics.jsonl').stat().st_size==0:
+-                measure()
++            need=torch.tensor(int((out/'metrics.jsonl').stat().st_size==0) if rank==0 else 0,device=args.device)
++            dist.broadcast(need,src=0)
++            if need.item(): measure()
+         for index in range(completed,args.updates):
+             scale=scale_at(args.arm,index,args.updates)
+             next_scale=scale_at(args.arm,index+1,args.updates)
+             lr=base_lr(args,index);matrix_lr=lr*scale**ARMS[args.arm]
+             loss,grad=update(model,optimizer,train,index*args.batch,args,lr,scale,targets,next_scale)
+             completed=index+1;cumulative_lr+=matrix_lr
+-            steps.write(json.dumps(dict(updates=completed,tokens=min(completed*args.tokens_per_update,args.target_train_tokens),
++            if rank==0: steps.write(json.dumps(dict(updates=completed,tokens=min(completed*args.tokens_per_update,args.target_train_tokens),
+                 train_loss=loss,gradient_norm=grad,base_lr=lr,matrix_lr=matrix_lr,gamma_lr=lr,
+                 optimizer=OPTIMIZER,momentum=args.momentum,effective_lr=lr/(1-args.momentum),
+                 loss_evaluation_point='lookahead' if OPTIMIZER=='nesterov' else 'base',
+@@ -610,11 +642,36 @@
+ 
+ 
+ 
++def distributed_evaluate(model,tape,count,micro,device):
++    value=torch.zeros((),dtype=torch.float64,device=device)
++    error=[None]
++    if dist.get_rank()==0:
++        try: value.fill_(evaluate(model,tape,count,micro,device))
++        except Exception as exc: error[0]=str(exc)
++    dist.broadcast_object_list(error,src=0)
++    if error[0]: raise RuntimeError(error[0])
++    dist.broadcast(value,src=0)
++    return float(value)
++
++
++def run(args):
++    world=int(os.environ.get('WORLD_SIZE','1'))
++    if world!=2: raise ValueError('Launch with torchrun --standalone --nproc_per_node=2')
++    local=int(os.environ.get('LOCAL_RANK','0'))
++    if args.batch % (2*args.microbatch): raise ValueError('Global batch must divide world*microbatch')
++    if args.device=='cuda': torch.cuda.set_device(local)
++    dist.init_process_group(backend='nccl' if args.device=='cuda' else 'gloo')
++    try:
++        run_core(args)
++    finally:
++        dist.destroy_process_group()
++
++
+ def parser():
+     p=argparse.ArgumentParser()
+     p.add_argument('--train',default='F:/datasets/fineweb10B-gpt2/raw/fineweb_train_*.bin')
+     p.add_argument('--val',default='F:/datasets/fineweb10B-gpt2/raw/fineweb_val_*.bin')
+-    p.add_argument('--output',default='runs_eight_b256_b512_20261113/nesterov_b256_elr3p84_beta0p98')
++    p.add_argument('--output',default='runs_eight_b256_b512_ddp2_20261113/nesterov_b256_elr3p84_beta0p98')
+     p.add_argument('--arm',choices=['fixed'],default='fixed')
+     for flag,default in [('vocab-size',50304),('batch',256),('context',1024),('width',768),('layers',12),('heads',6),('seed',0),('validation-contexts',256),('validation-batch-size',32),('eval-every',500),('checkpoint-every',1000),('dense-window',0),('dense-every',20)]:
+         p.add_argument('--'+flag,type=int,default=default)
+--- serial/train_sgd_b512_elr0p48_beta0p0.py
++++ DDP2/train_sgd_b512_elr0p48_beta0p0.py
+@@ -1,4 +1,7 @@
+-"""Fixednorm sgd for matrices and RMSNorm scales, single GPU, exact tape resume."""
++"""Fixednorm sgd for matrices and RMSNorm scales, two-rank DDP, exact tape resume."""
++import io
++import torch.distributed as dist
++from torch.nn.parallel import DistributedDataParallel as DDP
+ import argparse
+ import contextlib
+ import glob
+@@ -443,50 +446,63 @@
+ 
+ def update(model, optimizer, tape, position, args, lr, scale, targets, next_scale):
+     model.train()
++    raw = model.module if isinstance(model, DDP) else model
++    world = dist.get_world_size() if dist.is_initialized() else 1
++    rank = dist.get_rank() if dist.is_initialized() else 0
+     optimizer.param_groups[0]['lr'] = lr * scale**ARMS[args.arm]
+     optimizer.param_groups[1]['lr'] = lr
+     optimizer.zero_grad(set_to_none=True)
+     micro = args.microbatch or args.batch
+-    total = 0.
+     step_tokens = min(args.batch*args.context, args.target_train_tokens-position*args.context)
+     rows = math.ceil(step_tokens/args.context)
++    slots = math.ceil(rows/(micro*world))
++    total = torch.zeros((), dtype=torch.float64, device=args.device)
+     lookahead = optimizer.lookahead() if OPTIMIZER == 'nesterov' else contextlib.nullcontext()
+     with lookahead:
+-        for offset in range(0, rows, micro):
+-            count = min(micro, rows-offset)
+-            valid = min(count*args.context, step_tokens-offset*args.context)
+-            if valid != count*args.context:
+-                x,y = tape.batch(position+offset, count, args.device, valid_tokens=valid)
++        for slot in range(slots):
++            offset = (slot*world+rank)*micro
++            count = min(micro, max(0, rows-offset))
++            valid = min(count*args.context, max(0, step_tokens-offset*args.context))
++            if valid:
++                if valid != count*args.context:
++                    x,y = tape.batch(position+offset,count,args.device,valid_tokens=valid)
++                else:
++                    x,y = tape.batch(position+offset,count,args.device)
+             else:
+-                x,y = tape.batch(position+offset, count, args.device)
+-            with amp(args.device):
+-                _,loss = model(x,y,return_logits=False)
+-            value = float(loss.detach())
+-            if not math.isfinite(value):
+-                raise FloatingPointError('nonfinite training loss')
+-            (loss * (valid/step_tokens)).backward()
+-            total += value*valid/step_tokens
+-    # Clip the complete accumulated gradient, including RMSNorm gamma.
+-    # The returned norm (and logged gradient_norm) is measured BEFORE clipping.
+-    grad = float(torch.nn.utils.clip_grad_norm_(
+-        model.parameters(), max_norm=50.0, norm_type=2.0, error_if_nonfinite=True))
+-    if not math.isfinite(grad):
+-        raise FloatingPointError('nonfinite gradient')
++                # Dummy zero-weight graph keeps DDP collectives aligned on a partial final step.
++                x,y = tape.batch(position,1,args.device)
++            sync = model.no_sync() if isinstance(model,DDP) and slot < slots-1 else contextlib.nullcontext()
++            with sync:
++                with amp(args.device):
++                    _,loss = model(x,y,return_logits=False)
++                bad = (~torch.isfinite(loss.detach())).to(torch.int32)
++                if world>1: dist.all_reduce(bad,op=dist.ReduceOp.MAX)
++                if bad.item(): raise FloatingPointError('nonfinite loss on a DDP rank')
++                (loss * (world*valid/step_tokens)).backward()
++                total += loss.detach().double()*(valid/step_tokens)
++    if world>1: dist.all_reduce(total,op=dist.ReduceOp.SUM)
++    grad = float(torch.nn.utils.clip_grad_norm_(raw.parameters(),max_norm=50.0,
++                                               norm_type=2.0,error_if_nonfinite=True))
+     optimizer.step()
+-    project(model, targets, next_scale)
+-    return total,grad
++    project(raw,targets,next_scale)
++    return float(total),grad
+ 
+ 
+ def save(path, model, targets, updates, contract, cumulative_lr, optimizer):
++    if dist.is_initialized() and dist.get_rank()!=0:
++        dist.barrier()
++        return
++    model = model.module if isinstance(model,DDP) else model
+     tmp = path.with_suffix('.tmp')
+     torch.save(dict(model=model.state_dict(), optimizer=optimizer.state_dict(), norm_targets=targets, updates=updates,
+                     position=min(updates*contract['tokens_per_update'], contract['target_train_tokens']), contract=contract,
+                     cumulative_lr=cumulative_lr, rng=torch.get_rng_state(),
+                     cuda_rng=torch.cuda.get_rng_state_all() if contract['device']=='cuda' else []),tmp)
+     os.replace(tmp,path)
+-
+-
+-def run(args):
++    if dist.is_initialized(): dist.barrier()
++
++
++def run_core(args):
+     if not math.isfinite(args.effective_lr) or args.effective_lr <= 0:
+         raise ValueError('effective LR must be positive and finite')
+     if not math.isfinite(args.momentum) or not 0 <= args.momentum < 1:
+@@ -513,7 +529,10 @@
+         raise ValueError('insufficient training tokens; no implicit repetition')
+     if args.validation_contexts*args.context+1 > val.tokens:
+         raise ValueError('insufficient validation tokens')
++    rank = dist.get_rank()
+     contract = {k:v for k,v in vars(args).items() if k not in ('output','preflight')}
++    contract['world_size'] = dist.get_world_size()
++    contract['parallelism'] = 'DDP2'
+     for key,tape in [('train',train),('val',val)]:
+         contract[key]=[[str(Path(f).resolve()),Path(f).stat().st_size,Path(f).stat().st_mtime_ns] for f in tape.files]
+     contract['model_sha256']=hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+@@ -524,9 +543,18 @@
+     contract['training_sha256']=hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+     out=Path(args.output);out.mkdir(parents=True,exist_ok=True)
+     manifest=out/'config.json'
+-    if manifest.exists() and json.loads(manifest.read_text()) != contract:
+-        raise ValueError('output belongs to a different experiment')
+-    manifest.write_text(json.dumps(contract,indent=2),encoding='utf-8')
++    config_error=[None]
++    if rank==0:
++        try:
++            if manifest.exists() and json.loads(manifest.read_text()) != contract:
++                raise ValueError('output belongs to a different experiment')
++            temp=manifest.with_suffix('.tmp')
++            temp.write_text(json.dumps(contract,indent=2),encoding='utf-8')
++            os.replace(temp,manifest)
++        except Exception as exc:
++            config_error[0]=str(exc)
++    dist.broadcast_object_list(config_error,src=0)
++    if config_error[0]: raise ValueError(config_error[0])
+     if args.preflight:
+         return
+     torch.manual_seed(args.seed);np.random.seed(args.seed)
+@@ -560,33 +588,37 @@
+         if args.device=='cuda':
+             torch.cuda.set_rng_state_all([v.cpu() for v in state['cuda_rng']])
+         del state
++    raw_model=model
++    model=DDP(raw_model,device_ids=[torch.cuda.current_device()] if args.device=='cuda' else None,
++              broadcast_buffers=False)
+     started=time.monotonic()
+-    with step_trace(out/'steps.jsonl',completed) as steps, step_trace(out/'metrics.jsonl',completed) as metrics:
++    with (step_trace(out/'steps.jsonl',completed) if rank==0 else contextlib.nullcontext(io.StringIO())) as steps, (step_trace(out/'metrics.jsonl',completed) if rank==0 else contextlib.nullcontext(io.StringIO())) as metrics:
+         def measure():
+             # Diagnostics describe current checkpoint weights and NEXT update LR.
+             index=min(completed,args.updates-1)
+             scale=scale_at(args.arm,completed,args.updates)
+             lr=base_lr(args,index)
+             row=dict(updates=completed,tokens=min(completed*args.tokens_per_update,args.target_train_tokens),
+-                     validation_loss=evaluate(model,val,args.validation_contexts,args.validation_batch_size,args.device),
++                     validation_loss=distributed_evaluate(raw_model,val,args.validation_contexts,args.validation_batch_size,args.device),
+                      parameter_norm=float(torch.stack([p.detach().float().square().sum() for p in model.parameters()]).sum().sqrt()),
+                      norm_scale=scale,seconds=time.monotonic()-started,
+                      diagnostic_lr_semantics='next_update; final uses last base LR',
+-                     tensors=diagnostics(model,targets,scale,lr*scale**ARMS[args.arm],lr))
+-            metrics.write(json.dumps(row)+'\n');metrics.flush()
+-            print(json.dumps({k:v for k,v in row.items() if k!='tensors'}),flush=True)
++                     tensors=diagnostics(raw_model,targets,scale,lr*scale**ARMS[args.arm],lr))
++            if rank==0: metrics.write(json.dumps(row)+'\n');metrics.flush()
++            if rank==0: print(json.dumps({k:v for k,v in row.items() if k!='tensors'}),flush=True)
+         if completed==0:
+             # A pre-first-checkpoint restart must not duplicate the initial metric.
+             metrics.seek(0,2)
+-            if (out/'metrics.jsonl').stat().st_size==0:
+-                measure()
++            need=torch.tensor(int((out/'metrics.jsonl').stat().st_size==0) if rank==0 else 0,device=args.device)
++            dist.broadcast(need,src=0)
++            if need.item(): measure()
+         for index in range(completed,args.updates):
+             scale=scale_at(args.arm,index,args.updates)
+             next_scale=scale_at(args.arm,index+1,args.updates)
+             lr=base_lr(args,index);matrix_lr=lr*scale**ARMS[args.arm]
+             loss,grad=update(model,optimizer,train,index*args.batch,args,lr,scale,targets,next_scale)
+             completed=index+1;cumulative_lr+=matrix_lr
+-            steps.write(json.dumps(dict(updates=completed,tokens=min(completed*args.tokens_per_update,args.target_train_tokens),
++            if rank==0: steps.write(json.dumps(dict(updates=completed,tokens=min(completed*args.tokens_per_update,args.target_train_tokens),
+                 train_loss=loss,gradient_norm=grad,base_lr=lr,matrix_lr=matrix_lr,gamma_lr=lr,
+                 optimizer=OPTIMIZER,momentum=args.momentum,effective_lr=lr/(1-args.momentum),
+                 loss_evaluation_point='lookahead' if OPTIMIZER=='nesterov' else 'base',
+@@ -610,11 +642,36 @@
+ 
+ 
+ 
++def distributed_evaluate(model,tape,count,micro,device):
++    value=torch.zeros((),dtype=torch.float64,device=device)
++    error=[None]
++    if dist.get_rank()==0:
++        try: value.fill_(evaluate(model,tape,count,micro,device))
++        except Exception as exc: error[0]=str(exc)
++    dist.broadcast_object_list(error,src=0)
++    if error[0]: raise RuntimeError(error[0])
++    dist.broadcast(value,src=0)
++    return float(value)
++
++
++def run(args):
++    world=int(os.environ.get('WORLD_SIZE','1'))
++    if world!=2: raise ValueError('Launch with torchrun --standalone --nproc_per_node=2')
++    local=int(os.environ.get('LOCAL_RANK','0'))
++    if args.batch % (2*args.microbatch): raise ValueError('Global batch must divide world*microbatch')
++    if args.device=='cuda': torch.cuda.set_device(local)
++    dist.init_process_group(backend='nccl' if args.device=='cuda' else 'gloo')
++    try:
++        run_core(args)
++    finally:
++        dist.destroy_process_group()
++
++
+ def parser():
+     p=argparse.ArgumentParser()
+     p.add_argument('--train',default='F:/datasets/fineweb10B-gpt2/raw/fineweb_train_*.bin')
+     p.add_argument('--val',default='F:/datasets/fineweb10B-gpt2/raw/fineweb_val_*.bin')
+-    p.add_argument('--output',default='runs_eight_b256_b512_20261113/sgd_b512_elr0p48_beta0p0')
++    p.add_argument('--output',default='runs_eight_b256_b512_ddp2_20261113/sgd_b512_elr0p48_beta0p0')
+     p.add_argument('--arm',choices=['fixed'],default='fixed')
+     for flag,default in [('vocab-size',50304),('batch',512),('context',1024),('width',768),('layers',12),('heads',6),('seed',0),('validation-contexts',256),('validation-batch-size',32),('eval-every',500),('checkpoint-every',1000),('dense-window',0),('dense-every',20)]:
+         p.add_argument('--'+flag,type=int,default=default)
+--- serial/train_sgd_b512_elr0p96_beta0p0.py
++++ DDP2/train_sgd_b512_elr0p96_beta0p0.py
+@@ -1,4 +1,7 @@
+-"""Fixednorm sgd for matrices and RMSNorm scales, single GPU, exact tape resume."""
++"""Fixednorm sgd for matrices and RMSNorm scales, two-rank DDP, exact tape resume."""
++import io
++import torch.distributed as dist
++from torch.nn.parallel import DistributedDataParallel as DDP
+ import argparse
+ import contextlib
+ import glob
+@@ -443,50 +446,63 @@
+ 
+ def update(model, optimizer, tape, position, args, lr, scale, targets, next_scale):
+     model.train()
++    raw = model.module if isinstance(model, DDP) else model
++    world = dist.get_world_size() if dist.is_initialized() else 1
++    rank = dist.get_rank() if dist.is_initialized() else 0
+     optimizer.param_groups[0]['lr'] = lr * scale**ARMS[args.arm]
+     optimizer.param_groups[1]['lr'] = lr
+     optimizer.zero_grad(set_to_none=True)
+     micro = args.microbatch or args.batch
+-    total = 0.
+     step_tokens = min(args.batch*args.context, args.target_train_tokens-position*args.context)
+     rows = math.ceil(step_tokens/args.context)
++    slots = math.ceil(rows/(micro*world))
++    total = torch.zeros((), dtype=torch.float64, device=args.device)
+     lookahead = optimizer.lookahead() if OPTIMIZER == 'nesterov' else contextlib.nullcontext()
+     with lookahead:
+-        for offset in range(0, rows, micro):
+-            count = min(micro, rows-offset)
+-            valid = min(count*args.context, step_tokens-offset*args.context)
+-            if valid != count*args.context:
+-                x,y = tape.batch(position+offset, count, args.device, valid_tokens=valid)
++        for slot in range(slots):
++            offset = (slot*world+rank)*micro
++            count = min(micro, max(0, rows-offset))
++            valid = min(count*args.context, max(0, step_tokens-offset*args.context))
++            if valid:
++                if valid != count*args.context:
++                    x,y = tape.batch(position+offset,count,args.device,valid_tokens=valid)
++                else:
++                    x,y = tape.batch(position+offset,count,args.device)
+             else:
+-                x,y = tape.batch(position+offset, count, args.device)
+-            with amp(args.device):
+-                _,loss = model(x,y,return_logits=False)
+-            value = float(loss.detach())
+-            if not math.isfinite(value):
+-                raise FloatingPointError('nonfinite training loss')
+-            (loss * (valid/step_tokens)).backward()
+-            total += value*valid/step_tokens
+-    # Clip the complete accumulated gradient, including RMSNorm gamma.
+-    # The returned norm (and logged gradient_norm) is measured BEFORE clipping.
+-    grad = float(torch.nn.utils.clip_grad_norm_(
+-        model.parameters(), max_norm=50.0, norm_type=2.0, error_if_nonfinite=True))
+-    if not math.isfinite(grad):
+-        raise FloatingPointError('nonfinite gradient')
++                # Dummy zero-weight graph keeps DDP collectives aligned on a partial final step.
++                x,y = tape.batch(position,1,args.device)
++            sync = model.no_sync() if isinstance(model,DDP) and slot < slots-1 else contextlib.nullcontext()
++            with sync:
++                with amp(args.device):
++                    _,loss = model(x,y,return_logits=False)
++                bad = (~torch.isfinite(loss.detach())).to(torch.int32)
++                if world>1: dist.all_reduce(bad,op=dist.ReduceOp.MAX)
++                if bad.item(): raise FloatingPointError('nonfinite loss on a DDP rank')
++                (loss * (world*valid/step_tokens)).backward()
++                total += loss.detach().double()*(valid/step_tokens)
++    if world>1: dist.all_reduce(total,op=dist.ReduceOp.SUM)
++    grad = float(torch.nn.utils.clip_grad_norm_(raw.parameters(),max_norm=50.0,
++                                               norm_type=2.0,error_if_nonfinite=True))
+     optimizer.step()
+-    project(model, targets, next_scale)
+-    return total,grad
++    project(raw,targets,next_scale)
++    return float(total),grad
+ 
+ 
+ def save(path, model, targets, updates, contract, cumulative_lr, optimizer):
++    if dist.is_initialized() and dist.get_rank()!=0:
++        dist.barrier()
++        return
++    model = model.module if isinstance(model,DDP) else model
+     tmp = path.with_suffix('.tmp')
+     torch.save(dict(model=model.state_dict(), optimizer=optimizer.state_dict(), norm_targets=targets, updates=updates,
+                     position=min(updates*contract['tokens_per_update'], contract['target_train_tokens']), contract=contract,
+                     cumulative_lr=cumulative_lr, rng=torch.get_rng_state(),
+                     cuda_rng=torch.cuda.get_rng_state_all() if contract['device']=='cuda' else []),tmp)
+     os.replace(tmp,path)
+-
+-
+-def run(args):
++    if dist.is_initialized(): dist.barrier()
++
++
++def run_core(args):
+     if not math.isfinite(args.effective_lr) or args.effective_lr <= 0:
+         raise ValueError('effective LR must be positive and finite')
+     if not math.isfinite(args.momentum) or not 0 <= args.momentum < 1:
+@@ -513,7 +529,10 @@
+         raise ValueError('insufficient training tokens; no implicit repetition')
+     if args.validation_contexts*args.context+1 > val.tokens:
+         raise ValueError('insufficient validation tokens')
++    rank = dist.get_rank()
+     contract = {k:v for k,v in vars(args).items() if k not in ('output','preflight')}
++    contract['world_size'] = dist.get_world_size()
++    contract['parallelism'] = 'DDP2'
+     for key,tape in [('train',train),('val',val)]:
+         contract[key]=[[str(Path(f).resolve()),Path(f).stat().st_size,Path(f).stat().st_mtime_ns] for f in tape.files]
+     contract['model_sha256']=hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+@@ -524,9 +543,18 @@
+     contract['training_sha256']=hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+     out=Path(args.output);out.mkdir(parents=True,exist_ok=True)
+     manifest=out/'config.json'
+-    if manifest.exists() and json.loads(manifest.read_text()) != contract:
+-        raise ValueError('output belongs to a different experiment')
+-    manifest.write_text(json.dumps(contract,indent=2),encoding='utf-8')
++    config_error=[None]
++    if rank==0:
++        try:
++            if manifest.exists() and json.loads(manifest.read_text()) != contract:
++                raise ValueError('output belongs to a different experiment')
++            temp=manifest.with_suffix('.tmp')
++            temp.write_text(json.dumps(contract,indent=2),encoding='utf-8')
++            os.replace(temp,manifest)
++        except Exception as exc:
++            config_error[0]=str(exc)
++    dist.broadcast_object_list(config_error,src=0)
++    if config_error[0]: raise ValueError(config_error[0])
+     if args.preflight:
+         return
+     torch.manual_seed(args.seed);np.random.seed(args.seed)
+@@ -560,33 +588,37 @@
+         if args.device=='cuda':
+             torch.cuda.set_rng_state_all([v.cpu() for v in state['cuda_rng']])
+         del state
++    raw_model=model
++    model=DDP(raw_model,device_ids=[torch.cuda.current_device()] if args.device=='cuda' else None,
++              broadcast_buffers=False)
+     started=time.monotonic()
+-    with step_trace(out/'steps.jsonl',completed) as steps, step_trace(out/'metrics.jsonl',completed) as metrics:
++    with (step_trace(out/'steps.jsonl',completed) if rank==0 else contextlib.nullcontext(io.StringIO())) as steps, (step_trace(out/'metrics.jsonl',completed) if rank==0 else contextlib.nullcontext(io.StringIO())) as metrics:
+         def measure():
+             # Diagnostics describe current checkpoint weights and NEXT update LR.
+             index=min(completed,args.updates-1)
+             scale=scale_at(args.arm,completed,args.updates)
+             lr=base_lr(args,index)
+             row=dict(updates=completed,tokens=min(completed*args.tokens_per_update,args.target_train_tokens),
+-                     validation_loss=evaluate(model,val,args.validation_contexts,args.validation_batch_size,args.device),
++                     validation_loss=distributed_evaluate(raw_model,val,args.validation_contexts,args.validation_batch_size,args.device),
+                      parameter_norm=float(torch.stack([p.detach().float().square().sum() for p in model.parameters()]).sum().sqrt()),
+                      norm_scale=scale,seconds=time.monotonic()-started,
+                      diagnostic_lr_semantics='next_update; final uses last base LR',
+-                     tensors=diagnostics(model,targets,scale,lr*scale**ARMS[args.arm],lr))
+-            metrics.write(json.dumps(row)+'\n');metrics.flush()
+-            print(json.dumps({k:v for k,v in row.items() if k!='tensors'}),flush=True)
++                     tensors=diagnostics(raw_model,targets,scale,lr*scale**ARMS[args.arm],lr))
++            if rank==0: metrics.write(json.dumps(row)+'\n');metrics.flush()
++            if rank==0: print(json.dumps({k:v for k,v in row.items() if k!='tensors'}),flush=True)
+         if completed==0:
+             # A pre-first-checkpoint restart must not duplicate the initial metric.
+             metrics.seek(0,2)
+-            if (out/'metrics.jsonl').stat().st_size==0:
+-                measure()
++            need=torch.tensor(int((out/'metrics.jsonl').stat().st_size==0) if rank==0 else 0,device=args.device)
++            dist.broadcast(need,src=0)
++            if need.item(): measure()
+         for index in range(completed,args.updates):
+             scale=scale_at(args.arm,index,args.updates)
+             next_scale=scale_at(args.arm,index+1,args.updates)
+             lr=base_lr(args,index);matrix_lr=lr*scale**ARMS[args.arm]
+             loss,grad=update(model,optimizer,train,index*args.batch,args,lr,scale,targets,next_scale)
+             completed=index+1;cumulative_lr+=matrix_lr
+-            steps.write(json.dumps(dict(updates=completed,tokens=min(completed*args.tokens_per_update,args.target_train_tokens),
++            if rank==0: steps.write(json.dumps(dict(updates=completed,tokens=min(completed*args.tokens_per_update,args.target_train_tokens),
+                 train_loss=loss,gradient_norm=grad,base_lr=lr,matrix_lr=matrix_lr,gamma_lr=lr,
+                 optimizer=OPTIMIZER,momentum=args.momentum,effective_lr=lr/(1-args.momentum),
+                 loss_evaluation_point='lookahead' if OPTIMIZER=='nesterov' else 'base',
+@@ -610,11 +642,36 @@
+ 
+ 
+ 
++def distributed_evaluate(model,tape,count,micro,device):
++    value=torch.zeros((),dtype=torch.float64,device=device)
++    error=[None]
++    if dist.get_rank()==0:
++        try: value.fill_(evaluate(model,tape,count,micro,device))
++        except Exception as exc: error[0]=str(exc)
++    dist.broadcast_object_list(error,src=0)
++    if error[0]: raise RuntimeError(error[0])
++    dist.broadcast(value,src=0)
++    return float(value)
++
++
++def run(args):
++    world=int(os.environ.get('WORLD_SIZE','1'))
++    if world!=2: raise ValueError('Launch with torchrun --standalone --nproc_per_node=2')
++    local=int(os.environ.get('LOCAL_RANK','0'))
++    if args.batch % (2*args.microbatch): raise ValueError('Global batch must divide world*microbatch')
++    if args.device=='cuda': torch.cuda.set_device(local)
++    dist.init_process_group(backend='nccl' if args.device=='cuda' else 'gloo')
++    try:
++        run_core(args)
++    finally:
++        dist.destroy_process_group()
++
++
+ def parser():
+     p=argparse.ArgumentParser()
+     p.add_argument('--train',default='F:/datasets/fineweb10B-gpt2/raw/fineweb_train_*.bin')
+     p.add_argument('--val',default='F:/datasets/fineweb10B-gpt2/raw/fineweb_val_*.bin')
+-    p.add_argument('--output',default='runs_eight_b256_b512_20261113/sgd_b512_elr0p96_beta0p0')
++    p.add_argument('--output',default='runs_eight_b256_b512_ddp2_20261113/sgd_b512_elr0p96_beta0p0')
+     p.add_argument('--arm',choices=['fixed'],default='fixed')
+     for flag,default in [('vocab-size',50304),('batch',512),('context',1024),('width',768),('layers',12),('heads',6),('seed',0),('validation-contexts',256),('validation-batch-size',32),('eval-every',500),('checkpoint-every',1000),('dense-window',0),('dense-every',20)]:
+         p.add_argument('--'+flag,type=int,default=default)

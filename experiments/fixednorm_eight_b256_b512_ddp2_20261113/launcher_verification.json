@@ -1,0 +1,6 @@
+{
+  "eight_gpu_four_parallel_two_waves": true,
+  "sixteen_gpu_eight_parallel": true,
+  "hashes_checked": true,
+  "python310_syntax": true
+}

@@ -1,0 +1,1 @@
+用户直接要求8份脚本改为两卡数据并行，每卡micro64。全局BS256/512不变，每rank累积2/4次；DDP平均梯度前按world*valid/global_tokens加权，按global tape位置分片不重不漏，尾部零token rank仍参与同步。Nesterov完整累积同一前瞻；恢复base后统一clip/step/project。rank0写日志/验证/完整checkpoint，所有rank同步。无dropout/随机训练算子，各rank一致初始化，checkpoint复制同一RNG状态恢复。新协议不兼容单卡checkpoint。CPU Gloo双进程检查不能替代云端NCCL全模型验证。
