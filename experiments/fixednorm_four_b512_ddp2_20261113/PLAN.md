@@ -1,0 +1,1 @@
+用户补充BS512 Polyak/Nesterov beta=.98 ELR3.84/7.68共4组。沿用已验证两卡DDP，每卡micro64累积4次，全局BS512与20TPP不变；固定初始RMS、clip50、5%warmup后constant、seed0/同数据tape。Nesterov投影后base参数差分，同一前瞻覆盖完整累积。仅修改候选和独立输出目录，不新增训练机制。检查预算/模板AST/双进程CPU Gloo对照/尾步与恢复，再提交原分支；不启动正式训练。

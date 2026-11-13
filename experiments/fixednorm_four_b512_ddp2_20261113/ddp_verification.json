@@ -1,0 +1,51 @@
+{
+  "python": "3.12.3 (tags/v3.12.3:f6650f9, Apr  9 2024, 14:05:25) [MSC v.1938 64 bit (AMD64)]",
+  "torch": "2.5.1+cu124",
+  "jobs": [
+    {
+      "id": "polyak_b512_elr3p84_beta0p98",
+      "cpu_gloo_two_ranks": true,
+      "serial_match": true,
+      "max_parameter_abs_error": 2.9802322387695312e-08,
+      "partial_final_step_5_tokens": true,
+      "zero_token_rank": true,
+      "checkpoint_restore": true,
+      "ranks_bitwise_equal": true,
+      "accumulation_slots": 4
+    },
+    {
+      "id": "polyak_b512_elr7p68_beta0p98",
+      "cpu_gloo_two_ranks": true,
+      "serial_match": true,
+      "max_parameter_abs_error": 1.0058283805847168e-07,
+      "partial_final_step_5_tokens": true,
+      "zero_token_rank": true,
+      "checkpoint_restore": true,
+      "ranks_bitwise_equal": true,
+      "accumulation_slots": 4
+    },
+    {
+      "id": "nesterov_b512_elr3p84_beta0p98",
+      "cpu_gloo_two_ranks": true,
+      "serial_match": true,
+      "max_parameter_abs_error": 8.568167686462402e-08,
+      "partial_final_step_5_tokens": true,
+      "zero_token_rank": true,
+      "checkpoint_restore": true,
+      "ranks_bitwise_equal": true,
+      "accumulation_slots": 4
+    },
+    {
+      "id": "nesterov_b512_elr7p68_beta0p98",
+      "cpu_gloo_two_ranks": true,
+      "serial_match": true,
+      "max_parameter_abs_error": 7.82310962677002e-08,
+      "partial_final_step_5_tokens": true,
+      "zero_token_rank": true,
+      "checkpoint_restore": true,
+      "ranks_bitwise_equal": true,
+      "accumulation_slots": 4
+    }
+  ],
+  "cloud_linux_nccl_full_model_tested": false
+}

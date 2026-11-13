@@ -1,0 +1,5 @@
+{
+  "four_trials_eight_gpu_dry_run": true,
+  "parent_ddp_functions_unchanged_except_parser": true,
+  "python310_syntax": true
+}
