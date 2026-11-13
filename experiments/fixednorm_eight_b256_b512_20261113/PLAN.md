@@ -1,0 +1,1 @@
+用户指定8组：BS256 SGD .24/.48、Polyak beta=.98 3.84/7.68、Nesterov beta=.98 1.92/3.84；BS512 SGD .48/.96。沿用模型/数据/seed0/20TPP/fixednorm/clip50/5%warmup后constant/低显存head。microbatch64，BS256累积4次、BS512累积8次。Nesterov整个累积保持同一投影后base差分前瞻点。检查预算、模板AST、tiny CUDA累积/裁剪/投影/恢复、独立差分与launcher。只生成，不启动正式训练或推送。
