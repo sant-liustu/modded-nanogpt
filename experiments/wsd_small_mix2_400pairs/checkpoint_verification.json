@@ -1,0 +1,22 @@
+{
+  "status": "PASS",
+  "python": "3.12.3 (tags/v3.12.3:f6650f9, Apr  9 2024, 14:05:25) [MSC v.1938 64 bit (AMD64)]",
+  "torch": "2.5.1+cu124",
+  "models": {
+    "w384_d12": {
+      "parameters": 40563072,
+      "actual_context_permutations": 400,
+      "representative_disk_resume_cases": 8,
+      "full_architecture_short_cuda_step": "PASS",
+      "full_step_loss": 10.639091491699219
+    },
+    "w768_d6": {
+      "parameters": 81112320,
+      "actual_context_permutations": 400,
+      "representative_disk_resume_cases": 8,
+      "full_architecture_short_cuda_step": "PASS",
+      "full_step_loss": 10.838428497314453
+    }
+  },
+  "scope": "actual400 context streams/model,rank+label checks;representative source migrations and exact disk resume;real full parameter shapes withB1/T16 eager BF16 optimizer/projection;actual mmap1600-job plan;formalB128/T1024,DDP/compile and real user checkpoint untested"
+}

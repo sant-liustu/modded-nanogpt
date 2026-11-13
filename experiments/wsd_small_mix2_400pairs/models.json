@@ -1,0 +1,24 @@
+{
+  "w384_d12": {
+    "width": 384,
+    "depth": 12,
+    "script": "train_w384_d12_mix2.py",
+    "prepare_script": "prepare_w384_d12_16000.py",
+    "parent_runtime_sha256": "40d6e9c60f790f08fc869202aae2cb54cdd2a1b05c2e4ad31eb8e28ba14e8d08",
+    "original_source_sha256": "7d02690c42118775239e7ac29114115ce855ce6450444dc6b8036e61d45c8f48",
+    "default_ranks": 1,
+    "default_device_batch": 128,
+    "parameter_count": 40563072
+  },
+  "w768_d6": {
+    "width": 768,
+    "depth": 6,
+    "script": "train_w768_d6_mix2.py",
+    "prepare_script": "prepare_w768_d6_16000.py",
+    "parent_runtime_sha256": "2fb0bb1993f0bed67c4c4c9bc035de37ebee97e8673db98b0ecddc1e6f0332e8",
+    "original_source_sha256": "1b842fce635b1439f55fb9aebad942f25738939850bbb7a53048ff3b5a80f7b3",
+    "default_ranks": 1,
+    "default_device_batch": 128,
+    "parameter_count": 81112320
+  }
+}
