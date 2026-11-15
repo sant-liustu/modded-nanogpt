@@ -1,0 +1,1 @@
+用户指定4个Nesterov beta=.98：BS128 ELR2.88仅此组关闭梯度裁剪；BS256 ELR.96、BS512 ELR.96/1.92保持clip50。两卡DDP每卡micro64，累积1/2/4次。修正投影后base参数差分；其余模型/数据/seed/20TPP/5%warmup+constant不变。验证双进程单卡对照、尾步/恢复及关闭裁剪行为，提交原分支，不启动正式训练。

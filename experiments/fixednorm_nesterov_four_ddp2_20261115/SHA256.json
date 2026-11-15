@@ -1,0 +1,22 @@
+{
+  ".gitattributes": "8b9c3028d6467ff3be7c793141927841d70f47f52d0590677438f488ca154992",
+  "checks.diff": "5e8f8df68c6c5dc014489adca0c98bc6b735efff76b64086a3847848aba651e9",
+  "clipping_verification.json": "49590f83c6c2c14cb00db28ac73ff0847baa2dfed6f635b8d1f2e676df3f6f29",
+  "ddp_verification.json": "9ec9ebddeacb8cd0bbe4b57c6963e908eaab63fd14b1181fe50911adce9168f3",
+  "launch.py": "61ed2c19d0f7dd14ed42e30bac5bb20d6db5170665f83b6d28fc9779e55b5ae2",
+  "launcher_verification.json": "b0af036bea6dd8db776b6c587cc545bb008ac9aae67408e29e80b70d292f3f36",
+  "manifest.json": "b41a13b2c887b2bba06803be2e92834e0527e5f5a8b5a19222551894f2683a8a",
+  "PLAN.md": "61a67e7cf8c5946938e97e137a55c4c123663890dc731bba5d838be93df9a367",
+  "probe_memory.py": "b5892974027f13acf8e248813738cb4975a3dd23b7d45ad6c21eb047b10cb6d7",
+  "README.md": "74f580c9a883d59e1dc33528f8e316d49cd93aab09ccf1d97bfab1c3532d0cb1",
+  "train_nesterov_b128_elr2p88_beta0p98_noclip.py": "1f308e0a525862bf340b2295b1a97f2c002db4365f5bd2f0c0c933a0be9e3443",
+  "train_nesterov_b256_elr0p96_beta0p98.py": "616e8aef703732149aaf4d3aea3a9ac6b4571494f3c6e96aa2d37414c64985cb",
+  "train_nesterov_b512_elr0p96_beta0p98.py": "837bcf431c7d3393a9dfe0c2b7d703fcb34b77529c01c9ac52c8afca72748dee",
+  "train_nesterov_b512_elr1p92_beta0p98.py": "c68421cb2d668588f430d4471058434b4d651c4350b65c777b813c3ab2ee9cd0",
+  "verify_clipping.py": "da47e10cbb6994fa67a4065d8279264df1f805210dbc5b07b72b4a06a0383f6e",
+  "verify_ddp.py": "37a558eb2427842b24758fbcf80faaefbb1e5ee2360c8bfc25e204d730d5a0c1",
+  "tests/train_nesterov_b128_elr2p88_beta0p98_noclip.py": "e27c84ccd8e3bc2fde59bb69647c274e8c07b3f69b4a431aa7280943393e71ec",
+  "tests/train_nesterov_b256_elr0p96_beta0p98.py": "1abcc354adbbc855107b9a7a7cfab2237abd64aff9d07ae98e6a3dd08c4b0472",
+  "tests/train_nesterov_b512_elr0p96_beta0p98.py": "1abcc354adbbc855107b9a7a7cfab2237abd64aff9d07ae98e6a3dd08c4b0472",
+  "tests/train_nesterov_b512_elr1p92_beta0p98.py": "1abcc354adbbc855107b9a7a7cfab2237abd64aff9d07ae98e6a3dd08c4b0472"
+}

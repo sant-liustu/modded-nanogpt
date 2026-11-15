@@ -1,0 +1,26 @@
+[
+  {
+    "id": "nesterov_b128_elr2p88_beta0p98_noclip",
+    "preclip_norm": 583.09521484375,
+    "postclip_norm": 583.09521484375,
+    "clip_enabled": false
+  },
+  {
+    "id": "nesterov_b256_elr0p96_beta0p98",
+    "preclip_norm": 583.09521484375,
+    "postclip_norm": 50.0,
+    "clip_enabled": true
+  },
+  {
+    "id": "nesterov_b512_elr0p96_beta0p98",
+    "preclip_norm": 583.09521484375,
+    "postclip_norm": 50.0,
+    "clip_enabled": true
+  },
+  {
+    "id": "nesterov_b512_elr1p92_beta0p98",
+    "preclip_norm": 583.09521484375,
+    "postclip_norm": 50.0,
+    "clip_enabled": true
+  }
+]

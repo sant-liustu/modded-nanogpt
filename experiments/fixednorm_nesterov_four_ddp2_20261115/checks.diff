@@ -1,0 +1,92 @@
+--- F:\fixednorm_four_b512_ddp2_20261113\train_nesterov_b512_elr3p84_beta0p98.py
++++ train_nesterov_b128_elr2p88_beta0p98_noclip.py
+@@ -481,7 +481,7 @@
+                 (loss * (world*valid/step_tokens)).backward()
+                 total += loss.detach().double()*(valid/step_tokens)
+     if world>1: dist.all_reduce(total,op=dist.ReduceOp.SUM)
+-    grad = float(torch.nn.utils.clip_grad_norm_(raw.parameters(),max_norm=50.0,
++    grad = float(torch.nn.utils.clip_grad_norm_(raw.parameters(),max_norm=float('inf'),
+                                                norm_type=2.0,error_if_nonfinite=True))
+     optimizer.step()
+     project(raw,targets,next_scale)
+@@ -539,7 +539,7 @@
+     contract['policy']='fixednorm_all_parameters_'+OPTIMIZER+'_embedded_fanin_warmup_constant_20tpp_head_checkpoint_v4'
+     contract['optimizer']=OPTIMIZER
+     contract['momentum_definition']='projected_base_parameter_difference'
+-    contract['gradient_clipping']=dict(max_norm=50.0,norm_type=2.0,scope='all_trainable_parameters')
++    contract['gradient_clipping']=dict(max_norm=float('inf'),norm_type=2.0,scope='all_trainable_parameters')
+     contract['training_sha256']=hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+     out=Path(args.output);out.mkdir(parents=True,exist_ok=True)
+     manifest=out/'config.json'
+@@ -671,13 +671,13 @@
+     p=argparse.ArgumentParser()
+     p.add_argument('--train',default='F:/datasets/fineweb10B-gpt2/raw/fineweb_train_*.bin')
+     p.add_argument('--val',default='F:/datasets/fineweb10B-gpt2/raw/fineweb_val_*.bin')
+-    p.add_argument('--output',default='runs_four_b512_ddp2_20261113/nesterov_b512_elr3p84_beta0p98')
++    p.add_argument('--output',default='runs_nesterov_four_ddp2_20261115/nesterov_b128_elr2p88_beta0p98_noclip')
+     p.add_argument('--arm',choices=['fixed'],default='fixed')
+-    for flag,default in [('vocab-size',50304),('batch',512),('context',1024),('width',768),('layers',12),('heads',6),('seed',0),('validation-contexts',256),('validation-batch-size',32),('eval-every',500),('checkpoint-every',1000),('dense-window',0),('dense-every',20)]:
++    for flag,default in [('vocab-size',50304),('batch',128),('context',1024),('width',768),('layers',12),('heads',6),('seed',0),('validation-contexts',256),('validation-batch-size',32),('eval-every',500),('checkpoint-every',1000),('dense-window',0),('dense-every',20)]:
+         p.add_argument('--'+flag,type=int,default=default)
+     p.add_argument('--microbatch',type=int,default=64)
+     p.add_argument('--loss-chunk-tokens',type=int,default=1024,help='Head/CE token chunk; 0 uses reference full logits')
+-    p.add_argument('--effective-lr',type=float,choices=[3.84],default=3.84,help='Fixed eta/(1-beta) for this trial; distinct from RMSNorm gamma')
++    p.add_argument('--effective-lr',type=float,choices=[2.88],default=2.88,help='Fixed eta/(1-beta) for this trial; distinct from RMSNorm gamma')
+     p.add_argument('--momentum',type=float,choices=[0.98],default=0.98)
+     p.add_argument('--warmup-fraction',type=float,default=.05)
+     p.add_argument('--device',choices=['cpu','cuda'],default='cuda')
+--- F:\fixednorm_four_b512_ddp2_20261113\train_nesterov_b512_elr3p84_beta0p98.py
++++ train_nesterov_b256_elr0p96_beta0p98.py
+@@ -671,13 +671,13 @@
+     p=argparse.ArgumentParser()
+     p.add_argument('--train',default='F:/datasets/fineweb10B-gpt2/raw/fineweb_train_*.bin')
+     p.add_argument('--val',default='F:/datasets/fineweb10B-gpt2/raw/fineweb_val_*.bin')
+-    p.add_argument('--output',default='runs_four_b512_ddp2_20261113/nesterov_b512_elr3p84_beta0p98')
++    p.add_argument('--output',default='runs_nesterov_four_ddp2_20261115/nesterov_b256_elr0p96_beta0p98')
+     p.add_argument('--arm',choices=['fixed'],default='fixed')
+-    for flag,default in [('vocab-size',50304),('batch',512),('context',1024),('width',768),('layers',12),('heads',6),('seed',0),('validation-contexts',256),('validation-batch-size',32),('eval-every',500),('checkpoint-every',1000),('dense-window',0),('dense-every',20)]:
++    for flag,default in [('vocab-size',50304),('batch',256),('context',1024),('width',768),('layers',12),('heads',6),('seed',0),('validation-contexts',256),('validation-batch-size',32),('eval-every',500),('checkpoint-every',1000),('dense-window',0),('dense-every',20)]:
+         p.add_argument('--'+flag,type=int,default=default)
+     p.add_argument('--microbatch',type=int,default=64)
+     p.add_argument('--loss-chunk-tokens',type=int,default=1024,help='Head/CE token chunk; 0 uses reference full logits')
+-    p.add_argument('--effective-lr',type=float,choices=[3.84],default=3.84,help='Fixed eta/(1-beta) for this trial; distinct from RMSNorm gamma')
++    p.add_argument('--effective-lr',type=float,choices=[0.96],default=0.96,help='Fixed eta/(1-beta) for this trial; distinct from RMSNorm gamma')
+     p.add_argument('--momentum',type=float,choices=[0.98],default=0.98)
+     p.add_argument('--warmup-fraction',type=float,default=.05)
+     p.add_argument('--device',choices=['cpu','cuda'],default='cuda')
+--- F:\fixednorm_four_b512_ddp2_20261113\train_nesterov_b512_elr3p84_beta0p98.py
++++ train_nesterov_b512_elr0p96_beta0p98.py
+@@ -671,13 +671,13 @@
+     p=argparse.ArgumentParser()
+     p.add_argument('--train',default='F:/datasets/fineweb10B-gpt2/raw/fineweb_train_*.bin')
+     p.add_argument('--val',default='F:/datasets/fineweb10B-gpt2/raw/fineweb_val_*.bin')
+-    p.add_argument('--output',default='runs_four_b512_ddp2_20261113/nesterov_b512_elr3p84_beta0p98')
++    p.add_argument('--output',default='runs_nesterov_four_ddp2_20261115/nesterov_b512_elr0p96_beta0p98')
+     p.add_argument('--arm',choices=['fixed'],default='fixed')
+     for flag,default in [('vocab-size',50304),('batch',512),('context',1024),('width',768),('layers',12),('heads',6),('seed',0),('validation-contexts',256),('validation-batch-size',32),('eval-every',500),('checkpoint-every',1000),('dense-window',0),('dense-every',20)]:
+         p.add_argument('--'+flag,type=int,default=default)
+     p.add_argument('--microbatch',type=int,default=64)
+     p.add_argument('--loss-chunk-tokens',type=int,default=1024,help='Head/CE token chunk; 0 uses reference full logits')
+-    p.add_argument('--effective-lr',type=float,choices=[3.84],default=3.84,help='Fixed eta/(1-beta) for this trial; distinct from RMSNorm gamma')
++    p.add_argument('--effective-lr',type=float,choices=[0.96],default=0.96,help='Fixed eta/(1-beta) for this trial; distinct from RMSNorm gamma')
+     p.add_argument('--momentum',type=float,choices=[0.98],default=0.98)
+     p.add_argument('--warmup-fraction',type=float,default=.05)
+     p.add_argument('--device',choices=['cpu','cuda'],default='cuda')
+--- F:\fixednorm_four_b512_ddp2_20261113\train_nesterov_b512_elr3p84_beta0p98.py
++++ train_nesterov_b512_elr1p92_beta0p98.py
+@@ -671,13 +671,13 @@
+     p=argparse.ArgumentParser()
+     p.add_argument('--train',default='F:/datasets/fineweb10B-gpt2/raw/fineweb_train_*.bin')
+     p.add_argument('--val',default='F:/datasets/fineweb10B-gpt2/raw/fineweb_val_*.bin')
+-    p.add_argument('--output',default='runs_four_b512_ddp2_20261113/nesterov_b512_elr3p84_beta0p98')
++    p.add_argument('--output',default='runs_nesterov_four_ddp2_20261115/nesterov_b512_elr1p92_beta0p98')
+     p.add_argument('--arm',choices=['fixed'],default='fixed')
+     for flag,default in [('vocab-size',50304),('batch',512),('context',1024),('width',768),('layers',12),('heads',6),('seed',0),('validation-contexts',256),('validation-batch-size',32),('eval-every',500),('checkpoint-every',1000),('dense-window',0),('dense-every',20)]:
+         p.add_argument('--'+flag,type=int,default=default)
+     p.add_argument('--microbatch',type=int,default=64)
+     p.add_argument('--loss-chunk-tokens',type=int,default=1024,help='Head/CE token chunk; 0 uses reference full logits')
+-    p.add_argument('--effective-lr',type=float,choices=[3.84],default=3.84,help='Fixed eta/(1-beta) for this trial; distinct from RMSNorm gamma')
++    p.add_argument('--effective-lr',type=float,choices=[1.92],default=1.92,help='Fixed eta/(1-beta) for this trial; distinct from RMSNorm gamma')
+     p.add_argument('--momentum',type=float,choices=[0.98],default=0.98)
+     p.add_argument('--warmup-fraction',type=float,default=.05)
+     p.add_argument('--device',choices=['cpu','cuda'],default='cuda')
