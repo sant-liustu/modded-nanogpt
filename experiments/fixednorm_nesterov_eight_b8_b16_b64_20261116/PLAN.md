@@ -1,0 +1,1 @@
+用户指定8组Nesterov：BS16 beta.95 ELR1.92；BS16 beta.98 ELR.6/1.2；BS64 beta.98 ELR1.6/2.4；BS64 beta.95 ELR1.92；BS8 beta.98 ELR.72/1.2。沿用原单卡small-batch协议，microbatch=global batch，无累积。修正投影后base参数差分，同一点前瞻；fixednorm/clip50/seed0/20TPP/5%warmup后constant/低显存head不变。仅改候选和独立输出。检查预算/AST/tiny CUDA/clip/投影/恢复及独立参数差分参考，不启动正式训练或擅自推送。
