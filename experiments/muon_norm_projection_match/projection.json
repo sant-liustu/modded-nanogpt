@@ -1,0 +1,30 @@
+{
+  "enabled": true,
+  "mode": "delayed_captured_constant",
+  "start_step": 1000,
+  "norm_type": "rms",
+  "log_every": 1,
+  "targets": [
+    {
+      "pattern": "transformer.h.*.attn.c_q.weight"
+    },
+    {
+      "pattern": "transformer.h.*.attn.c_k.weight"
+    },
+    {
+      "pattern": "transformer.h.*.attn.c_v.weight"
+    },
+    {
+      "pattern": "transformer.h.*.attn.c_proj.weight"
+    },
+    {
+      "pattern": "transformer.h.*.mlp.c_fc.weight"
+    },
+    {
+      "pattern": "transformer.h.*.mlp.c_proj.weight"
+    },
+    {
+      "pattern": "transformer.wte.weight"
+    }
+  ]
+}
