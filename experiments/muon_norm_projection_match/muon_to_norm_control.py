@@ -12,7 +12,7 @@ parser.add_argument("--config", help="JSON hyperparameter overrides")
 parser.add_argument("--norm-control-config", default=str(Path(__file__).with_name("projection.json")))
 args = parser.parse_args()
 settings = json.loads(Path(args.config).read_text(encoding="utf-8")) if args.config else {}
-settings.setdefault("weight_decay", 0.0)
+settings["weight_decay"] = 0.1 if args.reference else 0.0
 settings["norm_control_config"] = args.norm_control_config if not args.reference else ""
 destination = Path(args.output)
 rank = int(os.environ.get("RANK", "0"))
