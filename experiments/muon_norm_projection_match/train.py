@@ -427,14 +427,14 @@ def canonical(name):
     return name
 if not cli.record_reference:
     reference_metadata = json.loads(Path(args.reference_file+'.metadata.json').read_text(encoding='utf-8'))
-    if reference_metadata['metric'] != 'weighted_base_lr_over_raw_update_rms':
+    if reference_metadata['metric'] not in ('block_weighted_and_embedding_raw_update_rms', 'block_weighted_and_embedding_parameter_rms'):
         raise ValueError('Wrong reference metric')
     reference = {}
     with open(args.reference_file, encoding='utf-8') as handle:
         for line in handle:
             row=json.loads(line); step=row['update_step']
             assert step not in reference and row['pre_update_step']==step-1
-            assert math.isfinite(row['target']) and row['target']>0
+            assert all(math.isfinite(row[k]) and row[k]>0 for k in ('block_target','embedding_target'))
             reference[step]=row
     assert set(reference)==set(range(1,args.num_iterations+1))
 random.seed(args.seed)
@@ -549,6 +549,8 @@ def current_block_parameter_fro_norms_by_name():
 controlled = sorted([(canonical(n),p) for n,p in raw_model.named_parameters()
     if p.ndim==2 and (canonical(n).startswith('transformer.h.') or canonical(n)=='transformer.wte.weight')])
 names=[n for n,p in controlled]; numels=[p.numel() for n,p in controlled]; total_numel=sum(numels)
+embedding_index=names.index('transformer.wte.weight')
+block_numel=total_numel-numels[embedding_index]
 assert len(names)==6*args.n_layer+1 and len(set(names))==len(names)
 assert raw_model.transformer.wte.weight is raw_model.lm_head.weight
 if not cli.record_reference:
@@ -890,31 +892,39 @@ def current_adamw_raw_update_fro_norm():
 def apply_aggregate_match(update_step):
     rms=[p.detach().float().square().mean().sqrt().item() for _,p in controlled]
     if not all(math.isfinite(v) and v>0 for v in rms): raise ValueError('Invalid parameter RMS')
-    denominator=math.fsum(n/v for n,v in zip(numels,rms))/total_numel
+    denominator=math.fsum(n/v for i,(n,v) in enumerate(zip(numels,rms)) if i!=embedding_index)/block_numel
     if cli.record_reference:
         base_lr=args.muon_learning_rate*get_lr(update_step-1)
+        embed_lr=10.0*base_lr
         target=base_lr*denominator
+        embedding_target=embed_lr/rms[embedding_index]
     else:
-        target=reference[update_step]['target']
+        target=reference[update_step]['block_target']
+        embedding_target=reference[update_step]['embedding_target']
         base_lr=target/denominator
+        embed_lr=embedding_target*rms[embedding_index]
     for group in optimizer2.param_groups:
         group.pop('lr_by_parameter_id',None)
         group['lr']=base_lr
-    for group in optimizer1.param_groups: group['lr']=10.0*base_lr
-    actual=math.fsum(n*base_lr/v for n,v in zip(numels,rms))/total_numel
-    error=abs(actual/target-1)
-    if error>1e-10: raise RuntimeError('Aggregate matching failure')
+    for group in optimizer1.param_groups: group['lr']=embed_lr
+    actual=math.fsum(n*base_lr/v for i,(n,v) in enumerate(zip(numels,rms)) if i!=embedding_index)/block_numel
+    embedding_actual=embed_lr/rms[embedding_index]
+    error=abs(actual/target-1);embedding_error=abs(embedding_actual/embedding_target-1)
+    if max(error,embedding_error)>1e-10: raise RuntimeError('Grouped matching failure')
     if master_process:
         if cli.record_reference:
             with open(Path(logdir)/'reference.jsonl','a',encoding='utf-8') as handle:
-                handle.write(json.dumps(dict(update_step=update_step, pre_update_step=update_step-1, target=target))+'\n')
-        record=dict(update_step=update_step,pre_update_step=update_step-1,target=target,
-            actual=actual,relative_error=error,base_lr=base_lr,embed_lr=10.0*base_lr,
-            embedding_multiplier=10.0,weight_decay=args.weight_decay,names=names,numels=numels,
-            total_controlled_numel=total_numel,rms=rms,weighted_inverse_rms=denominator,
+                handle.write(json.dumps(dict(update_step=update_step, pre_update_step=update_step-1,
+                    block_target=target, embedding_target=embedding_target))+'\n')
+        record=dict(update_step=update_step,pre_update_step=update_step-1,block_target=target,
+            block_actual=actual,block_relative_error=error,embedding_target=embedding_target,
+            embedding_actual=embedding_actual,embedding_relative_error=embedding_error,
+            base_lr=base_lr,embed_lr=embed_lr,embedding_multiplier=embed_lr/base_lr,
+            weight_decay=args.weight_decay,names=names,numels=numels,block_numel=block_numel,
+            total_controlled_numel=total_numel,rms=rms,block_weighted_inverse_rms=denominator,
             gamma_lr=optimizer3.param_groups[0]['lr'] if rmsnorm_gamma_parameters else None,
-            metric='weighted_base_lr_over_parameter_rms')
-        with open(Path(logdir)/'aggregate_match_history.jsonl','a',encoding='utf-8') as f:
+            metric='block_weighted_and_embedding_parameter_rms')
+        with open(Path(logdir)/'grouped_match_history.jsonl','a',encoding='utf-8') as f:
             f.write(json.dumps(record)+'\n')
 
 def should_log_muonw_update_norms(update_step):
@@ -1331,7 +1341,7 @@ norm_control_state = build_norm_control_state(raw_model, args.norm_control_confi
 apply_rms_norm_control(norm_control_state, 0, 'initial')
 write_norm_control_metadata(norm_control_state)
 if master_process and cli.record_reference:
-    metadata=dict(metric='weighted_base_lr_over_raw_update_rms', names=names, numels=numels, total_controlled_numel=total_numel)
+    metadata=dict(metric='block_weighted_and_embedding_parameter_rms', names=names, numels=numels, total_controlled_numel=total_numel)
     (Path(logdir)/'reference.jsonl.metadata.json').write_text(json.dumps(metadata), encoding='utf-8')
 
 training_time_ms = 0

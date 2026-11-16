@@ -14,10 +14,11 @@ REPO = HERE.parents[1]
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--norm-reference", type=Path, help="Existing grouped norm-control reference; skip stage 01")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
     data = REPO / "data/fineweb10B"
-    hyperball = HERE.parent / "hyperball_weighted_proxy_match/hyperball_weighted_proxy_reference.jsonl"
+    hyperball = HERE.parent / "hyperball_grouped_elr_match/hyperball_grouped_reference.jsonl"
     for path in [hyperball, Path(str(hyperball) + ".metadata.json"), HERE / "projection.json"]:
         if not path.is_file():
             raise FileNotFoundError(path)
@@ -32,6 +33,12 @@ def main():
         ("muonw_match_norm_control", 0.1, "", output / "norm_control_reference/reference.jsonl"),
         ("norm_control_match_muonh", 0.0, projection, hyperball),
     ]
+    if args.norm_reference:
+        ref = args.norm_reference.resolve()
+        meta = json.loads(Path(str(ref) + ".metadata.json").read_text(encoding="utf-8"))
+        if not ref.is_file() or meta["metric"] != "block_weighted_and_embedding_parameter_rms":
+            raise ValueError("Expected grouped norm-control reference")
+        stages = [("muonw_match_norm_control", 0.1, "", ref), stages[2]]
     env = os.environ.copy()
     for key in ["RANK", "LOCAL_RANK", "WORLD_SIZE", "LOCAL_WORLD_SIZE", "MASTER_ADDR", "MASTER_PORT", "GROUP_RANK", "ROLE_RANK", "TORCHELASTIC_RUN_ID"]:
         env.pop(key, None)

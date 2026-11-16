@@ -1,30 +1,20 @@
-# Muon post-update projection matching
-Run entry points from the repository root using torchrun with two processes.
-Defaults: 124M, FineWeb, 20400 updates, global batch 128, device batch 64,
-seed 0. Experiment 1 uses weight decay 0 for the projected reference and
-0.1 for the MuonW matching run. Experiment 2 defaults to weight decay 0. Projection captures RMS at update 1000 and rescales
-73 matrices after subsequent optimizer updates. Gamma is excluded.
+# Grouped Muon norm-control experiments
 
-The inherited aggregate metric is base_lr * sum(numel_i/RMS_i)/sum(numel_i).
-Embedding LR remains 10 * base_lr. This base-LR proxy differs from averaging
-ELRs using actual per-tensor LRs. Hyperball references use raw-update RMS.
-The legacy metadata metric tag is retained for compatibility.
+Run from the repository root with two GPUs and FineWeb shards in data/fineweb10B.
 
-Experiment 1: run muon_to_norm_control.py --output results/norm_reference,
-then rerun with --reference results/norm_reference/reference.jsonl and a fresh
---output. Experiment 2: norm_control_to_muonh.py --reference followed by the
-existing experiments/hyperball_weighted_proxy_match/hyperball_weighted_proxy_reference.jsonl
-and a fresh --output. Both accept --config for hyperparameter overrides.
+    python experiments/muon_norm_projection_match/run_cloud.py
 
-Verification: all three entry paths completed eight steps on one CUDA GPU
-with a tiny two-layer model. Projected matching against the existing tiny
-Hyperball fixture had maximum relative aggregate error 2.22e-16.
-Full 124M training and two-GPU DDP remain unverified.
-Locally located old norm-control reference data use AdamW.
+To reuse the original stage 01 controller history and run only stages 02 and 03:
 
-## Cloud entry point
+    python experiments/muon_norm_projection_match/convert_stage01.py /path/to/norm_control_reference/aggregate_match_history.jsonl norm_grouped.jsonl
+    python experiments/muon_norm_projection_match/run_cloud.py --norm-reference norm_grouped.jsonl
 
-Run python experiments/muon_norm_projection_match/run_cloud.py from the repository root.
-No experiment config is needed. Requires two GPUs, existing project dependencies, and
-FineWeb shards under data/fineweb10B. Runs the reference and both matching experiments
-sequentially. Use --dry-run to inspect the fixed commands and configurations.
+Stage 02 matches the norm-control reference using MuonW with weight decay 0.1.
+Stage 03 uses norm control with weight decay 0 and the Figure 5(b) Hyperball
+reference in experiments/hyperball_grouped_elr_match. Each update solves
+separately for the block LR (parameter-count-weighted LR / parameter RMS)
+and the embedding LR (embedding LR / embedding parameter RMS). Hyperball
+targets use raw update RMS as in Figure 5(b). Only the stage 01 reference
+keeps its original 10x embedding LR. Each matcher writes both relative
+errors and the two LRs to grouped_match_history.jsonl and checks both
+errors against 1e-10. Gamma stays on its existing schedule.
