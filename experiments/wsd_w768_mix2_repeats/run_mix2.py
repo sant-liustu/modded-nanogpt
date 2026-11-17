@@ -31,11 +31,11 @@ def load_info(checkpoint):
     if s['source_sha256'] not in allowed or s.get('probe_experiment')!='stable' or s['schedule_sha256']!='9e3a4b48e9c2de544e2c1c7f35775c80f910b39717eed85ac45645434961c387':raise ValueError('known shared-stable16000 checkpoint required')
     return dict(ranks=ranks,device_batch_size=cfg['device_batch_size'],context=cfg['sequence_length'],batch_size=cfg['batch_size'],compile_model=cfg['compile_model'],input_bin=cfg['input_bin'],input_val_bin=cfg['input_val_bin'],cuda_visible_count=len(s['rng']['cuda']),train_shard=s['train_loader']['shard'],train_files=s['train_loader']['files'],train_sizes=s['train_loader']['sizes'])
 
-def main():
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--resume',type=Path,required=True);p.add_argument('--output',type=Path,required=True)
-    p.add_argument('--pairs',type=int,default=140);p.add_argument('--seed-start',type=int,default=2000);p.add_argument('--pool-shards',type=int,nargs=2,help='optional fixed pool for all seeds;default randomly choose two per pair')
+def main(argv=None, *, default_pairs=140, default_seed_start=2000):
+    p=argparse.ArgumentParser(description=__doc__,allow_abbrev=False);p.add_argument('--resume',type=Path,required=True);p.add_argument('--output',type=Path,required=True)
+    p.add_argument('--pairs',type=int,default=default_pairs);p.add_argument('--seed-start',type=int,default=default_seed_start);p.add_argument('--pool-shards',type=int,nargs=2,help='optional fixed pool for all seeds;default randomly choose two per pair')
     p.add_argument('--save-checkpoints',action='store_true')
-    p.add_argument('--probe-val-tokens',type=int,default=1048576);p.add_argument('--dry-run',action='store_true');a=p.parse_args()
+    p.add_argument('--probe-val-tokens',type=int,default=1048576);p.add_argument('--dry-run',action='store_true');a=p.parse_args(argv)
     cp=a.resume.resolve();info=load_info(cp);plan=make_plan(info,cp,a.output,a.pairs,a.seed_start,a.pool_shards,a.probe_val_tokens,a.save_checkpoints)
     if a.dry_run:print(json.dumps(plan,indent=2));return
     out=a.output.resolve()

@@ -1,6 +1,6 @@
 {
   "status": "PASS",
-  "python": "3.12.3 (tags/v3.12.3:f6650f9, Apr  9 2024, 14:05:25) [MSC v.1938 64 bit (AMD64)]",
+  "python": "3.10.11 (tags/v3.10.11:7d4cc5a, Apr  5 2023, 00:38:17) [MSC v.1929 64 bit (AMD64)]",
   "recovery_updates": 250,
   "baseline_updates": 270,
   "pulse_updates": 370,

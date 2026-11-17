@@ -101,3 +101,7 @@ Tiny CUDA：实际context/label连续性、最后窗口不跨shard、rank划分�
 未读取用户真实checkpoint，未在云端Linux3.10.16或正式尺寸DDP/compile上运行。
 
 本版恢复段为250步，基线270步、脉冲370步，总tau16.2。使用新输出目录，勿与旧版本日志混用；旧版分支checkpoint需用生成它的原代码恢复。
+
+## 补到400对
+
+已有140对后，使用[补跑说明](TOPUP400.md)和run_topup400.py新增260对；旧入口默认仍为140对。
