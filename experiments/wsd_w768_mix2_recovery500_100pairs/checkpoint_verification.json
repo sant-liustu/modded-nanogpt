@@ -1,0 +1,2008 @@
+{
+  "status": "PASS",
+  "python": "3.12.3 (tags/v3.12.3:f6650f9, Apr  9 2024, 14:05:25) [MSC v.1938 64 bit (AMD64)]",
+  "torch": "2.5.1+cu124",
+  "scope": "200 actual context permutations;rank partition,contiguous labels/final-shard edges,pool exhaustion;400 tinyCUDA migrations and disk resumes,next loss/params/Adam/scheduler/batch/order/cursor bitwise;fixed initial val/global RNG;all3 shared16k sources;actual mmap400-job dry-run;formal DDP/compile not run",
+  "cases": [
+    {
+      "seed": 6000,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6000,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6001,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6001,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6002,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6002,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6003,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6003,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6004,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6004,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6005,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6005,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6006,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6006,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6007,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6007,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6008,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6008,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6009,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6009,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6010,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6010,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6011,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6011,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6012,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6012,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6013,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6013,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6014,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6014,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6015,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6015,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6016,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6016,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6017,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6017,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6018,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6018,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6019,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6019,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6020,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6020,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6021,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6021,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6022,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6022,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6023,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6023,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6024,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6024,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6025,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6025,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6026,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6026,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6027,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6027,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6028,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6028,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6029,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6029,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6030,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6030,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6031,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6031,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6032,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6032,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6033,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6033,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6034,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6034,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6035,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6035,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6036,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6036,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6037,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6037,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6038,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6038,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6039,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6039,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6040,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6040,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6041,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6041,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6042,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6042,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6043,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6043,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6044,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6044,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6045,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6045,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6046,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6046,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6047,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6047,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6048,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6048,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6049,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6049,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6050,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6050,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6051,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6051,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6052,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6052,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6053,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6053,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6054,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6054,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6055,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6055,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6056,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6056,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6057,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6057,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6058,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6058,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6059,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6059,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6060,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6060,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6061,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6061,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6062,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6062,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6063,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6063,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6064,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6064,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6065,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6065,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6066,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6066,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6067,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6067,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6068,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6068,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6069,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6069,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6070,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6070,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6071,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6071,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6072,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6072,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6073,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6073,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6074,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6074,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6075,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6075,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6076,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6076,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6077,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6077,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6078,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6078,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6079,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6079,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6080,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6080,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6081,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6081,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6082,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6082,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6083,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6083,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6084,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6084,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6085,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6085,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6086,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6086,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6087,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6087,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6088,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6088,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6089,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6089,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6090,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6090,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6091,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6091,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6092,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6092,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6093,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6093,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6094,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6094,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6095,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6095,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6096,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6096,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6097,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6097,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6098,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6098,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6099,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6099,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6100,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6100,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6101,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6101,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6102,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6102,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6103,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6103,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6104,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6104,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6105,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6105,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6106,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6106,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6107,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6107,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6108,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6108,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6109,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6109,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6110,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6110,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6111,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6111,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6112,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6112,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6113,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6113,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6114,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6114,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6115,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6115,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6116,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6116,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6117,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6117,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6118,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6118,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6119,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6119,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6120,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6120,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6121,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6121,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6122,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6122,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6123,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6123,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6124,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6124,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6125,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6125,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6126,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6126,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6127,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6127,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6128,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6128,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6129,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6129,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6130,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6130,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6131,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6131,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6132,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6132,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6133,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6133,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6134,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6134,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6135,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6135,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6136,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6136,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6137,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6137,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6138,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6138,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6139,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6139,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6140,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6140,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6141,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6141,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6142,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6142,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6143,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6143,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6144,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6144,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6145,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6145,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6146,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6146,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6147,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6147,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6148,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6148,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6149,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6149,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6150,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6150,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6151,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6151,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6152,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6152,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6153,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6153,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6154,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6154,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6155,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6155,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6156,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6156,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6157,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6157,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6158,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6158,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6159,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6159,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6160,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6160,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6161,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6161,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6162,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6162,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6163,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6163,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6164,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6164,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6165,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6165,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6166,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6166,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6167,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6167,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6168,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6168,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6169,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6169,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6170,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6170,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6171,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6171,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6172,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6172,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6173,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6173,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6174,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6174,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6175,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6175,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6176,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6176,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6177,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6177,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6178,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6178,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6179,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6179,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6180,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6180,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6181,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6181,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6182,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6182,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6183,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6183,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6184,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6184,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6185,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6185,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6186,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6186,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6187,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6187,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6188,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6188,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6189,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6189,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6190,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6190,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6191,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6191,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6192,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6192,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6193,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6193,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6194,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6194,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6195,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6195,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6196,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6196,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6197,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6197,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6198,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6198,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6199,
+      "arm": "baseline",
+      "status": "bitwise resume PASS"
+    },
+    {
+      "seed": 6199,
+      "arm": "elr001",
+      "status": "bitwise resume PASS"
+    }
+  ]
+}
